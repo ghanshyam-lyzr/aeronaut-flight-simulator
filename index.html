@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><meta name="theme-color" content="#151719"/><meta name="description" content="Take to the skies in Aeronaut, a cinematic 3D browser flight simulator. Explore an alpine world with real flight controls."/><title>Aeronaut — Web Flight Simulator</title></head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Aeronaut home"><svg class="brandmark" viewBox="0 0 40 40" fill="none"><path d="m6 29 13-22h4L12 29H6Zm13 0 9-15 8 15H19Z" fill="currentColor"/></svg><span>AERONAUT<span class="brand-sub">Flight simulator</span></span></a>
+    <nav aria-label="Main navigation"><button class="nav-item active" id="nav-flight"><i data-lucide="plane"></i>Flight deck</button><button class="nav-item" data-dialog="explore">Explore</button><button class="nav-item" data-dialog="logbook">Flight log</button></nav>
+    <div class="header-right"><button class="icon-btn mobile-menu" data-dialog="menu" aria-label="Flight menu"><i data-lucide="menu"></i></button><span class="live-label"><span class="status-dot"></span><span id="sim-status">Live simulation</span></span><span class="header-divider"></span><button class="icon-btn" id="sound-btn" aria-label="Enable engine sound" title="Engine sound"><i data-lucide="volume-x"></i></button><button class="icon-btn" data-dialog="settings" aria-label="Flight settings" title="Settings"><i data-lucide="sliders-horizontal"></i></button><button class="icon-btn" id="fullscreen-btn" aria-label="Enter fullscreen" title="Fullscreen"><i data-lucide="maximize"></i></button></div>
+  </header>
+  <main class="flight-stage" aria-label="3D flight simulator">
+    <div id="world" tabindex="0" aria-label="Flight world. Use arrow keys to fly, shift and control for throttle."></div>
+    <div class="scene-vignette"></div>
+    <div class="loading-screen" id="loading"><svg viewBox="0 0 40 40" fill="none"><path d="m6 29 13-22h4L12 29H6Zm13 0 9-15 8 15H19Z" fill="currentColor"/></svg><strong class="loading-title">Aeronaut</strong><p>Preparing your aircraft</p><div class="loading-track"><span></span></div></div>
+    <div class="hud" id="hud">
+      <section class="mission-panel panel">
+        <div class="mission-top"><span class="mode-label"><span class="status-dot"></span>Free flight</span><button class="tiny-btn" id="collapse-mission" aria-label="Collapse flight details"><i data-lucide="minus"></i></button></div>
+        <h1>The Swiss Alps</h1><p class="location-line"><i data-lucide="map-pin"></i>Alpine Valley, Switzerland</p>
+        <div class="mission-details"><div class="aircraft-icon"><i data-lucide="plane"></i></div><div><strong>A62 Touring</strong><span>Twin-engine · N062</span></div><span class="aircraft-badge">GA</span></div>
+        <div class="mission-action"><span><span class="status-dot"></span><span id="assist-status">Flight assist enabled</span></span><button id="take-control" title="Switch between assisted and manual flight">Take control <i data-lucide="arrow-up-right"></i></button></div>
+      </section>
+      <div class="environment-panel panel"><button id="weather-btn" data-dialog="environment" aria-label="Change weather"><i data-lucide="sun"></i><div><strong id="weather-label">Clear skies</strong><span id="weather-description">18°C <span class="separator">/</span> Wind 240° at 6 kt</span></div><i data-lucide="chevron-down" class="chevron"></i></button><div class="local-time"><span id="world-time">14:32</span><span>Local time</span></div></div>
+      <div class="scene-label"><span class="scene-label-line"></span><span>Bernese Oberland <span class="label-dot">·</span> Procedural world</span></div>
+      <div class="view-tools panel" aria-label="Camera controls"><button id="camera-btn" title="Change camera (C)"><i data-lucide="video"></i><span id="camera-label">Chase camera</span><kbd>C</kbd><i data-lucide="chevrons-up-down" class="chevron"></i></button><button id="photo-btn" aria-label="Save flight screenshot" title="Save screenshot"><i data-lucide="camera"></i></button></div>
+      <div class="right-tools"><button class="square-tool" id="map-toggle" aria-label="Toggle navigation map" title="Navigation map (M)"><i data-lucide="map"></i></button><button class="square-tool" id="hud-toggle" aria-label="Hide flight instruments" title="Hide instruments (H)"><i data-lucide="scan"></i></button></div>
+      <section class="map-panel panel" id="map-panel" aria-label="Live navigation map"><div class="map-title"><span><i data-lucide="navigation"></i>Navigation</span><span class="map-live">VFR</span><button id="map-close" class="tiny-btn" aria-label="Close navigation map"><i data-lucide="minus"></i></button></div><div class="map-area"><canvas id="mini-map" aria-label="Aircraft position on alpine valley map"></canvas><span class="map-north">N <span>↑</span></span><span class="map-place">Alpine Valley</span><span class="map-airport"><i data-lucide="plane"></i>ALP</span><span class="map-scale">2 km ━</span></div><div class="map-footer"><span><span class="status-dot"></span><span class="map-explore">Free exploration</span></span><span id="map-distance">0.0 NM</span></div></section>
+      <div class="center-indicator" aria-hidden="true"><span></span><svg width="36" height="18" viewBox="0 0 36 18"><path d="M1 9h10l7 7 7-7h10" fill="none" stroke="currentColor" stroke-width="1.5"/></svg><span></span></div>
+      <div class="flight-notice" id="flight-notice" role="status"></div>
+      <div class="touch-controls"><div id="touch-yoke" aria-label="Touch flight joystick"><span id="yoke-knob"><i data-lucide="move"></i></span></div><div class="touch-throttle"><button id="throttle-up" aria-label="Increase throttle"><i data-lucide="plus"></i></button><span>Power</span><button id="throttle-down" aria-label="Decrease throttle"><i data-lucide="minus"></i></button></div></div>
+      <section class="instruments panel" aria-label="Live flight instruments">
+        <div class="instrument airspeed"><span class="instrument-label">Airspeed</span><div class="instrument-number"><span id="speed">120</span><span class="unit">KTS</span></div><div class="speed-ticks"><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><span id="speed-marker"></span></div></div>
+        <div class="instrument altitude"><span class="instrument-label">Altitude</span><div class="instrument-number"><span id="altitude">2,034</span><span class="unit">FT</span></div><span class="instrument-sub"><span class="sub-dot"></span><span id="agl">2,000</span> ft AGL</span></div>
+        <div class="attitude-container"><div class="attitude-gauge" aria-label="Artificial horizon"><div class="attitude-inner" id="attitude-inner"><div class="attitude-sky"></div><div class="attitude-ground"></div><div class="attitude-horizon"></div><div class="pitch-line upper"></div><div class="pitch-line lower"></div></div><div class="attitude-wings"><span></span><b></b><span></span></div><span class="attitude-triangle"></span></div></div>
+        <div class="instrument heading"><span class="instrument-label">Heading</span><div class="instrument-number"><span id="heading">000</span><span class="unit">°</span></div><div class="heading-compass"><span>NW</span><b id="heading-cardinal">N</b><span>NE</span></div></div>
+        <div class="instrument vertical"><span class="instrument-label">Vertical speed</span><div class="instrument-number"><span id="vertical-speed">0</span><span class="unit">FPM</span></div><span class="instrument-sub" id="vertical-state">Level flight</span></div>
+        <div class="instrument throttle"><div class="throttle-heading"><span class="instrument-label">Throttle</span><span id="throttle-value">72%</span></div><input id="throttle-slider" type="range" min="0" max="100" value="72" aria-label="Engine throttle"/><div class="aircraft-controls"><button id="gear-btn" title="Landing gear (G)"><i data-lucide="circle-dot"></i>Gear <span id="gear-state">UP</span></button><button id="flaps-btn" title="Flaps (F)">Flaps <span id="flaps-state">0°</span></button></div></div>
+        <div class="flight-actions"><span id="flight-timer">00:00</span><div><button class="icon-btn" id="reset-btn" aria-label="Restart flight" title="Restart flight (R)"><i data-lucide="rotate-ccw"></i></button><button class="pause-button" id="pause-btn" aria-label="Pause flight" title="Pause flight (P)"><i data-lucide="pause"></i></button></div></div>
+      </section>
+      <footer class="control-strip"><div class="key-hints"><span><kbd>W</kbd><kbd>S</kbd>Pitch</span><span><kbd>A</kbd><kbd>D</kbd>Roll</span><span><kbd>Q</kbd><kbd>E</kbd>Rudder</span><span><kbd>⇧</kbd><kbd>Ctrl</kbd>Throttle</span><span><kbd>P</kbd>Pause</span></div><button data-dialog="controls"><i data-lucide="keyboard"></i>All controls <i data-lucide="arrow-up-right"></i></button><div class="render-status"><span class="status-dot"></span><span id="fps-label">— FPS</span><span class="footer-divider">|</span><span id="quality-label">High</span></div></footer>
+    </div>
+    <button class="restore-hud panel" id="restore-hud" hidden><i data-lucide="scan"></i>Show instruments <kbd>H</kbd></button>
+    <div class="pause-overlay" id="pause-overlay" hidden><span class="pause-symbol"><i data-lucide="pause"></i></span><h2>Enjoy the view.</h2><p>Your flight is paused.</p><button id="resume-btn">Resume flight <i data-lucide="play"></i></button></div>
+    <div class="crash-overlay" id="crash-overlay" hidden><i data-lucide="triangle-alert"></i><h2>Let's try that again.</h2><p>Watch your altitude and keep an eye on the terrain.</p><button id="crash-reset">Restart flight <i data-lucide="rotate-ccw"></i></button></div>
+  </main>
+  <dialog id="main-dialog"><div id="dialog-content"></div></dialog>
+  <div class="toast" id="toast" role="status"></div>
+</div>
+<script type="module" src="/src/main.js"></script>
+</body></html>

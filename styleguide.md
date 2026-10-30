@@ -1,0 +1,17 @@
+# Aeronaut styleguide
+
+## Current UI direction
+
+Alpine Flight — a cinematic browser flight simulator whose landscape dominates a compact, precise flight deck. Adapted from the dealt true-black-flat direction (seed recorded in .taste-skill), with neutral charcoal surfaces and a single chartreuse signal color.
+
+1. Domain: a playable flight simulator for curious pilots; the first impression should be freedom and geographic scale.
+2. Tone: cinematic aviation. The world carries the spectacle, while restrained flight instruments preserve visibility.
+3. Palette: custom neutral graphite hsl(210 8% 9%), elevated hsl(210 6% 14%), ivory hsl(60 9% 96%), signal hsl(77 88% 67%). Adapt Ocean Deep's alpine context into the 3D water and atmosphere; keep interface colors neutral.
+4. Type: DM Sans 400/500/600 for the interface; Barlow Condensed 400/500 for tabular telemetry. Restrict tracked uppercase to aviation instrument markings and wordmark.
+5. Layout: full viewport canvas, a 68px top bar, 16px outer gutters, 290px corner mission panel, a compact instrument strip at the bottom. Phone uses a minimal bar, 4-value telemetry and touch yoke.
+6. Details: 10px panels, 6px controls, one-pixel subdued instrument boundaries, opaque/translucent charcoal without backdrop blur, no ornamental gradients. Animated world and live telemetry; 160ms control transitions.
+7. Name: Alpine Flight.
+
+World is procedural; all geographic and aircraft labels describe an original fictional flight environment inspired by the Alps. No photos, downloaded models, or real-time weather data.
+
+Final UI refinement: instrument labels use sentence case at 11px minimum. Brand uses DM Sans; telemetry uses Barlow Condensed. Controls are anchored around the full-screen world. On phones, the menu exposes Explore, Flight log, Controls, and Weather; the camera pulls back to fit the full aircraft wingspan.
