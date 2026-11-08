@@ -27,6 +27,62 @@ function groundHeight(x, z) {
   return h;
 }
 
+// groundHeight, bit for bit, so the lake knows its own depth along every shore.
+const groundShader = /* glsl */`
+float groundHash(float x, float z) { uint h = uint(int(x)) * 374761393u + uint(int(z)) * 668265263u; h = (h ^ (h >> 13u)) * 1274126177u; h ^= h >> 16u; return float(h) / 4294967295.; }
+float groundNoise(float x, float z) { float ix = floor(x), iz = floor(z), fx = x - ix, fz = z - iz, sx = fx * fx * (3. - 2. * fx), sz = fz * fz * (3. - 2. * fz); return mix(mix(groundHash(ix, iz), groundHash(ix + 1., iz), sx), mix(groundHash(ix, iz + 1.), groundHash(ix + 1., iz + 1.), sx), sz); }
+float groundRidge(float x, float z) { return 1. - abs(groundNoise(x, z) * 2. - 1.); }
+float groundFbm(float x, float z) { return groundNoise(x, z) * .55 + groundNoise(x * 2.03 + 17., z * 2.03 + 31.) * .27 + groundNoise(x * 4.13 + 51., z * 4.13 + 11.) * .12 + groundNoise(x * 8.17, z * 8.17) * .06; }
+float groundSmooth(float a, float b, float x) { float t = clamp((x - a) / (b - a), 0., 1.); return t * t * (3. - 2. * t); }
+float groundHeight(float x, float z) {
+  float curve = sin(z * .00028) * 480. + sin(z * .00074) * 170.;
+  float dist = abs(x - curve + (groundNoise(x * .00055, z * .00055) - .5) * 230.);
+  float foot = groundSmooth(1000., 4900., dist);
+  float ridges = groundRidge(x * .00049 + 14., z * .00049 + 8.) * .58 + groundRidge(x * .00118 + 4., z * .00118 + 11.) * .28 + groundRidge(x * .0027, z * .0027) * .14;
+  float h = -48. + pow(dist * .008, 2.) * .13 + foot * (720. + ridges * 1850.);
+  h += foot * (groundNoise(x * .0073, z * .0073) - .5) * 165.;
+  h += foot * (groundNoise(x * .017, z * .017) - .5) * 43.;
+  h += groundSmooth(-6500., -14500., z) * (700. + ridges * 1800.) * (1. - foot * .45);
+  h += (groundFbm(x * .0015, z * .0015) - .45) * (28. + foot * 90.);
+  float airport = length(vec2((x - ${airportX}.) / 410., (z - (${airportZ}.)) / 840.));
+  return mix(h, ${airportY}., 1. - groundSmooth(.79, 1.65, airport));
+}
+`;
+
+// Alpine air: the haze pools in the valley and thins with height, so peaks stand
+// clear above a hazy lake, and it warms slightly on the side the sun is on.
+THREE.ShaderChunk.fog_pars_vertex = '#ifdef USE_FOG\nvarying vec3 vFogView;\n#endif';
+THREE.ShaderChunk.fog_vertex = '#ifdef USE_FOG\nvFogView = mvPosition.xyz;\n#endif';
+THREE.ShaderChunk.fog_pars_fragment = /* glsl */`
+#ifdef USE_FOG
+uniform vec3 fogColor;
+varying vec3 vFogView;
+#ifdef FOG_EXP2
+uniform float fogDensity;
+#else
+uniform float fogNear;
+uniform float fogFar;
+#endif
+#endif
+`;
+THREE.ShaderChunk.fog_fragment = /* glsl */`
+#ifdef USE_FOG
+  float fogDistance = length(vFogView);
+  vec3 fogTint = fogColor;
+  #ifdef FOG_EXP2
+    vec3 fogRay = (vec4(vFogView, 0.) * viewMatrix).xyz;
+    float fogRise = .00062 * fogRay.y;
+    float fogLayer = exp(-.00062 * (cameraPosition.y - 520.)) * (abs(fogRise) < .001 ? 1. : (1. - exp(-fogRise)) / fogRise);
+    float fogFactor = 1. - exp(-fogDensity * fogDensity * fogDistance * fogDistance * clamp(fogLayer, .3, 2.2));
+    float fogSun = pow(max(dot(normalize(vec3(fogRay.x, 0., fogRay.z) + 1e-4), vec3(-.622, 0., -.783)), 0.), 6.);
+    fogTint *= mix(vec3(1.), vec3(1.09, 1.03, .9), fogSun * .8);
+  #else
+    float fogFactor = smoothstep(fogNear, fogFar, fogDistance);
+  #endif
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, fogTint, fogFactor);
+#endif
+`;
+
 const terrainShader = /* glsl */`
 varying vec3 vAlpinePosition;
 varying vec3 vAlpineNormal;
@@ -48,9 +104,12 @@ function makeTerrainMaterial() {
       float strata=sin(p.y*.095+alpineNoise(p.xz*.006)*8.)*.5+.5;
       float broad=alpineNoise(p.xz*.0015);
       float slope=1.-max(vAlpineNormal.y,0.);
-      vec3 meadow=mix(vec3(.115,.205,.073),vec3(.26,.345,.13),broad);
+      // Olive alpine pasture with drier, sun-cured patches, not lawn green.
+      float pasture=alpineNoise(p.xz*.0042+19.);
+      vec3 meadow=mix(vec3(.112,.19,.074),vec3(.25,.31,.125),broad);
+      meadow=mix(meadow,vec3(.33,.33,.16),smoothstep(.55,.9,pasture)*.45);
       meadow*=.86+grain*.25+detail*.055;
-      vec3 rock=mix(vec3(.255,.275,.27),vec3(.43,.445,.41),grain*.63+strata*.2);
+      vec3 rock=mix(vec3(.25,.262,.262),vec3(.45,.44,.405),grain*.63+strata*.2);
       rock*=.85+detail*.28;
       float cliff=smoothstep(.15,.52,slope);
       cliff=max(cliff,smoothstep(1050.,1750.,p.y)*.65);
@@ -111,6 +170,7 @@ function terrain(scene) {
 function makeLake(sunDirection) {
   const material = new THREE.ShaderMaterial({
     fog: true,
+    defines: { ALPINE_SHORE: 1 },
     uniforms: THREE.UniformsUtils.merge([
       THREE.UniformsLib.fog,
       { time: { value: 0 }, sunDirection: { value: sunDirection.clone() }, sunColor: { value: new THREE.Color(0xfff4dc) }, waterColor: { value: new THREE.Color(0x127d89) }, skyColor: { value: new THREE.Color(0xa8cddd) } },
@@ -135,24 +195,51 @@ function makeLake(sunDirection) {
       varying vec3 vLakePosition;
       #include <common>
       #include <fog_pars_fragment>
+      ${groundShader}
       void main() {
         vec2 p = vLakePosition.xz;
-        vec3 eye = normalize(cameraPosition-vLakePosition);
-        // Broad, low-amplitude swells stay smooth at flight altitude.
+        vec3 toEye = cameraPosition-vLakePosition;
+        float range = length(toEye);
+        vec3 eye = toEye/range;
+        // Broad, low-amplitude swells stay smooth at flight altitude; the finer
+        // ripples fade out with distance so the far lake never shimmers.
         float w1 = p.x*.017+p.y*.011+time*.65;
         float w2 = p.x*-.009+p.y*.023-time*.43;
         float w3 = p.x*.005+p.y*.007+time*.29;
-        vec3 n = normalize(vec3(cos(w1)*.023+cos(w2)*.014,1.,sin(w1)*.017+sin(w3)*.025));
-        float fresnel = .035 + pow(1.-max(dot(eye,n),0.),3.)*.64;
-        float valleyCenter=sin(p.y*.00028)*480.+sin(p.y*.00074)*170.;
-        float shallows=smoothstep(800.,1650.,abs(p.x-valleyCenter));
-        vec3 deep = waterColor*(.88+sin(w3)*.025);
-        vec3 turquoise = mix(deep,waterColor*vec3(1.15,1.24,1.12),shallows*.52);
-        vec3 reflectedSky = skyColor*(.72+.18*max(n.y,0.));
-        vec3 color = mix(turquoise,reflectedSky,fresnel);
-        float sunGloss=pow(max(dot(n,normalize(eye+sunDirection)),0.),110.);
-        color+=sunColor*sunGloss*.24;
-        color += waterColor*(sin(w1)*.013+sin(w2)*.009);
+        float w4 = p.x*.093+p.y*.061+time*1.7;
+        float w5 = p.x*-.052+p.y*.118-time*1.45;
+        float near = 1.-smoothstep(500.,3800.,range);
+        vec2 slope = vec2(cos(w1)*.023+cos(w2)*.014, sin(w1)*.017+sin(w3)*.025);
+        slope += vec2(cos(w4)*.026+cos(w5)*.017, sin(w4)*.019-sin(w5)*.024)*near;
+        slope *= 1.-smoothstep(4000.,16000.,range)*.6;
+        vec3 n = normalize(vec3(slope.x,1.,slope.y));
+        float depth = 40.;
+        #ifdef ALPINE_SHORE
+          // The basin centre is always deep and the far shores are sub-pixel,
+          // so only water near a shore pays for the terrain height.
+          float valleyOffset = abs(p.x-sin(p.y*.00028)*480.-sin(p.y*.00074)*170.);
+          bool shoreline = valleyOffset > 860. || p.y < -5600. || (abs(p.x-${airportX}.) < 680. && abs(p.y-(${airportZ}.)) < 1390.);
+          if (shoreline && range < 11000.) depth = 10.-groundHeight(p.x,p.y);
+        #endif
+        // Glacial water: pale turquoise over the shelves, deep teal-blue in the basin.
+        float shelf = 1.-smoothstep(0.,26.,depth);
+        vec3 deep = waterColor*vec3(.5,.66,.82);
+        vec3 shallow = waterColor*vec3(1.3,1.42,1.18)+vec3(.035,.05,.03);
+        vec3 bed = vec3(.43,.45,.34);
+        vec3 body = mix(deep,shallow,shelf);
+        body = mix(body,bed,(1.-smoothstep(0.,3.5,depth))*.5);
+        body *= .82+.18*max(sunDirection.y,0.)+sin(w3)*.02;
+        vec3 reflected = reflect(-eye,n);
+        vec3 sky = mix(skyColor*1.02,skyColor*vec3(.74,.86,.99),clamp(reflected.y,0.,1.));
+        float fresnel = .02+.98*pow(1.-max(dot(eye,n),0.),5.);
+        vec3 color = mix(body,sky,clamp(fresnel*.9+.04,0.,1.));
+        vec3 h = normalize(eye+sunDirection);
+        float glint = pow(max(dot(n,h),0.),220.)*.75+pow(max(dot(n,h),0.),32.)*.05;
+        color += sunColor*glint*(.35+.65*near);
+        // A soft lap of foam where the water meets the stones.
+        float lap = depth+sin(time*1.4+p.x*.045+p.y*.037)*.12;
+        float foam = (1.-smoothstep(.0,.45,lap))*smoothstep(-.3,.05,depth);
+        color = mix(color,vec3(.88,.92,.9),foam*.4*near);
         gl_FragColor=vec4(color,1.);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -355,6 +442,30 @@ export function createWorld(scene, renderer) {
   skyUniforms.turbidity.value = 3.2; skyUniforms.rayleigh.value = 1.65; skyUniforms.mieCoefficient.value = .0035; skyUniforms.mieDirectionalG.value = .82;
   const sunDirection = new THREE.Vector3(-.55, .55, -.8).normalize(); skyUniforms.sunPosition.value.copy(sunDirection);
   const hemi = new THREE.HemisphereLight(0xc9e7ff, 0x666445, 1.55); scene.add(hemi);
+  // The active aircraft reflects the actual sky. Only the object handed to
+  // reflectSky() samples it: on the terrain and forest it would cost a lot and
+  // add little. A new aircraft replaces the previous one, so nothing is retained.
+  const pmrem = new THREE.PMREMGenerator(renderer), environmentScene = new THREE.Scene();
+  const environmentSky = new THREE.Mesh(sky.geometry, sky.material); environmentSky.scale.setScalar(50);
+  const environmentGround = new THREE.Mesh(new THREE.CircleGeometry(90, 24), new THREE.MeshBasicMaterial({ color: 0x3d4630 }));
+  environmentGround.rotation.x = -Math.PI / 2; environmentGround.position.y = -6;
+  environmentScene.add(environmentSky, environmentGround);
+  let environment, environmentIntensity = .7;
+  let reflective = null;
+  function applyEnvironment(root) {
+    root.traverse(object => {
+      const material = object.material;
+      if (!material?.isMeshStandardMaterial) return;
+      material.userData.skyReflection ??= material.envMapIntensity;
+      material.envMap = environment.texture; material.envMapIntensity = material.userData.skyReflection * environmentIntensity; material.needsUpdate = true;
+    });
+  }
+  function refreshEnvironment() {
+    environment?.dispose();
+    environment = pmrem.fromScene(environmentScene, 0, .1, 200);
+    if (reflective) applyEnvironment(reflective);
+  }
+  function reflectSky(root) { reflective = root; applyEnvironment(root); }
   const sun = new THREE.DirectionalLight(0xfff0da, 3.25); sun.position.copy(sunDirection).multiplyScalar(7000); sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048); sun.shadow.camera.left = -900; sun.shadow.camera.right = 900; sun.shadow.camera.top = 900; sun.shadow.camera.bottom = -900; sun.shadow.camera.near = 10; sun.shadow.camera.far = 17000; sun.shadow.normalBias = 1.5; sun.shadow.bias = -.00015;
   scene.add(sun, sun.target);
@@ -382,6 +493,9 @@ export function createWorld(scene, renderer) {
     skyUniforms.rayleigh.value = golden ? 2.8 : overcast ? .55 : 1.65;
     sun.color.set(golden ? 0xffc583 : overcast ? 0xdce4e5 : 0xfff1d9); sun.intensity = overcast ? 1.0 : golden ? 3.0 : 3.25;
     hemi.intensity = overcast ? 1.95 : golden ? 1.25 : 1.55; hemi.color.set(golden ? 0xc4d5e8 : 0xc9e7ff);
+    environmentGround.material.color.set(golden ? 0x4a3f2c : overcast ? 0x3a4136 : 0x3d4630);
+    environmentIntensity = overcast ? .8 : golden ? .75 : .7;
+    refreshEnvironment();
     scene.fog.color.set(golden ? 0xd5b3a1 : overcast ? 0xb5c4c8 : 0xb8d3dd); scene.fog.density = overcast ? .000077 : golden ? .000053 : .000043;
     lake.material.uniforms.sunDirection.value.copy(sunDirection); lake.material.uniforms.sunColor.value.copy(sun.color);
     lake.material.uniforms.waterColor.value.set(golden ? 0x22737a : overcast ? 0x347881 : 0x127d89);
@@ -394,6 +508,9 @@ export function createWorld(scene, renderer) {
     forestMeshes.forEach(mesh => { mesh.count = Math.max(1,Math.floor(mesh.userData.fullCount * density)); });
     clouds.forEach((cloud,i) => { cloud.visible = i < (value === 'low' ? 22 : value === 'medium' ? 34 : 46); });
     sun.castShadow = value === 'high';
+    // The shoreline depth costs a few dozen ALU ops per water pixel; low quality keeps a flat depth.
+    const shore = value !== 'low';
+    if (Boolean(lake.material.defines.ALPINE_SHORE) !== shore) { if (shore) lake.material.defines.ALPINE_SHORE = 1; else delete lake.material.defines.ALPINE_SHORE; lake.material.needsUpdate = true; }
     for(const mesh of terrainMeshes) mesh.geometry.setIndex(mesh.userData.lodIndices[value === 'high' ? 1 : 2]);
     lastLodX = Infinity; lastLodZ = Infinity;
   }
@@ -414,5 +531,5 @@ export function createWorld(scene, renderer) {
     airfield.windsock.rotation.z = -.15 + Math.sin(time * 2.7) * .035;
   }
   setWeather('clear');
-  return { heightAt: (x, z) => Math.max(10, groundHeight(x, z)), update, setWeather, setQuality, landmarks, airport: airfield };
+  return { heightAt: (x, z) => Math.max(10, groundHeight(x, z)), update, setWeather, setQuality, reflectSky, landmarks, airport: airfield };
 }

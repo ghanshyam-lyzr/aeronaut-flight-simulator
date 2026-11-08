@@ -42,7 +42,7 @@ const camera = new THREE.PerspectiveCamera(54,worldContainer.clientWidth/worldCo
 scene.add(camera);
 const world = createWorld(scene,renderer);
 let aircraft = createAircraft(settings.aircraft);
-scene.add(aircraft.group);
+scene.add(aircraft.group);world.reflectSky(aircraft.group);
 const flight = new FlightController(world.heightAt, settings.aircraft);
 flight.toggleAutopilot();
 const audio = new FlightAudio();
@@ -82,7 +82,7 @@ function updateAircraftLabels(){const t=flight.type;$('aircraft-name').textConte
 function setAircraft(id){
  const type=aircraftType(id);if(type.id===flight.type.id)return false;
  saveFlight();flight.setAircraft(type.id);settings.aircraft=type.id;saveSettings();
- scene.remove(aircraft.group);aircraft.dispose?.();aircraft=createAircraft(type.id);scene.add(aircraft.group);aircraft.setCockpit(view==='cockpit');
+ scene.remove(aircraft.group);aircraft.dispose?.();aircraft=createAircraft(type.id);scene.add(aircraft.group);world.reflectSky(aircraft.group);aircraft.setCockpit(view==='cockpit');
  camera.remove(cockpit);cockpit=createCockpit(type.id);camera.add(cockpit);cockpit.visible=view==='cockpit';
  restart(false);updateAircraftLabels();toast(`${type.name} ready · a fresh start in the air`);return true;
 }
