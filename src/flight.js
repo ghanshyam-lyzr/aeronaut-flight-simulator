@@ -81,6 +81,13 @@ export class FlightController {
     return Math.max(10, Number.isFinite(height) ? height : 0);
   }
 
+  get gearWarning() {
+    const s = this.state;
+    // 1,000 feet is exactly 304.8 metres; both thresholds are exclusive.
+    return !s.gearDown && s.throttle < 0.2
+      && s.position.y < this.groundAt(s.position.x, s.position.z) + 304.8;
+  }
+
   toggleAutopilot() {
     if (this.state.crashed || this.state.grounded) return false;
     this.state.autopilot = !this.state.autopilot;
@@ -413,7 +420,7 @@ export function fighterSound(spool, speed = 0, afterburner = false) {
   };
 }
 
-/** Synthesized engines and slipstream for the active aircraft. Call start() from a user gesture. */
+/** Synthesized engines, slipstream, and gear horn for either aircraft. Start from a user gesture. */
 export class FlightAudio {
   constructor() {
     this.enabled = false;
@@ -429,6 +436,14 @@ export class FlightAudio {
       this.master = ctx.createGain();
       this.master.gain.value = 0;
       this.master.connect(ctx.destination);
+      this.gearHorn = ctx.createGain();
+      this.gearHorn.gain.value = 0;
+      this.gearHorn.connect(this.master);
+      const horn = ctx.createOscillator();
+      horn.type = 'square';
+      horn.frequency.value = 400;
+      horn.connect(this.gearHorn);
+      horn.start();
       const noise = (brown) => {
         const buffer = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
         const data = buffer.getChannelData(0);
@@ -506,9 +521,10 @@ export class FlightAudio {
     return false;
   }
 
-  update(state) {
+  update(state, gearWarning = false) {
     if (!this.context || !this.master) return;
     const now = this.context.currentTime;
+    this.gearHorn.gain.setTargetAtTime(this.enabled && !state.crashed && gearWarning ? 0.12 : 0, now, 0.03);
     const fighter = state.aircraft === 'fighter';
     this.jetBus.gain.setTargetAtTime(fighter ? 0 : 1, now, 0.08);
     this.fighterBus.gain.setTargetAtTime(fighter ? 1 : 0, now, 0.08);
