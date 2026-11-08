@@ -169,9 +169,11 @@ function updateCamera(dt){
   offset.set(0,1.05,-1.8).applyQuaternion(s.quaternion);camera.position.copy(s.position).add(offset);camera.quaternion.copy(s.quaternion);camera.fov=67;
  }else{
   if(view==='orbit')offset.set(Math.sin(orbitAngle)*orbitDistance,orbitHeight,Math.cos(orbitAngle)*orbitDistance);
-  else {const portraitFactor=THREE.MathUtils.clamp(1.2/camera.aspect,1,2.3);offset.set(2.7*portraitFactor,8.3*portraitFactor,23*portraitFactor);}
+  else {const portraitFactor=THREE.MathUtils.clamp(1.2/camera.aspect,1,2.3);offset.set(0,8.3*portraitFactor,23*portraitFactor);}
   offset.applyQuaternion(horizontalQuat);cameraPosition.copy(s.position).add(offset);
-  camera.position.lerp(cameraPosition,initialCamera?1:1-Math.exp(-dt*4));
+  // Chase stays on the heading centerline; world-space lag drifts sideways in turns.
+  if(view==='chase')camera.position.copy(cameraPosition);
+  else camera.position.lerp(cameraPosition,initialCamera?1:1-Math.exp(-dt*4));
   target.set(0,view==='orbit'?0:-.1,view==='orbit'?0:-8*THREE.MathUtils.clamp(1.2/camera.aspect,1,2.3)).applyQuaternion(horizontalQuat).add(s.position);camera.lookAt(target);camera.fov=view==='orbit'?52:53;
  }
  camera.updateProjectionMatrix();initialCamera=false;
