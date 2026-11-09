@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Vector3 } from 'three';
-import { FlightController } from '../src/flight.js';
+import { FlightController, JET } from '../src/flight.js';
 
 function fly(flight, seconds, controls = {}) {
   for (let i = 0; i < Math.round(seconds * 60); i++) flight.update(1 / 60, controls);
@@ -82,7 +82,7 @@ test('terrain impact ends flight and reset restores a flyable aircraft', () => {
   flight.reset();
   assert.equal(flight.state.crashed, false);
   assert.equal(flight.state.flightTime, 0);
-  assert.equal(flight.state.speed, 62);
+  assert.equal(flight.state.speed, JET.cruiseSpeed);
   assert.ok(fly(flight, 1).position.z < 1900);
 });
 
