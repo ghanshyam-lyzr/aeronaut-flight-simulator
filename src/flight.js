@@ -5,6 +5,11 @@ const clamp = THREE.MathUtils.clamp;
 const mix = (value, target, rate, dt) => THREE.MathUtils.lerp(value, target, 1 - Math.exp(-rate * dt));
 const TAU = Math.PI * 2;
 const GRAVITY = 9.81;
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+// Flight assist turns a free-attitude aircraft back to level no faster than this, in rad/s.
+const ASSIST_RECOVERY_RATE = 1.2;
+const _q = new THREE.Quaternion(), _prev = new THREE.Quaternion(), _euler = new THREE.Euler(0, 0, 0, 'YXZ');
+const _forward = new THREE.Vector3(), _up = new THREE.Vector3(), _right = new THREE.Vector3(), _axis = new THREE.Vector3();
 
 /** Vela J8 performance, in metres per second. Speeds are tuned for the valley, not a certified type. */
 export const JET = FLEET.jet.flight;
@@ -43,12 +48,15 @@ export class FlightController {
       distance: 0,
       autopilot: false,
       crashReason: '',
+      bodyRates: { pitch: 0, roll: 0, yaw: 0 },
     });
     this.pitchRate = 0;
     this.rollRate = 0;
     this.yawRate = 0;
     this.holdAltitude = s.position.y;
     this.holdHeading = 0;
+    this.recovering = false;
+    this.setQuaternion();
     return s;
   }
 
@@ -78,6 +86,8 @@ export class FlightController {
     this.state.autopilot = !this.state.autopilot;
     this.holdAltitude = this.state.position.y;
     this.holdHeading = this.state.heading;
+    // From a free attitude, assist first returns to level flight, then holds what it has there.
+    this.recovering = this.state.autopilot && this.type.flight.aerobatic;
     return this.state.autopilot;
   }
 
@@ -119,7 +129,12 @@ export class FlightController {
     s.afterburner = f.afterburnerFrom !== null && s.throttle >= f.afterburnerFrom && s.spool > f.afterburnerFrom - 0.05;
     const burner = s.afterburner ? clamp((s.spool - f.afterburnerFrom + 0.05) / (1.05 - f.afterburnerFrom), 0, 1) * f.afterburnerSpeed : 0;
 
-    if (s.autopilot) {
+    this.yawRate = mix(this.yawRate, controls.yaw * f.yawRate, 2.8, dt);
+    // An aerobatic type flies a free body-axis attitude once airborne: no angle clamps and no self-leveling.
+    const free = f.aerobatic && !s.grounded;
+    if (free) {
+      this.steerFree(dt, controls);
+    } else if (s.autopilot) {
       const altitudeError = this.holdAltitude - s.position.y;
       const desiredPitch = clamp((altitudeError * 0.002 - s.verticalSpeed * 0.013) * f.autopilotGain, -0.16, 0.16);
       let headingError = this.holdHeading - s.heading;
@@ -138,9 +153,13 @@ export class FlightController {
       if (Math.abs(controls.pitch) < 0.05) s.pitch = mix(s.pitch, 0, 0.045, dt);
     }
 
-    s.pitch = clamp(s.pitch, f.pitchLimits[0], f.pitchLimits[1]);
-    s.bank = clamp(s.bank, -f.bankLimit, f.bankLimit);
-    this.yawRate = mix(this.yawRate, controls.yaw * f.yawRate, 2.8, dt);
+    if (!free) {
+      if (!f.aerobatic) {
+        s.pitch = clamp(s.pitch, f.pitchLimits[0], f.pitchLimits[1]);
+        s.bank = clamp(s.bank, -f.bankLimit, f.bankLimit);
+      }
+      s.bodyRates.pitch = s.bodyRates.roll = s.bodyRates.yaw = 0;
+    }
 
     if (s.grounded) {
       s.stalled = false;
@@ -164,24 +183,37 @@ export class FlightController {
     s.stalled = s.speed < stallSpeed && !s.grounded;
     const stallAmount = clamp((stallSpeed + 4 - s.speed) / 12, 0, 1);
     if (s.stalled) {
-      s.pitch = mix(s.pitch, -0.25, 0.7 + stallAmount, dt);
+      if (free) this.dropNose(1 - Math.exp(-(0.7 + stallAmount) * dt));
+      else s.pitch = mix(s.pitch, -0.25, 0.7 + stallAmount, dt);
       s.autopilot = false;
     }
 
-    // Banking produces a coordinated turn; yaw adds a small rudder correction.
-    const turnRate = GRAVITY * Math.tan(s.bank) / Math.max(s.speed, 24);
-    s.heading = ((s.heading + (turnRate + this.yawRate) * dt) % TAU + TAU) % TAU;
     const idleSink = Math.max(0, 0.32 - s.spool) * 6;
     const lowSpeedSink = stallAmount * stallAmount * 8;
-    const turnSink = Math.abs(Math.sin(s.bank)) * 0.9;
-    const targetVerticalSpeed = Math.sin(s.pitch) * s.speed - idleSink - lowSpeedSink - turnSink;
-    s.verticalSpeed = mix(s.verticalSpeed, targetVerticalSpeed, 2.1, dt);
+    if (free) {
+      this.turnFree(dt);
+      // The flight path follows the nose; only the sink terms lag behind it.
+      const forward = _forward.set(0, 0, -1).applyQuaternion(s.quaternion);
+      const turnSink = Math.abs(Math.sin(s.bank)) * 0.9;
+      s.verticalSpeed = mix(s.verticalSpeed, forward.y * s.speed - idleSink - lowSpeedSink - turnSink, 8, dt);
+      s.position.x += forward.x * s.speed * dt;
+      s.position.z += forward.z * s.speed * dt;
+      s.position.y += s.verticalSpeed * dt;
+      s.distance += Math.hypot(forward.x, forward.z) * s.speed * dt;
+    } else {
+      // Banking produces a coordinated turn; yaw adds a small rudder correction.
+      const turnRate = GRAVITY * Math.tan(s.bank) / Math.max(s.speed, 24);
+      s.heading = ((s.heading + (turnRate + this.yawRate) * dt) % TAU + TAU) % TAU;
+      const turnSink = Math.abs(Math.sin(s.bank)) * 0.9;
+      const targetVerticalSpeed = Math.sin(s.pitch) * s.speed - idleSink - lowSpeedSink - turnSink;
+      s.verticalSpeed = mix(s.verticalSpeed, targetVerticalSpeed, 2.1, dt);
 
-    const distance = Math.cos(s.pitch) * s.speed * dt;
-    s.position.x += Math.sin(s.heading) * distance;
-    s.position.z -= Math.cos(s.heading) * distance;
-    s.position.y += s.verticalSpeed * dt;
-    s.distance += distance;
+      const distance = Math.cos(s.pitch) * s.speed * dt;
+      s.position.x += Math.sin(s.heading) * distance;
+      s.position.z -= Math.cos(s.heading) * distance;
+      s.position.y += s.verticalSpeed * dt;
+      s.distance += distance;
+    }
 
     const ground = this.groundAt(s.position.x, s.position.z) + 2.8;
     if (s.position.y <= ground) {
@@ -200,7 +232,8 @@ export class FlightController {
         s.autopilot = false;
       }
     }
-    this.setQuaternion();
+    if (free) this.readAttitude();
+    else this.setQuaternion();
   }
 
   stepGround(dt, controls, burner = 0) {
@@ -219,7 +252,8 @@ export class FlightController {
     s.distance += distance;
     if (s.speed > f.rotateSpeed - s.flaps * f.flapStallGain && controls.pitch > 0.15) {
       s.grounded = false;
-      s.pitch = 0.10;
+      // A free-attitude aircraft keeps the nose where the rotation put it; the Vela J8 resets to its climb angle.
+      s.pitch = f.aerobatic ? Math.max(s.pitch, 0.10) : 0.10;
       s.verticalSpeed = 2.5;
       s.position.y += 0.5;
     }
@@ -229,6 +263,120 @@ export class FlightController {
     const s = this.state;
     this.attitude.set(s.pitch, -s.heading, -s.bank, 'YXZ');
     s.quaternion.setFromEuler(this.attitude);
+    this.seen = [s.pitch, s.bank, s.heading];
+  }
+
+  /** Derives the displayed pitch (±90°), bank (±180°) and heading (0–360°) from the free attitude. */
+  readAttitude() {
+    const s = this.state;
+    _euler.setFromQuaternion(s.quaternion, 'YXZ');
+    s.pitch = _euler.x;
+    s.bank = -_euler.z;
+    s.heading = ((-_euler.y % TAU) + TAU) % TAU;
+    this.seen = [s.pitch, s.bank, s.heading];
+  }
+
+  /**
+   * Rotates a free attitude about the body axes. Pitch, roll and yaw are rates, so the nose can go over
+   * the top and the wings all the way round; released controls damp the rates and hold the attitude.
+   */
+  steerFree(dt, controls) {
+    const s = this.state;
+    const f = this.type.flight;
+    const q = s.quaternion;
+    // Writing pitch, bank or heading directly (a restore, a test) re-seeds the attitude.
+    if (s.pitch !== this.seen[0] || s.bank !== this.seen[1] || s.heading !== this.seen[2]) this.setQuaternion();
+    _prev.copy(q);
+    if (s.autopilot) {
+      const altitudeError = this.holdAltitude - s.position.y;
+      let desiredPitch = clamp((altitudeError * 0.002 - s.verticalSpeed * 0.013) * f.autopilotGain, -0.16, 0.16);
+      let headingError = this.holdHeading - s.heading;
+      headingError = Math.atan2(Math.sin(headingError), Math.cos(headingError));
+      let desiredBank = clamp(headingError * 1.6, -0.4, 0.4);
+      if (this.recovering) desiredPitch = desiredBank = 0;
+      // From any attitude, assist turns the short way to a near-level target at a capped rate.
+      _q.setFromEuler(_euler.set(desiredPitch, -s.heading, -desiredBank, 'YXZ'));
+      const angle = q.angleTo(_q);
+      if (this.recovering && angle < 0.05) {
+        this.recovering = false;
+        this.holdAltitude = s.position.y;
+        this.holdHeading = s.heading;
+      }
+      q.rotateTowards(_q, Math.min(angle * (1 - Math.exp(-(this.recovering ? 3 : 1) * dt)), ASSIST_RECOVERY_RATE * dt));
+      this.pitchRate = mix(this.pitchRate, 0, 5, dt);
+      this.rollRate = mix(this.rollRate, 0, 5, dt);
+    } else {
+      this.pitchRate = mix(this.pitchRate, controls.pitch * f.pitchRate, f.pitchResponse, dt);
+      this.rollRate = mix(this.rollRate, controls.roll * f.rollRate, f.rollResponse, dt);
+      _axis.set(this.pitchRate, -this.yawRate, -this.rollRate);
+      const angle = _axis.length() * dt;
+      if (angle > 0) q.multiply(_q.setFromAxisAngle(_axis.normalize(), angle));
+    }
+    q.normalize();
+    // Body rates of this step feed the control-surface animation.
+    _q.copy(_prev).invert().multiply(q);
+    const sign = _q.w < 0 ? -2 / dt : 2 / dt;
+    Object.assign(s.bodyRates, { pitch: _q.x * sign, yaw: -_q.y * sign, roll: -_q.z * sign });
+    this.readAttitude();
+  }
+
+  /** Lift tilted with the wings turns the flight path about the vertical, as the Euler model's coordinated turn. */
+  turnFree(dt) {
+    const s = this.state;
+    const up = _up.set(0, 1, 0).applyQuaternion(s.quaternion);
+    const side = -_right.set(1, 0, 0).applyQuaternion(s.quaternion).y;
+    // 1 / cos(bank) when upright, eased to 1 through knife-edge so the turn rate stays continuous inverted.
+    const gain = up.y >= 0.35 ? 1 / up.y : up.y > 0 ? 1 + up.y * (1 / 0.35 - 1) / 0.35 : 1;
+    const turnRate = GRAVITY * side * gain / Math.max(s.speed, 24);
+    s.quaternion.premultiply(_q.setFromAxisAngle(WORLD_UP, -turnRate * dt)).normalize();
+  }
+
+  /** A stall lets the nose fall towards 14° below the horizon, whatever the attitude. */
+  dropNose(amount) {
+    const s = this.state;
+    const forward = _forward.set(0, 0, -1).applyQuaternion(s.quaternion);
+    const pitch = Math.asin(clamp(forward.y, -1, 1));
+    if (pitch <= -0.25) return;
+    _axis.crossVectors(forward, _up.set(0, -1, 0));
+    if (_axis.lengthSq() < 1e-6) _axis.set(1, 0, 0).applyQuaternion(s.quaternion);
+    s.quaternion.premultiply(_q.setFromAxisAngle(_axis.normalize(), (pitch + 0.25) * amount)).normalize();
+  }
+}
+
+/**
+ * A chase-camera frame that follows the nose through loops and vertical flight without heading flips.
+ * It does not roll with the aircraft, and eases back to the horizon whenever the pilot is not pulling.
+ */
+export class FollowFrame {
+  constructor() {
+    this.quaternion = new THREE.Quaternion();
+  }
+
+  reset(quaternion) {
+    this.quaternion.copy(quaternion);
+    this.level(Math.PI);
+    return this.quaternion;
+  }
+
+  update(quaternion, dt, pitchRate = 0) {
+    const from = _forward.set(0, 0, -1).applyQuaternion(this.quaternion);
+    const to = _axis.set(0, 0, -1).applyQuaternion(quaternion);
+    this.quaternion.premultiply(_q.setFromUnitVectors(from, to)).normalize();
+    const settle = 1 - clamp(Math.abs(pitchRate) / 0.4, 0, 1);
+    this.level(1.2 * dt * settle);
+    return this.quaternion;
+  }
+
+  /** Rolls the frame about its forward axis towards wings-level, by at most maxAngle. */
+  level(maxAngle) {
+    const forward = _forward.set(0, 0, -1).applyQuaternion(this.quaternion);
+    const horizontal = 1 - forward.y * forward.y;
+    if (horizontal < 0.02 || maxAngle <= 0) return;
+    const up = _up.set(0, 1, 0).applyQuaternion(this.quaternion);
+    const target = _right.copy(WORLD_UP).addScaledVector(forward, -forward.y).normalize();
+    const error = Math.atan2(_axis.crossVectors(up, target).dot(forward), up.dot(target));
+    const step = clamp(error, -maxAngle * horizontal, maxAngle * horizontal);
+    this.quaternion.premultiply(_q.setFromAxisAngle(forward, step)).normalize();
   }
 }
 

@@ -87,13 +87,7 @@ test('fighter rolls and pitches much faster than the Vela J8', () => {
   const velaPitch = fly(new FlightController(() => 78), 1, { pitch: 1 }).pitch;
   const jetPitch = fly(fighter(), 1, { pitch: 1 }).pitch;
   assert.ok(jetPitch > velaPitch * 2);
-  // A sustained full-deflection turn at cruise comes round faster than 25°/s while holding height.
-  const turning = fighter();
-  fly(turning, 1, { roll: 1 });
-  const start = turning.state.heading;
-  fly(turning, 5, { roll: 1 });
-  assert.ok((turning.state.heading - start) / 5 * 180 / Math.PI > 25);
-  assert.ok(turning.state.position.y > 600);
+  // Sustained turn performance, now flown with bank and pull, is covered in aerobatics.test.js.
 });
 
 test('turbine spool lags the lever and full-power takeoff rotates near 132 kt without a speed jump', () => {
@@ -106,7 +100,8 @@ test('turbine spool lags the lever and full-power takeoff rotates near 132 kt wi
   const s = flight2.runwayStart(900, 80.8, -1350);
   let liftoff = 0, previous = 0, maxStep = 0;
   for (let i = 0; i < 60 * 40; i++) {
-    flight2.update(1 / 60, { throttle: 1, pitch: 1 });
+    // Full back stick to rotate, then ease off: with no pitch limit a held pull would go on into a loop.
+    flight2.update(1 / 60, { throttle: 1, pitch: s.grounded || s.pitch < 0.25 ? 1 : 0 });
     maxStep = Math.max(maxStep, s.speed - previous);
     previous = s.speed;
     if (!s.grounded && !liftoff) liftoff = s.speed;

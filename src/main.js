@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { createIcons, Plane, SlidersHorizontal, Maximize, Minimize, VolumeX, Volume2, MapPin, ArrowUpRight, Sun, CloudSun, Cloud, ChevronDown, ChevronsUpDown, Navigation, Video, Camera, Map, Scan, Minus, Plus, CircleDot, RotateCcw, Pause, Play, Keyboard, Move, TriangleAlert, X, Check, Mountain, Compass, Wind, Menu } from 'lucide';
 import { createWorld } from './world.js';
 import { createAircraft, createCockpit } from './aircraft.js';
-import { FlightController, FlightAudio } from './flight.js';
+import { FlightController, FlightAudio, FollowFrame } from './flight.js';
 import { FLEET, aircraftType } from './fleet.js';
 
 const icons = {Plane,SlidersHorizontal,Maximize,Minimize,VolumeX,Volume2,MapPin,ArrowUpRight,Sun,CloudSun,Cloud,ChevronDown,ChevronsUpDown,Navigation,Video,Camera,Map,Scan,Minus,Plus,CircleDot,RotateCcw,Pause,Play,Keyboard,Move,TriangleAlert,X,Check,Mountain,Compass,Wind,Menu};
@@ -52,6 +52,8 @@ const touch={pitch:0,roll:0,throttle:0};
 const mouse={pitch:0,roll:0,active:false};
 const cameraPosition=new THREE.Vector3(),target=new THREE.Vector3(),offset=new THREE.Vector3();
 const horizontalQuat=new THREE.Quaternion(),horizontalEuler=new THREE.Euler();
+// An aerobatic aircraft is followed along its nose, so the outside cameras never flip at the top of a loop.
+const followFrame=new FollowFrame();
 let initialCamera=true, cockpit=createCockpit(settings.aircraft), toastTimeout, lastNotice='', lastCrash=false, sceneDirty=true;
 camera.add(cockpit);cockpit.visible=false;
 const weatherData={clear:{label:'Clear skies',icon:'sun',description:'18°C <span class="separator">/</span> Wind 240° at 6 kt',time:'14:32'},golden:{label:'Golden hour',icon:'cloud-sun',description:'16°C <span class="separator">/</span> Wind 220° at 4 kt',time:'18:45'},overcast:{label:'Cloud cover',icon:'cloud',description:'12°C <span class="separator">/</span> Wind 260° at 12 kt',time:'11:20'}};
@@ -178,16 +180,18 @@ function updateUI(time){
 }
 function updateCamera(dt){
  const s=flight.state;horizontalEuler.set(0,-s.heading,0);horizontalQuat.setFromEuler(horizontalEuler);
+ const free=flight.type.flight.aerobatic,frame=free?(initialCamera?followFrame.reset(s.quaternion):followFrame.update(s.quaternion,dt,s.bodyRates.pitch)):horizontalQuat;
+ camera.up.set(0,1,0);if(free)camera.up.applyQuaternion(frame);
  if(view==='cockpit'){
   offset.set(0,1.05,-1.8).applyQuaternion(s.quaternion);camera.position.copy(s.position).add(offset);camera.quaternion.copy(s.quaternion);camera.fov=67;
  }else{
   if(view==='orbit')offset.set(Math.sin(orbitAngle)*orbitDistance,orbitHeight,Math.cos(orbitAngle)*orbitDistance);
   else {const portraitFactor=THREE.MathUtils.clamp(1.2/camera.aspect,1,2.3);offset.set(0,8.3*portraitFactor,23*portraitFactor);}
-  offset.applyQuaternion(horizontalQuat);cameraPosition.copy(s.position).add(offset);
+  offset.applyQuaternion(frame);cameraPosition.copy(s.position).add(offset);
   // Chase stays on the heading centerline; world-space lag drifts sideways in turns.
   if(view==='chase')camera.position.copy(cameraPosition);
   else camera.position.lerp(cameraPosition,initialCamera?1:1-Math.exp(-dt*4));
-  target.set(0,view==='orbit'?0:-.1,view==='orbit'?0:-8*THREE.MathUtils.clamp(1.2/camera.aspect,1,2.3)).applyQuaternion(horizontalQuat).add(s.position);camera.lookAt(target);camera.fov=view==='orbit'?52:53;
+  target.set(0,view==='orbit'?0:-.1,view==='orbit'?0:-8*THREE.MathUtils.clamp(1.2/camera.aspect,1,2.3)).applyQuaternion(frame).add(s.position);camera.lookAt(target);camera.fov=view==='orbit'?52:53;
  }
  camera.updateProjectionMatrix();initialCamera=false;
 }

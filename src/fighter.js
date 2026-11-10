@@ -339,17 +339,21 @@ export function createFighter() {
         pivot.quaternion.setFromAxisAngle(axis, stowAngle * (1 - smooth(gearPosition)));
       }
 
-      // Control surfaces follow the attitude rates the flight model produces.
+      // Control surfaces follow the attitude rates the flight model produces. Body-axis rates, when the
+      // flight model supplies them, stay smooth through vertical and inverted flight where Euler angles jump.
       if (dt > 0) {
         const now = { bank: state.bank ?? 0, pitch: state.pitch ?? 0, heading: state.heading ?? 0 };
         if (!last) last = now;
-        const bankRate = (now.bank - last.bank) / dt, pitchRate = (now.pitch - last.pitch) / dt;
-        const headingRate = Math.atan2(Math.sin(now.heading - last.heading), Math.cos(now.heading - last.heading)) / dt;
-        const coordinated = 9.81 * Math.tan(now.bank) / Math.max(state.speed ?? 0, 24);
+        let bankRate = (now.bank - last.bank) / dt, pitchRate = (now.pitch - last.pitch) / dt, yawRate;
+        if (state.bodyRates) ({ roll: bankRate, pitch: pitchRate, yaw: yawRate } = state.bodyRates);
+        else {
+          const headingRate = Math.atan2(Math.sin(now.heading - last.heading), Math.cos(now.heading - last.heading)) / dt;
+          yawRate = headingRate - 9.81 * Math.tan(now.bank) / Math.max(state.speed ?? 0, 24);
+        }
         const live = state.grounded || state.crashed ? 0 : 1;
         deflection.ailerons = ease(deflection.ailerons, clamp(bankRate * 0.3, -0.35, 0.35) * live, 10, dt);
         deflection.elevators = ease(deflection.elevators, clamp(pitchRate * 1.2, -0.3, 0.3) * live, 10, dt);
-        deflection.rudder = ease(deflection.rudder, clamp((headingRate - coordinated) * 2.4, -0.35, 0.35) * live, 6, dt);
+        deflection.rudder = ease(deflection.rudder, clamp(yawRate * 2.4, -0.35, 0.35) * live, 6, dt);
         last = now;
         flapAngle += clamp((state.flaps ?? 0) * 0.3 - flapAngle, -dt * 0.25, dt * 0.25);
       }
