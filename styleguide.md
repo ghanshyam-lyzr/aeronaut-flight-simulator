@@ -15,3 +15,5 @@ Alpine Flight — a cinematic browser flight simulator whose landscape dominates
 World is procedural; all geographic and aircraft labels describe an original fictional flight environment inspired by the Alps. No photos, downloaded models, or real-time weather data.
 
 Final UI refinement: instrument labels use sentence case at 11px minimum. Brand uses DM Sans; telemetry uses Barlow Condensed. Controls are anchored around the full-screen world. On phones, the menu exposes Explore, Flight log, Controls, and Weather; the camera pulls back to fit the full aircraft wingspan.
+
+Stall warnings use a compact red banner with ivory DM Sans 600 text. Reserve hsl(0 78% 40%) and hsl(0 65% 25%) for the one-second warning flash; reduced-motion mode keeps the banner steady. Position the phone warning below the mission and navigation panels and the separate GEAR banner.

@@ -437,11 +437,13 @@ export function fighterSound(spool, speed = 0, afterburner = false) {
   };
 }
 
-/** Synthesized engines, slipstream, and gear horn for either aircraft. Start from a user gesture. */
+/** Synthesized engines, slipstream and warning horns for either aircraft. Start from a user gesture. */
 export class FlightAudio {
   constructor() {
     this.enabled = false;
     this.context = null;
+    this.stallActive = false;
+    this.stallHorn = null;
   }
 
   async start() {
@@ -534,12 +536,45 @@ export class FlightAudio {
       return true;
     }
     this.enabled = false;
+    this.stallActive = false;
+    this.stopStallHorn();
     this.master?.gain.setTargetAtTime(0, this.context.currentTime, 0.1);
     return false;
   }
 
+  soundStallHorn() {
+    const ctx = this.context;
+    const now = ctx.currentTime;
+    const horn = ctx.createOscillator();
+    const gain = ctx.createGain();
+    horn.type = 'square';
+    horn.frequency.value = 640;
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.22, now + 0.015);
+    gain.gain.setValueAtTime(0.22, now + 0.28);
+    gain.gain.linearRampToValueAtTime(0, now + 0.35);
+    horn.connect(gain).connect(this.master);
+    this.stallHorn = horn;
+    horn.onended = () => {
+      horn.disconnect();
+      gain.disconnect();
+      if (this.stallHorn === horn) this.stallHorn = null;
+    };
+    horn.start(now);
+    horn.stop(now + 0.35);
+  }
+
+  stopStallHorn() {
+    this.stallHorn?.stop();
+    this.stallHorn = null;
+  }
+
   update(state, gearWarning = false) {
     if (!this.context || !this.master) return;
+    const stalled = this.enabled && state.stalled && !state.grounded && !state.crashed;
+    if (stalled && !this.stallActive) this.soundStallHorn();
+    if (!stalled) this.stopStallHorn();
+    this.stallActive = stalled;
     const now = this.context.currentTime;
     this.gearHorn.gain.setTargetAtTime(this.enabled && !state.crashed && gearWarning ? 0.12 : 0, now, 0.03);
     const fighter = state.aircraft === 'fighter';
