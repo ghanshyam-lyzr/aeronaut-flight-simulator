@@ -27,7 +27,9 @@ The Arolla F7 has no pitch or bank limits: hold the stick for continuous loops a
 - **G**: landing gear. **F**: cycle 0°, 15°, and 30° flaps.
 - **M**: map. **H**: instruments.
 
-On a phone, steer with the touch yoke and hold the + / − buttons to adjust power. In settings, mouse steering and inverted pitch are optional. Synthesized jet engine audio starts when the sound button is selected.
+On a phone, steer with the touch yoke and hold the + / − buttons to adjust power. In settings, mouse steering and inverted pitch are optional. Flight audio starts when the sound button is selected.
+
+With landing gear up, flying below 1,000 ft AGL at less than 20% throttle shows **GEAR** on the HUD and sounds a warning horn when flight sound is enabled. Lower the gear, raise throttle to at least 20%, or climb to at least 1,000 ft AGL to clear it. The horn follows the sound toggle and is silent while paused or after a crash.
 
 The engines spool up and down over a few seconds, so lead with power changes. For a runway takeoff, add full power and pitch up after reaching about 95 knots (a little less with flaps). The jet cruises near 195 knots at the default power and stalls below about 82 knots clean, or 70 knots with full flaps. For landing, reduce power to around 45%, lower gear and flaps, keep the aircraft level, and touch down at under 130 knots with less than 600 ft/min descent. The Arolla F7 cruises near 330 knots (over 500 with the afterburner, which lights above 90% throttle), rolls and turns hard, and rotates near 130 knots; fly its approach near 135 knots with gear and full flaps, and touch down below 155 knots and 700 ft/min. Terrain collisions and stalls are modeled. The flight model is an accessible approximation, not certified flight training.
 
