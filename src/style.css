@@ -17,3 +17,4 @@
 @media(max-width:550px){.map-scale{display:none}}
 
 .mode-label,.instrument-label,.unit,.local-time>span:last-child,.scene-label,.map-live,.map-place,.aircraft-controls button,.render-status,.touch-throttle span{letter-spacing:0}.brand-sub{letter-spacing:.8px}
+.aircraft-options .weather-option{padding:12px 15px}.aircraft-options .weather-option>svg{width:22px;height:22px;transform:rotate(-35deg)}.aircraft-options+.dialog-note{margin-top:12px!important}

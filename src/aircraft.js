@@ -1,13 +1,21 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
+import { createFighter } from './fighter.js';
+import { aircraftType } from './fleet.js';
+
 const clamp = THREE.MathUtils.clamp;
 const ease = (value, target, rate, dt) => THREE.MathUtils.lerp(value, target, 1 - Math.exp(-rate * dt));
 
 export const AIRCRAFT = { name: 'Vela J8', registration: 'A-VJ08' };
 
+/** Builds the 3D model for a fleet id: the Vela J8 by default, or the Arolla F7 fighter. */
+export function createAircraft(type = 'jet') {
+  return type === 'fighter' ? createFighter() : createVela();
+}
+
 // An original light twin jet, modelled in metres; the nose points down local -Z.
-export function createAircraft() {
+function createVela() {
   const group = new THREE.Group();
   group.name = `${AIRCRAFT.name} — ${AIRCRAFT.registration}`;
   const palette = {
@@ -411,13 +419,18 @@ export function createAircraft() {
     get gearPosition() { return gearPosition; },
     get surfaces() { return Object.fromEntries(Object.entries(surfaces).map(([name, list]) => [name, list.map(s => s.angle)])); },
     setCockpit(enabled) { group.visible = !enabled; },
+    dispose() {
+      group.traverse(o => { if (o.isMesh || o.isSprite) { o.geometry?.dispose(); o.material?.map?.dispose(); o.material?.dispose(); } });
+    },
   };
 }
 
 // Camera-local cockpit. Attach directly to the active camera; no animation loop is needed.
-export function createCockpit() {
+export function createCockpit(type = 'jet') {
+  const fighter = type === 'fighter';
+  const info = aircraftType(type);
   const cockpit = new THREE.Group();
-  cockpit.name = `${AIRCRAFT.name} — cockpit`;
+  cockpit.name = `${info.name} — cockpit`;
   const charcoal = new THREE.MeshStandardMaterial({ color: '#162126', roughness: 0.72, metalness: 0.13 });
   const trim = new THREE.MeshStandardMaterial({ color: '#354249', roughness: 0.34, metalness: 0.65 });
   const leather = new THREE.MeshStandardMaterial({ color: '#202b2e', roughness: 0.95, metalness: 0 });
@@ -433,12 +446,21 @@ export function createCockpit() {
     return part(new THREE.TubeGeometry(curve, 32, radius, 12, false), material);
   }
   // Swept pillars stay at the sides. The horizon has a clear, uninterrupted opening.
-  for (const side of [-1, 1]) {
+  // The fighter's bubble canopy has no pillars: one bow arch ahead of the pilot and low sills.
+  if (fighter) {
+    tube([[-2.3, -1.0, -1.75], [-2.05, 0.4, -2.05], [-1.3, 1.45, -2.25], [0, 1.85, -2.35], [1.3, 1.45, -2.25], [2.05, 0.4, -2.05], [2.3, -1.0, -1.75]], 0.03, charcoal);
+    for (const side of [-1, 1]) tube([[side * 1.52, -0.86, -1.95], [side * 1.6, -0.84, -0.9], [side * 1.62, -0.86, 0.2]], 0.05, charcoal);
+    // Head-up display combiner: a faint green-tinted glass above the glare shield.
+    const combiner = part(new THREE.PlaneGeometry(0.42, 0.2), new THREE.MeshBasicMaterial({ color: '#9fe3b0', transparent: true, opacity: 0.07, depthWrite: false, side: THREE.DoubleSide }));
+    combiner.position.set(0, -0.44, -1.9); combiner.rotation.x = -0.32;
+    const frame = part(new THREE.BoxGeometry(0.44, 0.012, 0.012), trim);
+    frame.position.set(0, -0.335, -1.935);
+  } else for (const side of [-1, 1]) {
     tube([[side * 1.56, -1.15, -1.18], [side * 1.34, -0.36, -1.55], [side * 1.12, 0.58, -1.94], [side * 0.91, 1.28, -2.06]], 0.048, charcoal);
     tube([[side * 1.53, -1.12, -1.18], [side * 1.31, -0.34, -1.55], [side * 1.09, 0.59, -1.94], [side * 0.88, 1.28, -2.06]], 0.008, trim);
     tube([[side * 1.55, -0.83, -1.21], [side * 1.51, -0.71, -1.85], [side * 1.45, -0.67, -2.48]], 0.047, charcoal);
   }
-  tube([[-0.94, 1.27, -2.06], [-0.5, 1.38, -2.02], [0, 1.40, -2.01], [0.5, 1.38, -2.02], [0.94, 1.27, -2.06]], 0.055, charcoal);
+  if (!fighter) tube([[-0.94, 1.27, -2.06], [-0.5, 1.38, -2.02], [0, 1.40, -2.01], [0.5, 1.38, -2.02], [0.94, 1.27, -2.06]], 0.055, charcoal);
 
   const dashboard = new THREE.Group();
   dashboard.position.set(0, -0.91, -1.75);
@@ -498,7 +520,7 @@ export function createCockpit() {
       ctx.beginPath(); ctx.arc(0, 0, radius * 0.065, 0, Math.PI * 2); ctx.fillStyle = '#b1bcb8'; ctx.fill();
       ctx.restore();
     }
-    dial(177, 226, 139, 'AIRSPEED', 210, 400, 'KNOTS');
+    dial(177, 226, 139, 'AIRSPEED', fighter ? 330 : 210, fighter ? 600 : 400, 'KNOTS');
     dial(482, 226, 139, 'ALTIMETER', 6800, 10000, 'FEET');
     // Central glass avionics: attitude and a small navigation display.
     roundRect(657, 54, 410, 336, 15, '#080e11', '#526165');
@@ -518,7 +540,7 @@ export function createCockpit() {
     ctx.strokeStyle = '#e3eee0'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(862, 218, 83, Math.PI * 1.18, Math.PI * 1.82); ctx.stroke();
     ctx.restore();
     text('HDG  062°', 862, 91, 18, '#b5ebbd', 'center', 'monospace');
-    text('210', 716, 224, 24, '#d3f9d2', 'center', 'monospace');
+    text(fighter ? '330' : '210', 716, 224, 24, '#d3f9d2', 'center', 'monospace');
     text('6,800', 994, 224, 22, '#d3f9d2', 'center', 'monospace');
     text('AP  ·  ALT', 862, 352, 15, '#a6ddb8', 'center', 'monospace');
 
@@ -540,17 +562,18 @@ export function createCockpit() {
     dial(1834, 226, 139, 'VERTICAL SPEED', 900, 4000, 'FT / MIN');
     roundRect(1525, 92, 137, 278, 6, '#091717', '#4a5b5c');
     text('N1', 1594, 111, 14, '#87a89a');
-    text('L      R', 1594, 146, 12, '#a9d7b8', 'center', 'monospace');
+    text(fighter ? 'ENG    AB' : 'L      R', 1594, 146, 12, '#a9d7b8', 'center', 'monospace');
     for (let i = 0; i < 2; i++) {
       const x = 1564 + i * 59;
       roundRect(x - 13, 174, 26, 114, 2, '#1d3931');
+      if (fighter && i === 1) { text('OFF', x, 315, 17, '#86b79c', 'center', 'monospace'); continue; }
       roundRect(x - 10, 203 + i * 2, 20, 82 - i * 2, 1, '#7cb99a');
       text('72', x, 315, 19, '#b5e0bb', 'center', 'monospace');
     }
     text('% RPM', 1594, 346, 11, '#6c9182', 'center', 'monospace');
-    text('VELA', 45, 27, 17, '#b7c6c5', 'left');
-    text('J8  /  TWIN TURBOFAN', 140, 27, 12, '#788f90', 'left');
-    text(AIRCRAFT.registration, 2004, 27, 15, '#b6c8c6', 'right', 'monospace');
+    text(fighter ? 'AROLLA' : 'VELA', 45, 27, 17, '#b7c6c5', 'left');
+    text(fighter ? 'F7  /  SINGLE-SEAT FIGHTER' : 'J8  /  TWIN TURBOFAN', fighter ? 150 : 140, 27, 12, '#788f90', 'left');
+    text(info.registration, 2004, 27, 15, '#b6c8c6', 'right', 'monospace');
     for (const x of [31, 635, 1510, 2017]) for (const y of [46, 403]) {
       ctx.fillStyle = '#58676a'; ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = '#101b20'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x - 2, y); ctx.lineTo(x + 2, y); ctx.stroke();
@@ -565,6 +588,7 @@ export function createCockpit() {
   // A short center console and two knurled knobs add depth without covering the view.
   const consoleBody = part(new THREE.BoxGeometry(0.46, 0.42, 0.58), charcoal);
   consoleBody.position.set(0.45, -1.25, -1.28);
+  consoleBody.visible = !fighter;
   for (const x of [-0.58, 0.58]) {
     const knob = part(new THREE.CylinderGeometry(0.033, 0.033, 0.065, 20), rubber, dashboard);
     knob.rotation.x = Math.PI / 2;
