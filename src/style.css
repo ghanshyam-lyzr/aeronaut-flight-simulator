@@ -19,5 +19,10 @@
 .mode-label,.instrument-label,.unit,.local-time>span:last-child,.scene-label,.map-live,.map-place,.aircraft-controls button,.render-status,.touch-throttle span{letter-spacing:0}.brand-sub{letter-spacing:.8px}
 .aircraft-options .weather-option{padding:12px 15px}.aircraft-options .weather-option>svg{width:22px;height:22px;transform:rotate(-35deg)}.aircraft-options+.dialog-note{margin-top:12px!important}
 
+:root{--overload:hsl(0 90% 69%)}
+.g-force{flex:.65}
+.g-force.overload .instrument-number,.g-force.overload .instrument-label,.g-force.overload .unit{color:var(--overload)}
+@media(max-width:550px){.instruments{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));height:176px;padding:10px 14px;gap:8px 12px}.instrument{padding:0 8px}.vertical{border:0;padding-right:0}.heading{border-right:1px solid var(--border);padding-left:0;padding-right:8px}.g-force{border-right:1px solid var(--border)}.g-force .instrument-number{font-size:24px;gap:3px}.flight-actions{width:auto;padding-left:0;justify-self:center}.touch-controls{bottom:220px}.view-tools{bottom:351px}.toast{bottom:230px}}
+
 .gear-warning{position:absolute;top:66px;left:50%;transform:translateX(-50%);padding:8px 14px;background:var(--panel);color:var(--danger);border:1px solid var(--danger);border-radius:6px;font-family:var(--numbers);font-size:20px;font-weight:500;line-height:1.1;letter-spacing:1.5px}
 @media(max-width:550px){.gear-warning{top:214px}}

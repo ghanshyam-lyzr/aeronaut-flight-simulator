@@ -21,6 +21,9 @@ export class FlightController {
     this.type = aircraftType(aircraft);
     this.state = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
     this.attitude = new THREE.Euler(0, 0, 0, 'YXZ');
+    this.previousVelocity = new THREE.Vector3();
+    this.acceleration = new THREE.Vector3();
+    this.aircraftUp = new THREE.Vector3();
     this.reset();
   }
 
@@ -39,6 +42,7 @@ export class FlightController {
       pitch: 0,
       bank: 0,
       verticalSpeed: 0,
+      gForce: 1,
       gearDown: false,
       flaps: 0,
       crashed: false,
@@ -129,6 +133,8 @@ export class FlightController {
   step(dt, controls) {
     const s = this.state;
     const f = this.type.flight;
+    this.previousVelocity.set(0, 0, -s.speed).applyQuaternion(s.quaternion);
+    this.previousVelocity.y = s.verticalSpeed;
     s.flightTime += dt;
     s.throttle = clamp(s.throttle + controls.throttle * dt * f.throttleRate, 0, 1);
     // Engine response lags the lever, slowest near idle.
@@ -222,12 +228,23 @@ export class FlightController {
       s.distance += distance;
     }
 
+    if (!free) this.setQuaternion();
+    // Specific force along the aircraft's up axis, from its actual flight-path velocity.
+    // Quaternion axes stay continuous through vertical, knife-edge and inverted flight.
+    this.acceleration.set(0, 0, -s.speed).applyQuaternion(s.quaternion);
+    this.acceleration.y = s.verticalSpeed;
+    this.acceleration.sub(this.previousVelocity).divideScalar(dt);
+    this.acceleration.y += GRAVITY;
+    this.aircraftUp.set(0, 1, 0).applyQuaternion(s.quaternion);
+    s.gForce = this.acceleration.dot(this.aircraftUp) / GRAVITY;
+
     const ground = this.groundAt(s.position.x, s.position.z) + 2.8;
     if (s.position.y <= ground) {
       s.position.y = ground;
       const landable = this.heightAt(s.position.x, s.position.z) > 10.2 && s.gearDown && Math.abs(s.verticalSpeed) < f.maxTouchdownSink && s.speed < f.maxTouchdownSpeed && Math.abs(s.bank) < 0.3;
       if (landable) {
         s.grounded = true;
+        s.gForce = 1;
         s.stalled = false;
         s.verticalSpeed = 0;
         s.autopilot = false;
@@ -240,12 +257,12 @@ export class FlightController {
       }
     }
     if (free) this.readAttitude();
-    else this.setQuaternion();
   }
 
   stepGround(dt, controls, burner = 0) {
     const s = this.state;
     const f = this.type.flight;
+    s.gForce = 1;
     // Rolling resistance stops an idle aircraft. Full power allows a takeoff roll.
     const targetSpeed = s.spool > 0.2 ? (s.spool - 0.2) * f.groundThrust + burner : 0;
     s.speed = mix(s.speed, targetSpeed, s.spool < 0.2 ? 0.35 : f.groundRate, dt);
