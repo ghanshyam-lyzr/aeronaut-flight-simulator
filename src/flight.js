@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { FLEET, aircraftType, DEFAULT_AIRCRAFT } from './fleet.js';
 
 const clamp = THREE.MathUtils.clamp;
 const mix = (value, target, rate, dt) => THREE.MathUtils.lerp(value, target, 1 - Math.exp(-rate * dt));
@@ -6,24 +7,13 @@ const TAU = Math.PI * 2;
 const GRAVITY = 9.81;
 
 /** Vela J8 performance, in metres per second. Speeds are tuned for the valley, not a certified type. */
-export const JET = {
-  cruiseSpeed: 100,      // ~195 kt at the default 72% power
-  idleSpeed: 34,
-  thrustSpeed: 92,       // speed added between idle and full power
-  stallSpeed: 42,        // ~82 kt clean; each flap stage lowers it
-  flapStallGain: 3,
-  rotateSpeed: 48,       // ~93 kt, minus flap gain
-  maxTouchdownSpeed: 68, // ~132 kt
-  maxTouchdownSink: 3,   // ~590 ft/min
-  groundThrust: 95,
-  spoolUp: 0.55,         // turbines accelerate slowly from idle
-  spoolCruise: 0.95,
-};
+export const JET = FLEET.jet.flight;
 
 /** A forgiving, coordinated-turn flight model. All distances are metres. */
 export class FlightController {
-  constructor(heightAt = () => 0) {
+  constructor(heightAt = () => 0, aircraft = DEFAULT_AIRCRAFT) {
     this.heightAt = heightAt;
+    this.type = aircraftType(aircraft);
     this.state = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
     this.attitude = new THREE.Euler(0, 0, 0, 'YXZ');
     this.reset();
@@ -33,10 +23,13 @@ export class FlightController {
     const s = this.state;
     s.position.set(0, Math.max(620, this.groundAt(0, 1900) + 180), 1900);
     s.quaternion.identity();
+    const f = this.type.flight;
     Object.assign(s, {
-      speed: JET.cruiseSpeed,
-      throttle: 0.72,
-      spool: 0.72,
+      aircraft: this.type.id,
+      speed: f.cruiseSpeed,
+      throttle: f.cruiseThrottle,
+      spool: f.cruiseThrottle,
+      afterburner: false,
       heading: 0,
       pitch: 0,
       bank: 0,
@@ -56,6 +49,22 @@ export class FlightController {
     this.yawRate = 0;
     this.holdAltitude = s.position.y;
     this.holdHeading = 0;
+    return s;
+  }
+
+  /** Switching aircraft always begins a fresh airborne flight in the new type. */
+  setAircraft(id) {
+    this.type = aircraftType(id);
+    return this.reset();
+  }
+
+  /** Parks the current aircraft at rest on a runway threshold, gear down and engines idle. */
+  runwayStart(x, y, z, heading = 0) {
+    const s = this.reset();
+    s.position.set(x, y, z);
+    Object.assign(s, { heading, speed: 0, throttle: 0, spool: 0, gearDown: true, grounded: true, autopilot: false });
+    this.holdHeading = heading;
+    this.setQuaternion();
     return s;
   }
 
@@ -102,14 +111,17 @@ export class FlightController {
 
   step(dt, controls) {
     const s = this.state;
+    const f = this.type.flight;
     s.flightTime += dt;
-    s.throttle = clamp(s.throttle + controls.throttle * dt * 0.19, 0, 1);
+    s.throttle = clamp(s.throttle + controls.throttle * dt * f.throttleRate, 0, 1);
     // Engine response lags the lever, slowest near idle.
-    s.spool = mix(s.spool, s.throttle, s.spool < 0.35 ? JET.spoolUp : JET.spoolCruise, dt);
+    s.spool = mix(s.spool, s.throttle, s.spool < 0.35 ? f.spoolUp : f.spoolCruise, dt);
+    s.afterburner = f.afterburnerFrom !== null && s.throttle >= f.afterburnerFrom && s.spool > f.afterburnerFrom - 0.05;
+    const burner = s.afterburner ? clamp((s.spool - f.afterburnerFrom + 0.05) / (1.05 - f.afterburnerFrom), 0, 1) * f.afterburnerSpeed : 0;
 
     if (s.autopilot) {
       const altitudeError = this.holdAltitude - s.position.y;
-      const desiredPitch = clamp(altitudeError * 0.002 - s.verticalSpeed * 0.013, -0.16, 0.16);
+      const desiredPitch = clamp((altitudeError * 0.002 - s.verticalSpeed * 0.013) * f.autopilotGain, -0.16, 0.16);
       let headingError = this.holdHeading - s.heading;
       headingError = Math.atan2(Math.sin(headingError), Math.cos(headingError));
       s.pitch = mix(s.pitch, desiredPitch, 0.85, dt);
@@ -117,8 +129,8 @@ export class FlightController {
       this.pitchRate = mix(this.pitchRate, 0, 5, dt);
       this.rollRate = mix(this.rollRate, 0, 5, dt);
     } else {
-      this.pitchRate = mix(this.pitchRate, controls.pitch * 0.29, 3.8, dt);
-      this.rollRate = mix(this.rollRate, controls.roll * 0.86, 4.2, dt);
+      this.pitchRate = mix(this.pitchRate, controls.pitch * f.pitchRate, f.pitchResponse, dt);
+      this.rollRate = mix(this.rollRate, controls.roll * f.rollRate, f.rollResponse, dt);
       s.pitch += this.pitchRate * dt;
       s.bank += this.rollRate * dt;
       // Soft self-stability makes cruising possible without continuous corrections.
@@ -126,26 +138,29 @@ export class FlightController {
       if (Math.abs(controls.pitch) < 0.05) s.pitch = mix(s.pitch, 0, 0.045, dt);
     }
 
-    s.pitch = clamp(s.pitch, -0.56, 0.48);
-    s.bank = clamp(s.bank, -1.14, 1.14);
-    this.yawRate = mix(this.yawRate, controls.yaw * 0.19, 2.8, dt);
+    s.pitch = clamp(s.pitch, f.pitchLimits[0], f.pitchLimits[1]);
+    s.bank = clamp(s.bank, -f.bankLimit, f.bankLimit);
+    this.yawRate = mix(this.yawRate, controls.yaw * f.yawRate, 2.8, dt);
 
     if (s.grounded) {
       s.stalled = false;
-      this.stepGround(dt, controls);
+      this.stepGround(dt, controls, burner);
       this.setQuaternion();
       return;
     }
 
-    const flapDrag = s.flaps * 7;
-    const gearDrag = s.gearDown ? 6 : 0;
-    const bankDrag = Math.abs(Math.sin(s.bank)) * 6;
-    const climbDrag = Math.max(0, Math.sin(s.pitch)) * 55;
-    const diveGain = Math.max(0, -Math.sin(s.pitch)) * 40;
-    const desiredSpeed = clamp(JET.idleSpeed + s.spool * JET.thrustSpeed - flapDrag - gearDrag - bankDrag - climbDrag + diveGain, 24, 150);
-    s.speed = mix(s.speed, desiredSpeed, 0.18, dt);
+    const flapDrag = s.flaps * f.flapDrag;
+    const gearDrag = s.gearDown ? f.gearDrag : 0;
+    const bankDrag = Math.abs(Math.sin(s.bank)) * f.bankDrag;
+    const climbDrag = Math.max(0, Math.sin(s.pitch)) * f.climbDrag;
+    const diveGain = Math.max(0, -Math.sin(s.pitch)) * f.diveGain;
+    const thrust = f.idleSpeed + s.spool * f.thrustSpeed + burner;
+    const desiredSpeed = clamp(thrust - flapDrag - gearDrag - bankDrag - climbDrag + diveGain, f.minSpeed, f.maxSpeed);
+    const nextSpeed = mix(s.speed, desiredSpeed, f.speedRate, dt);
+    // A jet's acceleration is thrust-limited, so leaving the runway does not jump to the airborne target.
+    s.speed = f.maxAcceleration ? Math.min(nextSpeed, s.speed + f.maxAcceleration * dt) : nextSpeed;
 
-    const stallSpeed = JET.stallSpeed - s.flaps * JET.flapStallGain;
+    const stallSpeed = f.stallSpeed - s.flaps * f.flapStallGain;
     s.stalled = s.speed < stallSpeed && !s.grounded;
     const stallAmount = clamp((stallSpeed + 4 - s.speed) / 12, 0, 1);
     if (s.stalled) {
@@ -171,7 +186,7 @@ export class FlightController {
     const ground = this.groundAt(s.position.x, s.position.z) + 2.8;
     if (s.position.y <= ground) {
       s.position.y = ground;
-      const landable = this.heightAt(s.position.x, s.position.z) > 10.2 && s.gearDown && Math.abs(s.verticalSpeed) < JET.maxTouchdownSink && s.speed < JET.maxTouchdownSpeed && Math.abs(s.bank) < 0.3;
+      const landable = this.heightAt(s.position.x, s.position.z) > 10.2 && s.gearDown && Math.abs(s.verticalSpeed) < f.maxTouchdownSink && s.speed < f.maxTouchdownSpeed && Math.abs(s.bank) < 0.3;
       if (landable) {
         s.grounded = true;
         s.stalled = false;
@@ -188,11 +203,12 @@ export class FlightController {
     this.setQuaternion();
   }
 
-  stepGround(dt, controls) {
+  stepGround(dt, controls, burner = 0) {
     const s = this.state;
+    const f = this.type.flight;
     // Rolling resistance stops an idle aircraft. Full power allows a takeoff roll.
-    const targetSpeed = s.spool > 0.2 ? (s.spool - 0.2) * JET.groundThrust : 0;
-    s.speed = mix(s.speed, targetSpeed, s.spool < 0.2 ? 0.35 : 0.15, dt);
+    const targetSpeed = s.spool > 0.2 ? (s.spool - 0.2) * f.groundThrust + burner : 0;
+    s.speed = mix(s.speed, targetSpeed, s.spool < 0.2 ? 0.35 : f.groundRate, dt);
     s.heading = ((s.heading + (controls.yaw + controls.roll * 0.6) * dt * 0.35) % TAU + TAU) % TAU;
     s.bank = mix(s.bank, 0, 5, dt);
     s.pitch = mix(s.pitch, Math.max(0, controls.pitch) * 0.12, 3, dt);
@@ -201,7 +217,7 @@ export class FlightController {
     s.position.z -= Math.cos(s.heading) * distance;
     s.position.y = this.groundAt(s.position.x, s.position.z) + 2.8;
     s.distance += distance;
-    if (s.speed > JET.rotateSpeed - s.flaps * JET.flapStallGain && controls.pitch > 0.15) {
+    if (s.speed > f.rotateSpeed - s.flaps * f.flapStallGain && controls.pitch > 0.15) {
       s.grounded = false;
       s.pitch = 0.10;
       s.verticalSpeed = 2.5;
@@ -233,7 +249,23 @@ export function jetSound(spool, speed = 0) {
   };
 }
 
-/** Synthesized twin-turbofan engines and slipstream. Call start() from a user gesture. */
+/** Mix levels for the fighter's single turbofan at a spool (0–1), airspeed (m/s) and afterburner state. */
+export function fighterSound(spool, speed = 0, afterburner = false) {
+  const n1 = clamp(Number(spool) || 0, 0, 1);
+  const airspeed = clamp(Number(speed) || 0, 0, 285);
+  return {
+    whine: 1100 + n1 * 3100,          // compressor tone, Hz
+    whineGain: 0.03 + n1 * 0.03,
+    roar: 220 + n1 * 900,             // exhaust band centre, Hz
+    roarGain: 0.16 + n1 * n1 * 0.4,
+    rumbleGain: 0.14 + n1 * n1 * 0.3,
+    burnerGain: afterburner ? 0.55 : 0, // the reheat adds a deep, ragged rumble
+    wind: clamp(airspeed / 700, 0.015, 0.32),
+    master: 0.6 + n1 * 0.3 + (afterburner ? 0.08 : 0),
+  };
+}
+
+/** Synthesized engines and slipstream for the active aircraft. Call start() from a user gesture. */
 export class FlightAudio {
   constructor() {
     this.enabled = false;
@@ -264,19 +296,34 @@ export class FlightAudio {
         source.start();
         return source;
       };
-      const voice = (input, type, frequency, q) => {
+      // Each aircraft's engine voices run on their own bus so switching type is a gain change.
+      this.jetBus = ctx.createGain();
+      this.jetBus.connect(this.master);
+      this.fighterBus = ctx.createGain();
+      this.fighterBus.gain.value = 0;
+      this.fighterBus.connect(this.master);
+      const voice = (input, type, frequency, q, bus = this.jetBus) => {
         const filter = ctx.createBiquadFilter();
         filter.type = type;
         filter.frequency.value = frequency;
         filter.Q.value = q;
         const gain = ctx.createGain();
         gain.gain.value = 0;
-        input.connect(filter).connect(gain).connect(this.master);
+        input.connect(filter).connect(gain).connect(bus);
         return { filter, gain };
       };
       const exhaust = noise(false);
       this.roar = voice(exhaust, 'bandpass', 400, 0.7);
       this.rumble = voice(exhaust, 'lowpass', 140, 0.5);
+      this.fighter = {
+        roar: voice(exhaust, 'bandpass', 400, 0.7, this.fighterBus),
+        rumble: voice(exhaust, 'lowpass', 150, 0.5, this.fighterBus),
+        whine: ctx.createOscillator(),
+      };
+      this.fighter.whine.type = 'sine';
+      this.fighter.whine.frequency.value = 1100;
+      this.fighter.whine.start();
+      this.fighter.whineVoice = voice(this.fighter.whine, 'highpass', 700, 0.4, this.fighterBus);
       // Two slightly detuned compressors beat against each other, like a real twin.
       this.whines = [1, 1.012].map(ratio => {
         const osc = ctx.createOscillator();
@@ -292,7 +339,9 @@ export class FlightAudio {
       this.fanVoice = voice(this.fan, 'lowpass', 520, 0.6);
       this.wind = ctx.createGain();
       this.wind.gain.value = 0.05;
-      noise(true).connect(this.wind).connect(this.master);
+      const slipstream = noise(true);
+      slipstream.connect(this.wind).connect(this.master);
+      this.fighter.burner = voice(slipstream, 'lowpass', 90, 0.9, this.fighterBus);
     }
     this.enabled = true;
     try { await this.context.resume(); } catch { this.enabled = false; }
@@ -312,6 +361,21 @@ export class FlightAudio {
   update(state) {
     if (!this.context || !this.master) return;
     const now = this.context.currentTime;
+    const fighter = state.aircraft === 'fighter';
+    this.jetBus.gain.setTargetAtTime(fighter ? 0 : 1, now, 0.08);
+    this.fighterBus.gain.setTargetAtTime(fighter ? 1 : 0, now, 0.08);
+    if (fighter) {
+      const f = fighterSound(state.spool ?? state.throttle, state.speed, state.afterburner), v = this.fighter;
+      v.whine.frequency.setTargetAtTime(f.whine, now, 0.25);
+      v.whineVoice.gain.gain.setTargetAtTime(f.whineGain, now, 0.25);
+      v.roar.filter.frequency.setTargetAtTime(f.roar, now, 0.3);
+      v.roar.gain.gain.setTargetAtTime(f.roarGain, now, 0.3);
+      v.rumble.gain.gain.setTargetAtTime(f.rumbleGain, now, 0.3);
+      v.burner.gain.gain.setTargetAtTime(f.burnerGain, now, 0.2);
+      this.wind.gain.setTargetAtTime(f.wind, now, 0.3);
+      this.master.gain.setTargetAtTime(this.enabled && !state.crashed ? f.master : 0, now, 0.15);
+      return;
+    }
     const mix = jetSound(state.spool ?? state.throttle, state.speed);
     for (const { osc, ratio, gain } of this.whines) {
       osc.frequency.setTargetAtTime(mix.whine * ratio, now, 0.25);
