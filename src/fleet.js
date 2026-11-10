@@ -38,6 +38,7 @@ const jet = {
     yawRate: 0.19,
     pitchLimits: [-0.56, 0.48],
     bankLimit: 1.14,
+    aerobatic: false,      // pitch and bank stay inside the limits above
     autopilotGain: 1,
     groundThrust: 95,
     groundRate: 0.15,
@@ -84,8 +85,9 @@ const fighter = {
     rollRate: 3.2,
     rollResponse: 8,
     yawRate: 0.35,
-    pitchLimits: [-0.8, 0.75],
-    bankLimit: 1.45,       // ~83°, an ~8 g sustained turn
+    pitchLimits: null,     // unrestricted: loops, rolls and inverted flight
+    bankLimit: null,
+    aerobatic: true,       // free body-axis attitude once airborne
     autopilotGain: 0.38,   // the altitude hold is gentler at fighter speeds
     groundThrust: 115,
     groundRate: 0.09,

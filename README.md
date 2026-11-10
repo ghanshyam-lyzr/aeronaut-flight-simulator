@@ -15,6 +15,8 @@ The development server binds to `0.0.0.0:5173`. Production build: `npm run build
 
 The simulator opens airborne with flight assist holding heading and altitude. Select **Take control**, or use the flight keys to disengage assistance. The **Explore** menu also offers a runway start and the aircraft choice: the Vela J8 or the Arolla F7. Changing aircraft saves the current flight and starts the new one in the air; restarts and runway starts keep the chosen aircraft, and the choice is remembered in this browser.
 
+The Arolla F7 has no pitch or bank limits: hold the stick for continuous loops and rolls, and it stays inverted or vertical when you let go. Flight assist from any attitude first rolls and pitches the short way back to level, at no more than about 70°/s, then holds the heading and altitude it has there.
+
 - **W / S** or **up / down arrows**: nose down / up.
 - **A / D** or **left / right arrows**: bank.
 - **Q / E**: rudder.
