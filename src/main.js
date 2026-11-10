@@ -171,8 +171,10 @@ function drawMap(){mapCtx.drawImage(mapTexture,0,0,480,310);mapCtx.strokeStyle='
 let lastAssist=true,lastUi=0,lastFps=performance.now(),fpsFrames=0;
 function updateUI(time){
  const s=flight.state;const speed=s.speed*1.94384,alt=s.position.y*3.28084,heading=(s.heading*180/Math.PI+360)%360,vsi=Math.round(s.verticalSpeed*196.85/10)*10;
+ $('g-force').textContent=(Math.abs(s.gForce)<0.05?0:s.gForce).toFixed(1);$('g-force-instrument').classList.toggle('overload',s.gForce>6);
  $('speed').textContent=Math.round(speed);$('altitude').textContent=Math.round(alt).toLocaleString();$('agl').textContent=Math.round((s.position.y-world.heightAt(s.position.x,s.position.z))*3.28084).toLocaleString();$('heading').textContent=String(Math.round(heading)%360).padStart(3,'0');$('vertical-speed').textContent=`${vsi>0?'+':''}${vsi}`;$('vertical-state').textContent=Math.abs(vsi)<50?'Level flight':vsi>0?'Climbing':'Descending';$('heading-cardinal').textContent=['N','NE','E','SE','S','SW','W','NW'][Math.round(heading/45)%8];$('throttle-value').textContent=`${Math.round(s.throttle*100)}%${s.afterburner?' · AB':''}`;$('throttle-slider').value=s.throttle*100;$('gear-state').textContent=s.gearDown?'DOWN':'UP';$('gear-btn').classList.toggle('active',s.gearDown);$('flaps-state').textContent=`${s.flaps*15}°`;$('flaps-btn').classList.toggle('active',s.flaps>0);$('flight-timer').textContent=formatTime(s.flightTime);$('map-distance').textContent=`${(s.distance/1852).toFixed(1)} NM`;$('speed-marker').style.left=`${Math.min(96,speed/flight.type.speedScale*100)}%`;$('attitude-inner').style.transform=`rotate(${-s.bank*180/Math.PI}deg) translateY(${s.pitch*45}px)`;
  if(lastAssist!==s.autopilot){lastAssist=s.autopilot;updateAssist();}
+ $('gear-warning').hidden=!flight.gearWarning;
  const stalled=s.stalled&&!s.grounded&&!s.crashed&&!paused&&!dialog.open;
  let notice='';const agl=s.position.y-world.heightAt(s.position.x,s.position.z);if(stalled)notice='STALL · Add power and regain airspeed';else if(agl<100&&!s.grounded&&!s.crashed)notice='TERRAIN · Pull up';else if(s.grounded)notice='On the ground · Add power and pitch up to take off';
  if(notice!==lastNotice){lastNotice=notice;$('flight-notice').textContent=notice;$('flight-notice').classList.toggle('visible',!!notice);$('flight-notice').classList.toggle('warning',stalled||agl<100);$('flight-notice').classList.toggle('stall',stalled);}
@@ -207,7 +209,7 @@ function tick(){
   trailClock+=dt;if(trailClock>1){trailClock=0;flightTrail.push({x:flight.state.position.x,z:flight.state.position.z});if(flightTrail.length>2000)flightTrail.shift();}
  }
  aircraft.group.position.copy(flight.state.position);aircraft.group.quaternion.copy(flight.state.quaternion);aircraft.update(canFly?dt:dt*.15,flight.state.throttle,{...flight.state,time:frameTime});
- if(canFly||sceneDirty||orbitDrag){world.update(dt,frameTime,flight.state.position);updateCamera(dt);renderer.render(scene,camera);sceneDirty=false;fpsFrames++;}audio.update({...flight.state,stalled:canFly&&flight.state.stalled,throttle:paused?0:flight.state.throttle,speed:paused?0:flight.state.speed,crashed:flight.state.crashed||paused});
+ if(canFly||sceneDirty||orbitDrag){world.update(dt,frameTime,flight.state.position);updateCamera(dt);renderer.render(scene,camera);sceneDirty=false;fpsFrames++;}audio.update({...flight.state,stalled:canFly&&flight.state.stalled,throttle:paused?0:flight.state.throttle,speed:paused?0:flight.state.speed,crashed:flight.state.crashed||paused},flight.gearWarning);
  if(frameTime-lastUi>.12){lastUi=frameTime;updateUI(frameTime);}const now=performance.now();if(now-lastFps>1500){if(canFly)$('fps-label').textContent=`${Math.round(fpsFrames/((now-lastFps)/1000))} FPS`;fpsFrames=0;lastFps=now;}
 }
 function resize(){sceneDirty=true;const w=worldContainer.clientWidth,h=worldContainer.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);initialCamera=true;}

@@ -21,6 +21,9 @@ export class FlightController {
     this.type = aircraftType(aircraft);
     this.state = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
     this.attitude = new THREE.Euler(0, 0, 0, 'YXZ');
+    this.previousVelocity = new THREE.Vector3();
+    this.acceleration = new THREE.Vector3();
+    this.aircraftUp = new THREE.Vector3();
     this.reset();
   }
 
@@ -39,6 +42,7 @@ export class FlightController {
       pitch: 0,
       bank: 0,
       verticalSpeed: 0,
+      gForce: 1,
       gearDown: false,
       flaps: 0,
       crashed: false,
@@ -79,6 +83,13 @@ export class FlightController {
   groundAt(x, z) {
     const height = this.heightAt(x, z);
     return Math.max(10, Number.isFinite(height) ? height : 0);
+  }
+
+  get gearWarning() {
+    const s = this.state;
+    // 1,000 feet is exactly 304.8 metres; both thresholds are exclusive.
+    return !s.gearDown && s.throttle < 0.2
+      && s.position.y < this.groundAt(s.position.x, s.position.z) + 304.8;
   }
 
   toggleAutopilot() {
@@ -122,6 +133,8 @@ export class FlightController {
   step(dt, controls) {
     const s = this.state;
     const f = this.type.flight;
+    this.previousVelocity.set(0, 0, -s.speed).applyQuaternion(s.quaternion);
+    this.previousVelocity.y = s.verticalSpeed;
     s.flightTime += dt;
     s.throttle = clamp(s.throttle + controls.throttle * dt * f.throttleRate, 0, 1);
     // Engine response lags the lever, slowest near idle.
@@ -215,12 +228,23 @@ export class FlightController {
       s.distance += distance;
     }
 
+    if (!free) this.setQuaternion();
+    // Specific force along the aircraft's up axis, from its actual flight-path velocity.
+    // Quaternion axes stay continuous through vertical, knife-edge and inverted flight.
+    this.acceleration.set(0, 0, -s.speed).applyQuaternion(s.quaternion);
+    this.acceleration.y = s.verticalSpeed;
+    this.acceleration.sub(this.previousVelocity).divideScalar(dt);
+    this.acceleration.y += GRAVITY;
+    this.aircraftUp.set(0, 1, 0).applyQuaternion(s.quaternion);
+    s.gForce = this.acceleration.dot(this.aircraftUp) / GRAVITY;
+
     const ground = this.groundAt(s.position.x, s.position.z) + 2.8;
     if (s.position.y <= ground) {
       s.position.y = ground;
       const landable = this.heightAt(s.position.x, s.position.z) > 10.2 && s.gearDown && Math.abs(s.verticalSpeed) < f.maxTouchdownSink && s.speed < f.maxTouchdownSpeed && Math.abs(s.bank) < 0.3;
       if (landable) {
         s.grounded = true;
+        s.gForce = 1;
         s.stalled = false;
         s.verticalSpeed = 0;
         s.autopilot = false;
@@ -233,12 +257,12 @@ export class FlightController {
       }
     }
     if (free) this.readAttitude();
-    else this.setQuaternion();
   }
 
   stepGround(dt, controls, burner = 0) {
     const s = this.state;
     const f = this.type.flight;
+    s.gForce = 1;
     // Rolling resistance stops an idle aircraft. Full power allows a takeoff roll.
     const targetSpeed = s.spool > 0.2 ? (s.spool - 0.2) * f.groundThrust + burner : 0;
     s.speed = mix(s.speed, targetSpeed, s.spool < 0.2 ? 0.35 : f.groundRate, dt);
@@ -413,7 +437,7 @@ export function fighterSound(spool, speed = 0, afterburner = false) {
   };
 }
 
-/** Synthesized engines, slipstream and stall horn for the active aircraft. Call start() from a user gesture. */
+/** Synthesized engines, slipstream and warning horns for either aircraft. Start from a user gesture. */
 export class FlightAudio {
   constructor() {
     this.enabled = false;
@@ -431,6 +455,14 @@ export class FlightAudio {
       this.master = ctx.createGain();
       this.master.gain.value = 0;
       this.master.connect(ctx.destination);
+      this.gearHorn = ctx.createGain();
+      this.gearHorn.gain.value = 0;
+      this.gearHorn.connect(this.master);
+      const horn = ctx.createOscillator();
+      horn.type = 'square';
+      horn.frequency.value = 400;
+      horn.connect(this.gearHorn);
+      horn.start();
       const noise = (brown) => {
         const buffer = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
         const data = buffer.getChannelData(0);
@@ -537,13 +569,14 @@ export class FlightAudio {
     this.stallHorn = null;
   }
 
-  update(state) {
+  update(state, gearWarning = false) {
     if (!this.context || !this.master) return;
     const stalled = this.enabled && state.stalled && !state.grounded && !state.crashed;
     if (stalled && !this.stallActive) this.soundStallHorn();
     if (!stalled) this.stopStallHorn();
     this.stallActive = stalled;
     const now = this.context.currentTime;
+    this.gearHorn.gain.setTargetAtTime(this.enabled && !state.crashed && gearWarning ? 0.12 : 0, now, 0.03);
     const fighter = state.aircraft === 'fighter';
     this.jetBus.gain.setTargetAtTime(fighter ? 0 : 1, now, 0.08);
     this.fighterBus.gain.setTargetAtTime(fighter ? 1 : 0, now, 0.08);

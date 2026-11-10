@@ -8,7 +8,7 @@ Alpine Flight — a cinematic browser flight simulator whose landscape dominates
 2. Tone: cinematic aviation. The world carries the spectacle, while restrained flight instruments preserve visibility.
 3. Palette: custom neutral graphite hsl(210 8% 9%), elevated hsl(210 6% 14%), ivory hsl(60 9% 96%), signal hsl(77 88% 67%). Adapt Ocean Deep's alpine context into the 3D water and atmosphere; keep interface colors neutral.
 4. Type: DM Sans 400/500/600 for the interface; Barlow Condensed 400/500 for tabular telemetry. Restrict tracked uppercase to aviation instrument markings and wordmark.
-5. Layout: full viewport canvas, a 68px top bar, 16px outer gutters, 290px corner mission panel, a compact instrument strip at the bottom. Phone uses a minimal bar, 4-value telemetry and touch yoke.
+5. Layout: full viewport canvas, a 68px top bar, 16px outer gutters, 290px corner mission panel, a compact instrument strip at the bottom. Phone uses a minimal bar, a two-row telemetry grid and touch yoke.
 6. Details: 10px panels, 6px controls, one-pixel subdued instrument boundaries, opaque/translucent charcoal without backdrop blur, no ornamental gradients. Animated world and live telemetry; 160ms control transitions.
 7. Name: Alpine Flight.
 
@@ -16,4 +16,4 @@ World is procedural; all geographic and aircraft labels describe an original fic
 
 Final UI refinement: instrument labels use sentence case at 11px minimum. Brand uses DM Sans; telemetry uses Barlow Condensed. Controls are anchored around the full-screen world. On phones, the menu exposes Explore, Flight log, Controls, and Weather; the camera pulls back to fit the full aircraft wingspan.
 
-Stall warnings use a compact red banner with ivory DM Sans 600 text. Reserve hsl(0 78% 40%) and hsl(0 65% 25%) for the one-second warning flash; reduced-motion mode keeps the banner steady. Position the phone warning below the mission and navigation panels.
+Stall warnings use a compact red banner with ivory DM Sans 600 text. Reserve hsl(0 78% 40%) and hsl(0 65% 25%) for the one-second warning flash; reduced-motion mode keeps the banner steady. Position the phone warning below the mission and navigation panels and the separate GEAR banner.
