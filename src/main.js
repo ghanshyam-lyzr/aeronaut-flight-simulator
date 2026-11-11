@@ -10,6 +10,7 @@ import { createWorld } from './world.js';
 import { createAircraft, createCockpit } from './aircraft.js';
 import { FlightController, FlightAudio, FollowFrame } from './flight.js';
 import { FLEET, aircraftType } from './fleet.js';
+import { FlightInputs } from './controls.js';
 
 const icons = {Plane,SlidersHorizontal,Maximize,Minimize,VolumeX,Volume2,MapPin,ArrowUpRight,Sun,CloudSun,Cloud,ChevronDown,ChevronsUpDown,Navigation,Video,Camera,Map,Scan,Minus,Plus,CircleDot,RotateCcw,Pause,Play,Keyboard,Move,TriangleAlert,X,Check,Mountain,Compass,Wind,Menu};
 const refreshIcons = () => createIcons({icons,attrs:{'stroke-width':1.6}});
@@ -52,6 +53,20 @@ let paused=false, view='chase', hudVisible=true, frameTime=0, orbitAngle=0.45, o
 const keys=new Set();
 const touch={pitch:0,roll:0,throttle:0};
 const mouse={pitch:0,roll:0,active:false};
+const controls=new FlightInputs(performance.now()/1000);
+const throttlePointers=new globalThis.Map();
+// DOM timestamps retain the hold duration when rendering delays delivery of both events.
+function queueControls(now=performance.now()/1000){
+ const pressed=(...codes)=>codes.some(code=>keys.has(code))?1:0;
+ const inputs={pitch:(pressed('KeyS','ArrowDown')-pressed('KeyW','ArrowUp')+touch.pitch+(mouse.active?mouse.pitch:0))*(settings.invertPitch?-1:1),roll:pressed('KeyD','ArrowRight')-pressed('KeyA','ArrowLeft')+touch.roll+(mouse.active?mouse.roll:0),yaw:pressed('KeyE')-pressed('KeyQ'),throttle:pressed('ShiftLeft','ShiftRight')-pressed('ControlLeft','ControlRight')+touch.throttle};
+ // Manual intent disengages assist before the gradual onset, including very short taps.
+ if(Math.abs(inputs.pitch)+Math.abs(inputs.roll)+Math.abs(inputs.yaw)>.12)flight.state.autopilot=false;
+ controls.set(inputs,now);
+}
+function clearControls(){
+ keys.clear();touch.pitch=touch.roll=touch.throttle=0;mouse.pitch=mouse.roll=0;mouse.active=false;
+ throttlePointers.clear();resetYoke();controls.reset(performance.now()/1000);
+}
 const cameraPosition=new THREE.Vector3(),target=new THREE.Vector3(),offset=new THREE.Vector3();
 const horizontalQuat=new THREE.Quaternion(),horizontalEuler=new THREE.Euler();
 // An aerobatic aircraft is followed along its nose, so the outside cameras never flip at the top of a loop.
@@ -73,11 +88,11 @@ function setPaused(value){
  if(flight.state.crashed)return;
  paused=value;sceneDirty=true;$('pause-overlay').hidden=!paused;$('sim-status').textContent=paused?'Simulation paused':'Live simulation';
  $('pause-btn').setAttribute('aria-label',paused?'Resume flight':'Pause flight');iconButton('pause-btn',paused?'play':'pause');
- if(paused)keys.clear();
+ if(paused)clearControls();
 }
 function saveFlight(){const s=flight.state;if(s.flightTime<10)return;const entry={date:new Date().toISOString(),time:s.flightTime,distance:s.distance,maxAltitude:flightMaxAlt,aircraft:s.aircraft};savedFlights.unshift(entry);savedFlights=savedFlights.slice(0,20);try{localStorage.setItem('aeronaut-flights',JSON.stringify(savedFlights));}catch{}}
 let flightMaxAlt=flight.state.position.y;
-function restart(notify=true){saveFlight();flight.reset();flight.toggleAutopilot();flightMaxAlt=flight.state.position.y;flightTrail.length=0;sceneDirty=true;paused=false;lastCrash=false;initialCamera=true;keys.clear();$('pause-overlay').hidden=true;$('crash-overlay').hidden=true;$('sim-status').textContent='Live simulation';iconButton('pause-btn','pause');updateAssist();if(notify)toast('A fresh start. You have the skies.');}
+function restart(notify=true){saveFlight();flight.reset();flight.toggleAutopilot();flightMaxAlt=flight.state.position.y;flightTrail.length=0;sceneDirty=true;paused=false;lastCrash=false;initialCamera=true;clearControls();$('pause-overlay').hidden=true;$('crash-overlay').hidden=true;$('sim-status').textContent='Live simulation';iconButton('pause-btn','pause');updateAssist();if(notify)toast('A fresh start. You have the skies.');}
 // Every label that names the aircraft reads from the active fleet type.
 function updateAircraftLabels(){const t=flight.type;$('aircraft-name').textContent=t.name;$('aircraft-type').textContent=`${t.type} · ${t.registration}`;$('aircraft-badge').textContent=t.badge;}
 // Switching aircraft saves the current flight, then starts the new type fresh in the air with flight assist on.
@@ -110,7 +125,7 @@ const dialog=$('main-dialog');
 const dialogHead=title=>`<div class="dialog-head"><h2>${title}</h2><button class="icon-btn" data-close aria-label="Close dialog"><i data-lucide="x"></i></button></div>`;
 const toggleMarkup=(id,label,desc,value)=>`<div class="settings-row"><div><strong>${label}</strong><p>${desc}</p></div><button class="toggle" id="${id}" role="switch" aria-label="${label}" aria-checked="${value}"></button></div>`;
 function showDialog(type){
- keys.clear();
+ clearControls();
  let content='';
  if(type==='menu'){content=dialogHead('Flight deck')+`<div class="dialog-body"><button class="menu-link" data-next-dialog="explore">Explore the Alps <i data-lucide="arrow-up-right"></i></button><button class="menu-link" data-next-dialog="logbook">Flight log <i data-lucide="arrow-up-right"></i></button><button class="menu-link" data-next-dialog="controls">Flight controls <i data-lucide="arrow-up-right"></i></button><button class="menu-link" data-next-dialog="environment">Weather <i data-lucide="arrow-up-right"></i></button></div>`;}else if(type==='environment'){
  content=dialogHead('A change of atmosphere')+`<div class="dialog-body"><p>Find your favorite light. Weather presets change the atmosphere, sunlight, visibility, and water.</p><div class="weather-options">${Object.entries(weatherData).map(([id,w])=>`<button class="weather-option ${settings.weather===id?'selected':''}" data-weather="${id}"><i data-lucide="${w.icon}"></i><div><strong>${w.label}</strong><span>${id==='clear'?'Blue skies. Endless visibility.':id==='golden'?'Warm light across the mountains.':'A moody sky above the valley.'}</span></div><span></span></button>`).join('')}</div><p class="dialog-note">Simulated weather presets. This is a procedural alpine world.</p></div>`;
@@ -132,7 +147,7 @@ function showDialog(type){
  if(type==='settings'){
  $('graphics-quality').onchange=e=>setQuality(e.target.value);
  $('setting-assist').onclick=e=>{flight.toggleAutopilot();e.currentTarget.setAttribute('aria-checked',flight.state.autopilot);updateAssist();};
- for(const [id,key] of [['setting-invert','invertPitch'],['setting-mouse','mouseSteering']])$(id).onclick=e=>{settings[key]=!settings[key];e.currentTarget.setAttribute('aria-checked',settings[key]);saveSettings();};
+ for(const [id,key] of [['setting-invert','invertPitch'],['setting-mouse','mouseSteering']])$(id).onclick=e=>{settings[key]=!settings[key];clearControls();e.currentTarget.setAttribute('aria-checked',settings[key]);saveSettings();};
  $('setting-map').onclick=e=>{toggleMap();e.currentTarget.setAttribute('aria-checked',settings.showMap);};
  }
  if(type==='explore'){$('explore-start').onclick=()=>{restart();dialog.close();};$('runway-start').onclick=()=>{runwayStart();dialog.close();};dialog.querySelectorAll('[data-aircraft]').forEach(b=>b.onclick=()=>{if(setAircraft(b.dataset.aircraft))showDialog('explore');});}
@@ -142,22 +157,28 @@ dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoun
 function formatTime(t){const h=Math.floor(t/3600);return`${h?String(h).padStart(2,'0')+':':''}${String(Math.floor(t/60)%60).padStart(2,'0')}:${String(Math.floor(t)%60).padStart(2,'0')}`;}
 const handledKeys=['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','ShiftLeft','ShiftRight','ControlLeft','ControlRight','KeyW','KeyS','KeyA','KeyD','KeyQ','KeyE','KeyP','KeyC','KeyG','KeyF','KeyM','KeyH','KeyR'];
 window.addEventListener('keydown',e=>{
- if(dialog.open||(e.target instanceof HTMLInputElement&&e.target.type!=='range')||e.target instanceof HTMLSelectElement)return;
+ if(dialog.open||e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement)return;
  if(handledKeys.includes(e.code))e.preventDefault();
- keys.add(e.code);if(e.repeat)return;
+ if(e.repeat)return;
+ if(!paused&&!flight.state.crashed){keys.add(e.code);queueControls(e.timeStamp/1000);}
  ({KeyP:()=>setPaused(!paused),Space:toggleAssist,KeyC:cycleView,KeyG:gear,KeyF:flaps,KeyM:toggleMap,KeyH:toggleHud,KeyR:()=>restart()})[e.code]?.();
 });
-window.addEventListener('keyup',e=>keys.delete(e.code));window.addEventListener('blur',()=>{keys.clear();touch.pitch=0;touch.roll=0;touch.throttle=0;mouse.active=false;});
+window.addEventListener('keyup',e=>{keys.delete(e.code);queueControls(e.timeStamp/1000);});window.addEventListener('blur',clearControls);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)clearControls();});
 let orbitDrag=null;
-worldContainer.addEventListener('pointerdown',e=>{if(dialog.open)return;worldContainer.focus();if(view==='orbit'){orbitDrag={x:e.clientX,y:e.clientY};worldContainer.setPointerCapture(e.pointerId);}else if(settings.mouseSteering){mouse.active=true;worldContainer.setPointerCapture(e.pointerId);}});
-worldContainer.addEventListener('pointermove',e=>{if(orbitDrag){sceneDirty=true;orbitAngle-=(e.clientX-orbitDrag.x)*.008;orbitHeight=THREE.MathUtils.clamp(orbitHeight+(e.clientY-orbitDrag.y)*.09,-8,35);orbitDrag={x:e.clientX,y:e.clientY};}else if(mouse.active){const r=worldContainer.getBoundingClientRect();mouse.roll=THREE.MathUtils.clamp((e.clientX-r.left-r.width/2)/(r.width*.3),-1,1);mouse.pitch=THREE.MathUtils.clamp(-(e.clientY-r.top-r.height/2)/(r.height*.3),-1,1);}});
-const stopPointer=()=>{orbitDrag=null;mouse.active=false;mouse.pitch=0;mouse.roll=0;};worldContainer.addEventListener('pointerup',stopPointer);worldContainer.addEventListener('pointercancel',stopPointer);
+worldContainer.addEventListener('pointerdown',e=>{if(dialog.open||paused||flight.state.crashed)return;worldContainer.focus();if(view==='orbit'){orbitDrag={x:e.clientX,y:e.clientY};worldContainer.setPointerCapture(e.pointerId);}else if(settings.mouseSteering){mouse.active=true;worldContainer.setPointerCapture(e.pointerId);}});
+worldContainer.addEventListener('pointermove',e=>{if(orbitDrag){sceneDirty=true;orbitAngle-=(e.clientX-orbitDrag.x)*.008;orbitHeight=THREE.MathUtils.clamp(orbitHeight+(e.clientY-orbitDrag.y)*.09,-8,35);orbitDrag={x:e.clientX,y:e.clientY};}else if(mouse.active){const r=worldContainer.getBoundingClientRect();mouse.roll=THREE.MathUtils.clamp((e.clientX-r.left-r.width/2)/(r.width*.3),-1,1);mouse.pitch=THREE.MathUtils.clamp(-(e.clientY-r.top-r.height/2)/(r.height*.3),-1,1);queueControls(e.timeStamp/1000);}});
+const stopPointer=e=>{orbitDrag=null;mouse.active=false;mouse.pitch=0;mouse.roll=0;queueControls(e.timeStamp/1000);};worldContainer.addEventListener('pointerup',stopPointer);worldContainer.addEventListener('pointercancel',stopPointer);worldContainer.addEventListener('lostpointercapture',stopPointer);
 worldContainer.addEventListener('wheel',e=>{if(view==='orbit'){e.preventDefault();sceneDirty=true;orbitDistance=THREE.MathUtils.clamp(orbitDistance+e.deltaY*.025,18,85);}},{passive:false});
 const yoke=$('touch-yoke'),knob=$('yoke-knob');let yokeId=null;
-function yokeMove(e){const r=yoke.getBoundingClientRect(),dx=THREE.MathUtils.clamp((e.clientX-r.left-r.width/2)/39,-1,1),dy=THREE.MathUtils.clamp((e.clientY-r.top-r.height/2)/39,-1,1);touch.roll=dx;touch.pitch=-dy;knob.style.transform=`translate(${dx*29}px,${dy*29}px)`;}
-yoke.addEventListener('pointerdown',e=>{e.preventDefault();yokeId=e.pointerId;yoke.setPointerCapture(e.pointerId);yokeMove(e);});yoke.addEventListener('pointermove',e=>{if(e.pointerId===yokeId)yokeMove(e);});
-function resetYoke(){yokeId=null;touch.pitch=0;touch.roll=0;knob.style.transform='';}yoke.addEventListener('pointerup',resetYoke);yoke.addEventListener('pointercancel',resetYoke);
-for(const [id,v]of [['throttle-up',1],['throttle-down',-1]]){const b=$(id);b.onpointerdown=e=>{e.preventDefault();b.setPointerCapture(e.pointerId);touch.throttle=v;};b.onpointerup=()=>touch.throttle=0;b.onpointercancel=()=>touch.throttle=0;}
+function yokeMove(e){const r=yoke.getBoundingClientRect(),dx=THREE.MathUtils.clamp((e.clientX-r.left-r.width/2)/39,-1,1),dy=THREE.MathUtils.clamp((e.clientY-r.top-r.height/2)/39,-1,1);touch.roll=dx;touch.pitch=-dy;knob.style.transform=`translate(${dx*29}px,${dy*29}px)`;queueControls(e.timeStamp/1000);}
+yoke.addEventListener('pointerdown',e=>{e.preventDefault();if(yokeId!==null||paused||dialog.open||flight.state.crashed)return;yokeId=e.pointerId;yoke.setPointerCapture(e.pointerId);yokeMove(e);});yoke.addEventListener('pointermove',e=>{if(e.pointerId===yokeId)yokeMove(e);});
+function resetYoke(e){yokeId=null;touch.pitch=0;touch.roll=0;knob.style.transform='';queueControls(e?e.timeStamp/1000:undefined);}for(const event of ['pointerup','pointercancel','lostpointercapture'])yoke.addEventListener(event,e=>{if(e.pointerId===yokeId)resetYoke(e);});
+for(const [id,v]of [['throttle-up',1],['throttle-down',-1]]){
+ const b=$(id),sync=e=>{touch.throttle=THREE.MathUtils.clamp([...throttlePointers.values()].reduce((a,b)=>a+b,0),-1,1);queueControls(e.timeStamp/1000);};
+ b.onpointerdown=e=>{e.preventDefault();if(paused||dialog.open||flight.state.crashed)return;b.setPointerCapture(e.pointerId);throttlePointers.set(e.pointerId,v);sync(e);};
+ for(const event of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(event,e=>{throttlePointers.delete(e.pointerId);sync(e);});
+}
 
 // The map uses the same height function as the world and flight collisions.
 const mapCanvas=$('mini-map'),mapCtx=mapCanvas.getContext('2d');mapCanvas.width=480;mapCanvas.height=310;
@@ -202,14 +223,12 @@ function updateCamera(dt){
 }
 const clock=new THREE.Clock();
 function tick(){
- requestAnimationFrame(tick);const dt=Math.min(clock.getDelta(),.07);frameTime+=dt;
+ requestAnimationFrame(tick);const dt=Math.min(clock.getDelta(),.25);frameTime+=dt;
  const canFly=!paused&&!dialog.open&&!flight.state.crashed;
  if(canFly){
-  const pressed=(...k)=>k.some(v=>keys.has(v))?1:0;
-  const inputs={pitch:(pressed('KeyS','ArrowDown')-pressed('KeyW','ArrowUp')+touch.pitch+(mouse.active?mouse.pitch:0))*(settings.invertPitch?-1:1),roll:pressed('KeyD','ArrowRight')-pressed('KeyA','ArrowLeft')+touch.roll+(mouse.active?mouse.roll:0),yaw:pressed('KeyE')-pressed('KeyQ'),throttle:pressed('ShiftLeft','ShiftRight')-pressed('ControlLeft','ControlRight')+touch.throttle};
-  flight.update(dt,inputs);flightMaxAlt=Math.max(flightMaxAlt,flight.state.position.y);
+  controls.advance(performance.now()/1000,(step,inputs)=>flight.update(step,inputs));flightMaxAlt=Math.max(flightMaxAlt,flight.state.position.y);
   trailClock+=dt;if(trailClock>1){trailClock=0;flightTrail.push({x:flight.state.position.x,z:flight.state.position.z});if(flightTrail.length>2000)flightTrail.shift();}
- }
+ }else controls.reset(performance.now()/1000);
  aircraft.group.position.copy(flight.state.position);aircraft.group.quaternion.copy(flight.state.quaternion);aircraft.update(canFly?dt:dt*.15,flight.state.throttle,{...flight.state,time:frameTime});
  if(canFly||sceneDirty||orbitDrag){world.update(dt,frameTime,flight.state.position);updateCamera(dt);renderer.render(scene,camera);sceneDirty=false;fpsFrames++;}audio.update({...flight.state,stalled:canFly&&flight.state.stalled,throttle:paused?0:flight.state.throttle,speed:paused?0:flight.state.speed,crashed:flight.state.crashed||paused},flight.gearWarning);
  if(frameTime-lastUi>.12){lastUi=frameTime;updateUI(frameTime);}const now=performance.now();if(now-lastFps>1500){if(canFly)$('fps-label').textContent=`${Math.round(fpsFrames/((now-lastFps)/1000))} FPS`;fpsFrames=0;lastFps=now;}
