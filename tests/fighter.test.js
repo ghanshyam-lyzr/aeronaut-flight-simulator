@@ -12,15 +12,15 @@ function fly(flight, seconds, controls = {}) {
 const knots = metres => metres * 1.94384;
 const fighter = () => new FlightController(() => 78, 'fighter');
 
-test('fleet offers the Vela J8 by default and the fighter, with consistent labels', () => {
-  assert.deepEqual(Object.keys(FLEET), ['jet', 'fighter']);
+test('fleet retains the Vela J8 default and consistent aircraft labels', () => {
+  for (const id of ['jet', 'fighter', 'helicopter']) assert.equal(FLEET[id].id, id);
   assert.equal(aircraftType('nope').id, 'jet');
   assert.equal(aircraftType(undefined).name, 'Vela J8');
   for (const type of Object.values(FLEET)) {
     for (const key of ['name', 'type', 'registration', 'badge', 'summary', 'choice', 'help', 'runwayHint']) assert.ok(type[key], `${type.id}.${key}`);
     assert.ok(type.summary.startsWith(type.name));
-    assert.equal(Object.keys(type.flight).sort().join(), Object.keys(FLEET.jet.flight).sort().join());
   }
+  assert.equal(Object.keys(FLEET.fighter.flight).sort().join(), Object.keys(FLEET.jet.flight).sort().join());
   assert.equal(new FlightController(() => 78).state.aircraft, 'jet');
 });
 

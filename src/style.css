@@ -29,3 +29,9 @@
 
 .gear-warning{position:absolute;top:66px;left:50%;transform:translateX(-50%);padding:8px 14px;background:var(--panel);color:var(--danger);border:1px solid var(--danger);border-radius:6px;font-family:var(--numbers);font-size:20px;font-weight:500;line-height:1.1;letter-spacing:1.5px}
 @media(max-width:550px){.gear-warning{top:214px}}
+
+/* Helicopter controls keep the same Alpine Flight instrument vocabulary. */
+.aircraft-controls button:disabled{cursor:default;color:var(--subtle)}
+.touch-yaw{pointer-events:auto;position:absolute;left:116px;top:30px;display:flex;gap:6px}
+.touch-yaw button{width:34px;height:39px;border-radius:6px;background:var(--panel);border:1px solid var(--border);color:var(--foreground);font-size:22px;touch-action:none}
+@media(max-width:550px){.mission-action{gap:4px}.mission-action.rotorcraft>span:after{content:"Hover hold"}.mission-action.rotorcraft.manual>span:after{content:"Manual"}.touch-throttle{min-width:48px}}

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 import { createFighter } from './fighter.js';
+import { createHelicopter, createHelicopterCockpit } from './helicopter.js';
 import { aircraftType } from './fleet.js';
 
 const clamp = THREE.MathUtils.clamp;
@@ -11,7 +12,7 @@ export const AIRCRAFT = { name: 'Vela J8', registration: 'A-VJ08' };
 
 /** Builds the 3D model for a fleet id: the Vela J8 by default, or the Arolla F7 fighter. */
 export function createAircraft(type = 'jet') {
-  return type === 'fighter' ? createFighter() : createVela();
+  return type === 'helicopter' ? createHelicopter() : type === 'fighter' ? createFighter() : createVela();
 }
 
 // An original light twin jet, modelled in metres; the nose points down local -Z.
@@ -427,6 +428,7 @@ function createVela() {
 
 // Camera-local cockpit. Attach directly to the active camera; no animation loop is needed.
 export function createCockpit(type = 'jet') {
+  if (type === 'helicopter') return createHelicopterCockpit();
   const fighter = type === 'fighter';
   const info = aircraftType(type);
   const cockpit = new THREE.Group();
