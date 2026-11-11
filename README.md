@@ -40,3 +40,4 @@ The **Laret H4** starts in a zero-airspeed hover with its rotors at flight RPM. 
 Clear, golden-hour, and overcast presets affect the sky, sunlight, fog, clouds, and water. Graphics quality controls render resolution, terrain detail, tree density, clouds, and shadows. High quality works best with a hardware-accelerated WebGL 2 browser. The flight log and preferences are saved locally in the current browser.
 
 All scenery, aircraft geometry, textures, and sound are generated in code. The world is inspired by the Swiss Alps; it is not a real geospatial dataset. Jet cockpit face textures are decorative; the helicopter panel and the HUD carry live flight data. Weather presets are simulated. No external imagery or model assets are used.
+Merge-without-checks probe, 2026-11-11.
