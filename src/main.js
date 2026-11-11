@@ -38,7 +38,9 @@ renderer.shadowMap.enabled = settings.quality !== 'low';
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 worldContainer.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(54,worldContainer.clientWidth/worldContainer.clientHeight,.1,65000);
+// A metre still clears the cockpit, and gives the distant lake/shore ten times
+// the depth precision of a 10 cm near plane, reducing shoreline depth fighting.
+const camera = new THREE.PerspectiveCamera(54,worldContainer.clientWidth/worldContainer.clientHeight,1,65000);
 scene.add(camera);
 const world = createWorld(scene,renderer);
 let aircraft = createAircraft(settings.aircraft);
