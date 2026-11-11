@@ -114,7 +114,7 @@ function setAircraft(id){
  camera.remove(cockpit);disposeObject(cockpit);cockpit=createCockpit(type.id);camera.add(cockpit);cockpit.visible=view==='cockpit';
  restart(false);updateAircraftLabels();toast(`${type.name} ready · a fresh start in the air`);return true;
 }
-function runwayStart(){restart(false);flight.runwayStart(900,80.8,-1350);updateAssist();initialCamera=true;sceneDirty=true;toast(flight.type.runwayHint);}
+function runwayStart(){restart(false);flight.runwayStart(900,world.heightAt(900,-1350)+(flight.type.groundClearance??2.8),-1350);updateAssist();initialCamera=true;sceneDirty=true;toast(flight.type.runwayHint);}
 function updateAssist(){const a=flight.state.autopilot;document.querySelector('.mission-action').classList.toggle('manual',!a);document.querySelector('.mission-action').classList.toggle('rotorcraft',!!flight.type.flight.rotorcraft);$('assist-status').textContent=a?(flight.type.flight.rotorcraft?'Hover hold':'Flight assist enabled'):'Manual flight';$('take-control').innerHTML=`${a?'Take control':'Enable assist'} <i data-lucide="arrow-up-right"></i>`;refreshIcons();}
 function toggleAssist(){flight.toggleAutopilot();updateAssist();toast(flight.state.autopilot?(flight.type.flight.rotorcraft?'Hover hold · braking to hold position, altitude and heading':'Flight assist on · holding altitude and heading'):(flight.type.flight.rotorcraft?'Manual flight · cyclic to move, collective to climb or descend':'You have control · W/S to pitch, A/D to bank'));}
 function setView(value){sceneDirty=true;view=value;aircraft.setCockpit(view==='cockpit');if(cockpit)cockpit.visible=view==='cockpit';$('camera-label').textContent=({chase:'Chase camera',cockpit:'Cockpit view',orbit:'Orbit camera'})[view];initialCamera=true;toast(`${$('camera-label').textContent}${view==='orbit'?' · drag to look around':''}`);}
@@ -224,20 +224,21 @@ function updateUI(time){
  if(settings.showMap)drawMap();
 }
 function updateCamera(dt){
- const s=flight.state;horizontalEuler.set(0,-s.heading,0);horizontalQuat.setFromEuler(horizontalEuler);
+ const s=flight.state,scale=flight.type.cameraScale??1;horizontalEuler.set(0,-s.heading,0);horizontalQuat.setFromEuler(horizontalEuler);
  const heli=!!flight.type.flight.rotorcraft,free=flight.type.flight.aerobatic,frame=free?(initialCamera?followFrame.reset(s.quaternion):followFrame.update(s.quaternion,dt,s.bodyRates.pitch)):horizontalQuat;
  camera.up.set(0,1,0);if(free)camera.up.applyQuaternion(frame);
  if(view==='cockpit'){
   cockpit.userData.fit?.(camera.aspect);
-  offset.set(0,heli ? 0.65 : 1.05,heli?-1.25:-1.8).applyQuaternion(s.quaternion);camera.position.copy(s.position).add(offset);camera.quaternion.copy(s.quaternion);camera.fov=67;
+  offset.fromArray(flight.type.cockpitOffset??[0,heli?0.65:1.05,heli?-1.25:-1.8]).applyQuaternion(s.quaternion);camera.position.copy(s.position).add(offset);camera.quaternion.copy(s.quaternion);camera.fov=67;
  }else{
-  if(view==='orbit')offset.set(Math.sin(orbitAngle)*orbitDistance,orbitHeight,Math.cos(orbitAngle)*orbitDistance);
-  else {const portraitFactor=THREE.MathUtils.clamp(1.2/camera.aspect,1,2.3);offset.set(0,(heli?6.2:8.3)*portraitFactor,(heli?19:23)*portraitFactor);}
+  if(view==='orbit')offset.set(Math.sin(orbitAngle)*orbitDistance,orbitHeight,Math.cos(orbitAngle)*orbitDistance).multiplyScalar(scale*(heli?1:THREE.MathUtils.clamp(1.2/camera.aspect,1,2.3)));
+  else {const portraitFactor=THREE.MathUtils.clamp(1.2/camera.aspect,1,2.3);offset.set(0,(heli?6.2:8.3)*portraitFactor,(heli?19:23)*portraitFactor).multiplyScalar(scale);}
   offset.applyQuaternion(frame);cameraPosition.copy(s.position).add(offset);
   // Chase stays on the heading centerline; world-space lag drifts sideways in turns.
   if(view==='chase')camera.position.copy(cameraPosition);
   else camera.position.lerp(cameraPosition,initialCamera?1:1-Math.exp(-dt*4));
-  target.set(0,view==='orbit'?0:-.1,view==='orbit'?0:-(heli?1.5:8)*THREE.MathUtils.clamp(1.2/camera.aspect,1,2.3)).applyQuaternion(frame).add(s.position);camera.lookAt(target);camera.fov=view==='orbit'?52:53;
+  if(view==='orbit'&&s.grounded&&flight.type.id==='airliner')camera.position.y=Math.max(camera.position.y,world.heightAt(camera.position.x,camera.position.z)+1.3);
+  target.set(0,view==='orbit'?0:-.1,view==='orbit'?0:-(heli?1.5:8)*scale*THREE.MathUtils.clamp(1.2/camera.aspect,1,2.3)).applyQuaternion(frame).add(s.position);camera.lookAt(target);camera.fov=view==='orbit'?52:53;
  }
  camera.updateProjectionMatrix();initialCamera=false;
 }

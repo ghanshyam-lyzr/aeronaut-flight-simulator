@@ -250,7 +250,7 @@ export class FlightController {
     this.aircraftUp.set(0, 1, 0).applyQuaternion(s.quaternion);
     s.gForce = this.acceleration.dot(this.aircraftUp) / GRAVITY;
 
-    const ground = this.groundAt(s.position.x, s.position.z) + 2.8;
+    const ground = this.groundAt(s.position.x, s.position.z) + (this.type.groundClearance ?? 2.8);
     if (s.position.y <= ground) {
       s.position.y = ground;
       const landable = this.heightAt(s.position.x, s.position.z) > 10.2 && s.gearDown && Math.abs(s.verticalSpeed) < f.maxTouchdownSink && s.speed < f.maxTouchdownSpeed && Math.abs(s.bank) < 0.3;
@@ -277,14 +277,15 @@ export class FlightController {
     s.gForce = 1;
     // Rolling resistance stops an idle aircraft. Full power allows a takeoff roll.
     const targetSpeed = s.spool > 0.2 ? (s.spool - 0.2) * f.groundThrust + burner : 0;
-    s.speed = mix(s.speed, targetSpeed, s.spool < 0.2 ? 0.35 : f.groundRate, dt);
+    const nextSpeed = mix(s.speed, targetSpeed, s.spool < 0.2 ? 0.35 : f.groundRate, dt);
+    s.speed = f.maxAcceleration ? Math.min(nextSpeed, s.speed + f.maxAcceleration * dt) : nextSpeed;
     s.heading = ((s.heading + (controls.yaw + controls.roll * 0.6) * dt * 0.35) % TAU + TAU) % TAU;
     s.bank = mix(s.bank, 0, 5, dt);
     s.pitch = mix(s.pitch, Math.max(0, controls.pitch) * 0.12, 3, dt);
     const distance = s.speed * dt;
     s.position.x += Math.sin(s.heading) * distance;
     s.position.z -= Math.cos(s.heading) * distance;
-    s.position.y = this.groundAt(s.position.x, s.position.z) + 2.8;
+    s.position.y = this.groundAt(s.position.x, s.position.z) + (this.type.groundClearance ?? 2.8);
     s.distance += distance;
     if (s.speed > f.rotateSpeed - s.flaps * f.flapStallGain && controls.pitch > 0.15) {
       s.grounded = false;
@@ -447,6 +448,14 @@ export function fighterSound(spool, speed = 0, afterburner = false) {
     wind: clamp(airspeed / 700, 0.015, 0.32),
     master: 0.6 + n1 * 0.3 + (afterburner ? 0.08 : 0),
   };
+}
+
+/** Lower compressor/fan tones and a fuller exhaust on the existing twin-engine bus. */
+export function airlinerSound(spool, speed = 0) {
+  const mix = jetSound(spool, speed), n1 = clamp(Number(spool) || 0, 0, 1);
+  return { ...mix, whine: 650 + n1 * 2100, fan: 75 + n1 * 150,
+    roar: 190 + n1 * 650, roarGain: 0.08 + n1 * n1 * 0.42,
+    rumbleGain: 0.09 + n1 * n1 * 0.36, master: 0.46 + n1 * 0.3 };
 }
 
 /** Rotor blade-pass thrum, turbine whine and cabin airflow; RPM is independent of collective. */
@@ -647,7 +656,7 @@ export class FlightAudio {
       this.master.gain.setTargetAtTime(this.enabled && !state.crashed ? f.master : 0, now, 0.15);
       return;
     }
-    const mix = jetSound(state.spool ?? state.throttle, state.speed);
+    const mix = (state.aircraft === 'airliner' ? airlinerSound : jetSound)(state.spool ?? state.throttle, state.speed);
     for (const { osc, ratio, gain } of this.whines) {
       osc.frequency.setTargetAtTime(mix.whine * ratio, now, 0.25);
       gain.gain.setTargetAtTime(mix.whineGain, now, 0.25);

@@ -193,7 +193,7 @@ test('water contact crashes even with gear down and a gentle descent', () => {
   assert.equal(flight.state.grounded, false);
 });
 
-for (const aircraft of ['jet', 'fighter']) {
+for (const aircraft of ['jet', 'fighter', 'airliner']) {
   test(`gear warning requires low AGL, low throttle, and gear up together (${aircraft})`, () => {
     const flight = new FlightController(() => 78, aircraft);
     for (const agl of [300, 310]) {
@@ -287,7 +287,7 @@ for (const aircraft of ['jet', 'fighter']) {
     assert.equal(await audio.start(), true);
     const voiceCount = ctx.oscillators.length;
     const horns = ctx.oscillators.filter(osc => osc.type === 'square' && osc.frequency.value === 400);
-    assert.equal(horns.length, 1, 'one shared horn for both aircraft');
+    assert.equal(horns.length, 1, 'one shared horn for the fleet');
     const [horn] = horns;
     assert.equal(horn.type, 'square');
     assert.equal(horn.frequency.value, 400);
@@ -328,7 +328,7 @@ function setAirspeed(flight, speed, flaps = 0) {
   flight.setQuaternion();
 }
 
-for (const [aircraft, thresholds] of [['jet', [42, 39, 36]], ['fighter', [56, 51, 46]]]) {
+for (const [aircraft, thresholds] of [['jet', [42, 39, 36]], ['fighter', [56, 51, 46]], ['airliner', [66, 60, 54]]]) {
   for (const [flaps, stallSpeed] of thresholds.entries()) {
     test(`${FLEET[aircraft].name} stall threshold is strictly below ${stallSpeed} m/s with ${flaps * 15}° flaps`, () => {
       const flight = new FlightController(() => 78, aircraft);
@@ -386,7 +386,7 @@ test('fighter stall thresholds apply inverted, at knife-edge and through vertica
   }
 });
 
-for (const aircraft of ['jet', 'fighter']) {
+for (const aircraft of ['jet', 'fighter', 'airliner']) {
   test(`${FLEET[aircraft].name} stall horn is short, sounds once per stall and rearms after recovery`, async t => {
     const oscillators = [];
     const param = () => ({ value: 0, targets: [], setValueAtTime() {}, linearRampToValueAtTime() {},

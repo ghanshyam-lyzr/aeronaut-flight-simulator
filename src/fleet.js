@@ -131,6 +131,59 @@ const helicopter = {
   },
 };
 
-export const FLEET = { jet, fighter, helicopter };
+// Geometry follows Boeing's 737-800W planning drawing. Performance is arcade tuning for this valley.
+const airliner = {
+  id: 'airliner',
+  name: 'Boeing 737-800',
+  type: 'Passenger airliner',
+  registration: 'A-B738',
+  badge: 'B738',
+  summary: 'Boeing 737-800 · passenger airliner',
+  choice: 'Swept wings, twin turbofans. Deliberate handling; cruises near 250 knots.',
+  help: 'Allow time for the big turbofans to spool. Use 15° flaps for takeoff and rotate near 130 knots. Approach near 140 knots with gear, 30° flaps and about 45% power; touch down below 155 knots and 600 ft/min. Speeds and runway performance are tuned for this game.',
+  runwayHint: 'Runway 36 · F for 15° flaps, full power with Shift, hold S near 130 knots',
+  speedScale: 380,
+  groundClearance: 4.53, // 3.6 m to the tyres + 0.93 m raised runway (the existing fleet uses the same offset)
+  cameraScale: 2.65,
+  cockpitOffset: [-0.65, 0.95, -15.6],
+  flight: {
+    cruiseSpeed: 128,
+    cruiseThrottle: 0.72,
+    throttleRate: 0.16,
+    spoolUp: 0.32,
+    spoolCruise: 0.62,
+    idleSpeed: 40,
+    thrustSpeed: 122,
+    afterburnerFrom: null,
+    afterburnerSpeed: 0,
+    minSpeed: 29,
+    maxSpeed: 195,
+    speedRate: 0.12,
+    maxAcceleration: 5,
+    flapDrag: 8,
+    gearDrag: 7,
+    bankDrag: 10,
+    climbDrag: 72,
+    diveGain: 45,
+    stallSpeed: 66,
+    flapStallGain: 6,
+    pitchRate: 0.18,
+    pitchResponse: 2.8,
+    rollRate: 0.5,
+    rollResponse: 3.1,
+    yawRate: 0.12,
+    pitchLimits: [-0.35, 0.3],
+    bankLimit: 0.87,
+    aerobatic: false,
+    autopilotGain: 0.8,
+    groundThrust: 125,
+    groundRate: 0.12,
+    rotateSpeed: 73,
+    maxTouchdownSpeed: 80,
+    maxTouchdownSink: 3,
+  },
+};
+
+export const FLEET = { jet, fighter, helicopter, airliner };
 export const DEFAULT_AIRCRAFT = 'jet';
 export const aircraftType = id => FLEET[id] ?? FLEET[DEFAULT_AIRCRAFT];
