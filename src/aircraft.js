@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
+import { create737 } from './airliner.js';
 import { createFighter } from './fighter.js';
 import { createHelicopter, createHelicopterCockpit } from './helicopter.js';
 import { aircraftType } from './fleet.js';
@@ -10,9 +11,9 @@ const ease = (value, target, rate, dt) => THREE.MathUtils.lerp(value, target, 1 
 
 export const AIRCRAFT = { name: 'Vela J8', registration: 'A-VJ08' };
 
-/** Builds the 3D model for a fleet id: the Vela J8 by default, or the Arolla F7 fighter. */
+/** Builds the 3D model for a fleet id: the Vela J8 by default, plus the fighter, helicopter and Boeing 737-800. */
 export function createAircraft(type = 'jet') {
-  return type === 'helicopter' ? createHelicopter() : type === 'fighter' ? createFighter() : createVela();
+  return type === 'airliner' ? create737() : type === 'helicopter' ? createHelicopter() : type === 'fighter' ? createFighter() : createVela();
 }
 
 // An original light twin jet, modelled in metres; the nose points down local -Z.
@@ -429,7 +430,7 @@ function createVela() {
 // Camera-local cockpit. Attach directly to the active camera; no animation loop is needed.
 export function createCockpit(type = 'jet') {
   if (type === 'helicopter') return createHelicopterCockpit();
-  const fighter = type === 'fighter';
+  const fighter = type === 'fighter', airliner = type === 'airliner';
   const info = aircraftType(type);
   const cockpit = new THREE.Group();
   cockpit.name = `${info.name} — cockpit`;
@@ -464,6 +465,14 @@ export function createCockpit(type = 'jet') {
   }
   if (!fighter) tube([[-0.94, 1.27, -2.06], [-0.5, 1.38, -2.02], [0, 1.40, -2.01], [0.5, 1.38, -2.02], [0.94, 1.27, -2.06]], 0.055, charcoal);
 
+  if (airliner) {
+    // 737-style centre windshield post and paired control columns; keep everything beyond the 1 m near plane.
+    tube([[0.66, -0.78, -2.1], [0.53, 0.55, -2.25], [0.46, 1.6, -2.3]], 0.045, charcoal);
+    for (const x of [-0.35, 1.05]) {
+      tube([[x, -1.4, -1.3], [x, -0.95, -1.45], [x, -0.73, -1.55]], 0.035, trim);
+      tube([[x - 0.16, -0.64, -1.55], [x - 0.16, -0.78, -1.55], [x, -0.84, -1.55], [x + 0.16, -0.78, -1.55], [x + 0.16, -0.64, -1.55]], 0.03, rubber);
+    }
+  }
   const dashboard = new THREE.Group();
   dashboard.position.set(0, -0.91, -1.75);
   dashboard.rotation.x = -0.17;
@@ -522,7 +531,7 @@ export function createCockpit(type = 'jet') {
       ctx.beginPath(); ctx.arc(0, 0, radius * 0.065, 0, Math.PI * 2); ctx.fillStyle = '#b1bcb8'; ctx.fill();
       ctx.restore();
     }
-    dial(177, 226, 139, 'AIRSPEED', fighter ? 330 : 210, fighter ? 600 : 400, 'KNOTS');
+    dial(177, 226, 139, 'AIRSPEED', airliner ? 250 : fighter ? 330 : 210, fighter ? 600 : 400, 'KNOTS');
     dial(482, 226, 139, 'ALTIMETER', 6800, 10000, 'FEET');
     // Central glass avionics: attitude and a small navigation display.
     roundRect(657, 54, 410, 336, 15, '#080e11', '#526165');
@@ -542,7 +551,7 @@ export function createCockpit(type = 'jet') {
     ctx.strokeStyle = '#e3eee0'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(862, 218, 83, Math.PI * 1.18, Math.PI * 1.82); ctx.stroke();
     ctx.restore();
     text('HDG  062°', 862, 91, 18, '#b5ebbd', 'center', 'monospace');
-    text(fighter ? '330' : '210', 716, 224, 24, '#d3f9d2', 'center', 'monospace');
+    text(airliner ? '250' : fighter ? '330' : '210', 716, 224, 24, '#d3f9d2', 'center', 'monospace');
     text('6,800', 994, 224, 22, '#d3f9d2', 'center', 'monospace');
     text('AP  ·  ALT', 862, 352, 15, '#a6ddb8', 'center', 'monospace');
 
@@ -573,8 +582,8 @@ export function createCockpit(type = 'jet') {
       text('72', x, 315, 19, '#b5e0bb', 'center', 'monospace');
     }
     text('% RPM', 1594, 346, 11, '#6c9182', 'center', 'monospace');
-    text(fighter ? 'AROLLA' : 'VELA', 45, 27, 17, '#b7c6c5', 'left');
-    text(fighter ? 'F7  /  SINGLE-SEAT FIGHTER' : 'J8  /  TWIN TURBOFAN', fighter ? 150 : 140, 27, 12, '#788f90', 'left');
+    text(airliner ? 'BOEING' : fighter ? 'AROLLA' : 'VELA', 45, 27, 17, '#b7c6c5', 'left');
+    text(airliner ? '737-800  /  TWIN TURBOFAN' : fighter ? 'F7  /  SINGLE-SEAT FIGHTER' : 'J8  /  TWIN TURBOFAN', fighter ? 150 : 140, 27, 12, '#788f90', 'left');
     text(info.registration, 2004, 27, 15, '#b6c8c6', 'right', 'monospace');
     for (const x of [31, 635, 1510, 2017]) for (const y of [46, 403]) {
       ctx.fillStyle = '#58676a'; ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
