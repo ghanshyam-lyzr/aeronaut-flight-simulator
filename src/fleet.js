@@ -97,6 +97,40 @@ const fighter = {
   },
 };
 
-export const FLEET = { jet, fighter };
+const helicopter = {
+  id: 'helicopter',
+  name: 'Laret H4',
+  type: 'Light helicopter',
+  registration: 'A-LH04',
+  badge: 'HELI',
+  summary: 'Laret H4 · light helicopter',
+  choice: 'Hover, lift vertically and explore at your own pace.',
+  help: '58% collective holds a level hover. Shift / Ctrl or the collective lever adds / removes lift; the rotor needs a few seconds to spin up from the ground. W tilts forward, S backward, A / D sideways; release cyclic to level. Q / E turns the nose. Space brakes to a hover and holds position, altitude and heading. Touch down level below 10 knots and 400 ft/min. Fixed skids need no gear or flaps.',
+  runwayHint: 'Raise collective with Shift to spin up and lift vertically · 58% hovers',
+  speedScale: 100,
+  flight: {
+    rotorcraft: true,
+    cruiseSpeed: 0,
+    cruiseThrottle: 0.58,
+    throttleRate: 0.22,
+    hoverCollective: 0.58,
+    collectiveResponse: 3,
+    rotorSpinUp: 1.1,
+    rotorSpinDown: 0.35,
+    pitchRate: 0.48,
+    pitchResponse: 6,
+    rollRate: 0.55,
+    rollResponse: 6,
+    yawRate: 0.65,
+    pitchLimits: [-0.55, 0.45],
+    bankLimit: 0.5,
+    groundClearance: 1.6,
+    maxTouchdownSpeed: 5,
+    maxTouchdownSink: 2,
+    aerobatic: false,
+  },
+};
+
+export const FLEET = { jet, fighter, helicopter };
 export const DEFAULT_AIRCRAFT = 'jet';
 export const aircraftType = id => FLEET[id] ?? FLEET[DEFAULT_AIRCRAFT];

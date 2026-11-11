@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { FLEET, aircraftType, DEFAULT_AIRCRAFT } from './fleet.js';
+import { stepHelicopter } from './helicopter-flight.js';
 
 const clamp = THREE.MathUtils.clamp;
 const mix = (value, target, rate, dt) => THREE.MathUtils.lerp(value, target, 1 - Math.exp(-rate * dt));
@@ -19,7 +20,8 @@ export class FlightController {
   constructor(heightAt = () => 0, aircraft = DEFAULT_AIRCRAFT) {
     this.heightAt = heightAt;
     this.type = aircraftType(aircraft);
-    this.state = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
+    this.state = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), velocity: new THREE.Vector3() };
+    this.holdPosition = new THREE.Vector3();
     this.attitude = new THREE.Euler(0, 0, 0, 'YXZ');
     this.previousVelocity = new THREE.Vector3();
     this.acceleration = new THREE.Vector3();
@@ -43,7 +45,8 @@ export class FlightController {
       bank: 0,
       verticalSpeed: 0,
       gForce: 1,
-      gearDown: false,
+      gearDown: !!f.rotorcraft,
+      rotorSpeed: f.rotorcraft ? 1 : 0,
       flaps: 0,
       crashed: false,
       stalled: false,
@@ -57,6 +60,8 @@ export class FlightController {
     this.pitchRate = 0;
     this.rollRate = 0;
     this.yawRate = 0;
+    s.velocity.set(0, 0, f.rotorcraft ? 0 : -s.speed);
+    this.holdPosition.copy(s.position);
     this.holdAltitude = s.position.y;
     this.holdHeading = 0;
     this.recovering = false;
@@ -73,7 +78,9 @@ export class FlightController {
   /** Parks the current aircraft at rest on a runway threshold, gear down and engines idle. */
   runwayStart(x, y, z, heading = 0) {
     const s = this.reset();
-    s.position.set(x, y, z);
+    s.position.set(x, this.type.flight.rotorcraft ? this.groundAt(x, z) + this.type.flight.groundClearance : y, z);
+    s.velocity.set(0, 0, 0);
+    s.rotorSpeed = 0;
     Object.assign(s, { heading, speed: 0, throttle: 0, spool: 0, gearDown: true, grounded: true, autopilot: false });
     this.holdHeading = heading;
     this.setQuaternion();
@@ -88,7 +95,7 @@ export class FlightController {
   get gearWarning() {
     const s = this.state;
     // 1,000 feet is exactly 304.8 metres; both thresholds are exclusive.
-    return !s.gearDown && s.throttle < 0.2
+    return !this.type.flight.rotorcraft && !s.gearDown && s.throttle < 0.2
       && s.position.y < this.groundAt(s.position.x, s.position.z) + 304.8;
   }
 
@@ -97,17 +104,20 @@ export class FlightController {
     this.state.autopilot = !this.state.autopilot;
     this.holdAltitude = this.state.position.y;
     this.holdHeading = this.state.heading;
+    this.holdPosition.copy(this.state.position);
     // From a free attitude, assist first returns to level flight, then holds what it has there.
     this.recovering = this.state.autopilot && this.type.flight.aerobatic;
     return this.state.autopilot;
   }
 
   toggleGear() {
+    if (this.type.flight.rotorcraft) return true;
     this.state.gearDown = !this.state.gearDown;
     return this.state.gearDown;
   }
 
   cycleFlaps() {
+    if (this.type.flight.rotorcraft) return 0;
     this.state.flaps = (this.state.flaps + 1) % 3;
     return this.state.flaps;
   }
@@ -123,7 +133,8 @@ export class FlightController {
       yaw: clamp(Number(inputs.yaw) || 0, -1, 1),
       throttle: clamp(Number(inputs.throttle) || 0, -1, 1),
     };
-    if (Math.abs(controls.pitch) + Math.abs(controls.roll) + Math.abs(controls.yaw) > 0.12) {
+    if (Math.abs(controls.pitch) + Math.abs(controls.roll) + Math.abs(controls.yaw) > (this.type.flight.rotorcraft ? 0.001 : 0.12)
+      || (this.type.flight.rotorcraft && Math.abs(controls.throttle) > 0.001)) {
       this.state.autopilot = false;
     }
     for (let i = 0; i < steps && !this.state.crashed; i++) this.step(elapsed / steps, controls);
@@ -131,6 +142,7 @@ export class FlightController {
   }
 
   step(dt, controls) {
+    if (this.type.flight.rotorcraft) return stepHelicopter(this, dt, controls);
     const s = this.state;
     const f = this.type.flight;
     this.previousVelocity.set(0, 0, -s.speed).applyQuaternion(s.quaternion);
@@ -437,7 +449,22 @@ export function fighterSound(spool, speed = 0, afterburner = false) {
   };
 }
 
-/** Synthesized engines, slipstream and warning horns for either aircraft. Start from a user gesture. */
+/** Rotor blade-pass thrum, turbine whine and cabin airflow; RPM is independent of collective. */
+export function helicopterSound(rotorSpeed, collective = 0.58, speed = 0) {
+  const rpm = clamp(Number(rotorSpeed) || 0, 0, 1), load = clamp(Number(collective) || 0, 0, 1);
+  return {
+    bladePass: rpm * 38 / (2 * Math.PI) * 3, // three blades at the model’s 363 RPM
+    rotor: 38 + rpm * 54,
+    rotorGain: rpm * (0.08 + load * 0.12),
+    chopGain: rpm * (0.12 + load * 0.16),
+    turbine: 600 + rpm * 1400 + load * 220,
+    turbineGain: rpm * 0.018,
+    wind: clamp((Number(speed) || 0) / 350, 0, 0.2),
+    master: rpm * (0.55 + load * 0.18),
+  };
+}
+
+/** Synthesized engines, slipstream and warning horns for every aircraft. Start from a user gesture. */
 export class FlightAudio {
   constructor() {
     this.enabled = false;
@@ -484,6 +511,9 @@ export class FlightAudio {
       this.fighterBus = ctx.createGain();
       this.fighterBus.gain.value = 0;
       this.fighterBus.connect(this.master);
+      this.helicopterBus = ctx.createGain();
+      this.helicopterBus.gain.value = 0;
+      this.helicopterBus.connect(this.master);
       const voice = (input, type, frequency, q, bus = this.jetBus) => {
         const filter = ctx.createBiquadFilter();
         filter.type = type;
@@ -495,6 +525,16 @@ export class FlightAudio {
         return { filter, gain };
       };
       const exhaust = noise(false);
+      this.helicopter = { rotor: ctx.createOscillator(), turbine: ctx.createOscillator(), pulse: ctx.createOscillator() };
+      const heli = this.helicopter;
+      heli.rotor.type = 'triangle'; heli.rotor.start();
+      heli.rotorVoice = voice(heli.rotor, 'lowpass', 220, 0.6, this.helicopterBus);
+      heli.turbine.type = 'sine'; heli.turbine.start();
+      heli.turbineVoice = voice(heli.turbine, 'highpass', 500, 0.5, this.helicopterBus);
+      heli.chop = voice(exhaust, 'lowpass', 180, 0.6, this.helicopterBus);
+      // Blade-pass modulation chops the broadband rotor wash into a synthesized rotor beat.
+      heli.pulse.type = 'sine'; heli.pulse.start(); heli.depth = ctx.createGain();
+      heli.pulse.connect(heli.depth).connect(heli.chop.gain.gain);
       this.roar = voice(exhaust, 'bandpass', 400, 0.7);
       this.rumble = voice(exhaust, 'lowpass', 140, 0.5);
       this.fighter = {
@@ -571,15 +611,30 @@ export class FlightAudio {
 
   update(state, gearWarning = false) {
     if (!this.context || !this.master) return;
-    const stalled = this.enabled && state.stalled && !state.grounded && !state.crashed;
+    const helicopter = state.aircraft === 'helicopter';
+    const stalled = !helicopter && this.enabled && state.stalled && !state.grounded && !state.crashed;
     if (stalled && !this.stallActive) this.soundStallHorn();
     if (!stalled) this.stopStallHorn();
     this.stallActive = stalled;
     const now = this.context.currentTime;
-    this.gearHorn.gain.setTargetAtTime(this.enabled && !state.crashed && gearWarning ? 0.12 : 0, now, 0.03);
+    this.gearHorn.gain.setTargetAtTime(this.enabled && !state.crashed && !helicopter && gearWarning ? 0.12 : 0, now, 0.03);
     const fighter = state.aircraft === 'fighter';
-    this.jetBus.gain.setTargetAtTime(fighter ? 0 : 1, now, 0.08);
+    this.jetBus.gain.setTargetAtTime(fighter || helicopter ? 0 : 1, now, 0.08);
     this.fighterBus.gain.setTargetAtTime(fighter ? 1 : 0, now, 0.08);
+    this.helicopterBus.gain.setTargetAtTime(helicopter ? 1 : 0, now, 0.08);
+    if (helicopter) {
+      const h = helicopterSound(state.rotorSpeed, state.spool ?? state.throttle, state.speed), v = this.helicopter;
+      v.rotor.frequency.setTargetAtTime(h.rotor, now, 0.12);
+      v.rotorVoice.gain.gain.setTargetAtTime(h.rotorGain, now, 0.12);
+      v.pulse.frequency.setTargetAtTime(h.bladePass, now, 0.12);
+      v.chop.gain.gain.setTargetAtTime(h.chopGain, now, 0.12);
+      v.depth.gain.setTargetAtTime(h.chopGain * 0.8, now, 0.12);
+      v.turbine.frequency.setTargetAtTime(h.turbine, now, 0.2);
+      v.turbineVoice.gain.gain.setTargetAtTime(h.turbineGain, now, 0.2);
+      this.wind.gain.setTargetAtTime(h.wind, now, 0.2);
+      this.master.gain.setTargetAtTime(this.enabled && !state.crashed ? h.master : 0, now, 0.1);
+      return;
+    }
     if (fighter) {
       const f = fighterSound(state.spool ?? state.throttle, state.speed, state.afterburner), v = this.fighter;
       v.whine.frequency.setTargetAtTime(f.whine, now, 0.25);
