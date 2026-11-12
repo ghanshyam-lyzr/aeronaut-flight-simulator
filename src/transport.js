@@ -193,10 +193,19 @@ export function createTransport() {
   };
 }
 
-/** Camera-local transport deck: a low, wide live panel, narrow door posts, a slim windscreen divider and a collective lever. */
+// Instrument panels in camera-local metres. Each sits in the gap the default HUD leaves: above the instrument
+// strip, between the camera chip and the navigation map on desktops; on phones, a full-width strip between the
+// map and the camera chip, above the touch controls.
+export const COCKPIT = {
+  wide: { width: 2.1, height: 0.44, x: 0, y: -0.43, pixels: [1260, 264] },
+  // Shifted left of the phone's map and instrument toggles on the right edge.
+  compact: { width: 0.96, height: 0.27, x: -0.07, y: 0.16, pixels: [832, 234] },
+  z: -1.835,
+};
+
+/** Camera-local transport deck: a low live panel, narrow door posts, a slim windscreen divider and a collective lever. */
 export function createTransportCockpit() {
   const root = new THREE.Group(); root.name = `${type.name} — cockpit`;
-  const panel = new THREE.Group(); panel.position.y = 0.4; root.add(panel);
   const dark = new THREE.MeshStandardMaterial({ color: 'hsl(205, 20%, 13%)', roughness: 0.8 });
   const trim = new THREE.MeshStandardMaterial({ color: 'hsl(205, 12%, 30%)', metalness: 0.5, roughness: 0.4 });
   const slate = new THREE.MeshStandardMaterial({ color: palette.slate, roughness: 0.6 });
@@ -205,60 +214,84 @@ export function createTransportCockpit() {
     const start = new THREE.Vector3(...a), end = new THREE.Vector3(...b), mesh = part(new THREE.CylinderGeometry(r, r, start.distanceTo(end), 8), mat);
     mesh.position.copy(start).add(end).multiplyScalar(0.5); mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.sub(start).normalize());
   }
-  // The pilot sits left of the centreline; the divider and the overhead console sit over the cabin centre.
+  // The pilot sits left of the centreline; the divider and the overhead beam sit over the cabin centre.
   for (const x of [-1.45, 2.05]) bar([x, -1.5, -1.9], [x * 0.92, 1.45, -2.4], 0.045);
   bar([0.55, -0.62, -2.55], [0.55, 1.55, -2.65], 0.025);
   bar([-1.2, 1.62, -2.5], [1.8, 1.62, -2.5], 0.04, slate);
-  // A low glare shield and panel: the windscreen and chin windows stay open below the horizon.
-  const shell = part(new THREE.BoxGeometry(3, 0.5, 0.16), dark, panel); shell.position.set(0, -0.98, -1.92);
-  const hood = part(new THREE.BoxGeometry(3.1, 0.05, 0.36), trim, panel); hood.position.set(0, -0.71, -1.98);
   // Cyclic ahead of the seat and the collective lever beside it.
   bar([0, -1.55, -1.25], [0, -1.12, -1.4], 0.03, trim);
   const grip = part(new THREE.BoxGeometry(0.08, 0.16, 0.08)); grip.position.set(0, -1.06, -1.42);
   bar([-0.62, -1.55, -1.2], [-0.62, -1.3, -1.6], 0.028, trim);
   const collective = part(new THREE.BoxGeometry(0.08, 0.06, 0.1), slate); collective.position.set(-0.62, -1.28, -1.62);
-  root.userData.fit = aspect => { panel.scale.x = Math.min(1, Math.max(0.34, aspect / 1.3)); panel.position.y = aspect < 0.8 ? 0.46 : 0.4; };
-  root.userData.update = () => {};
-  if (typeof document !== 'undefined') {
-    const canvas = document.createElement('canvas'); canvas.width = 1200; canvas.height = 200;
-    const ctx = canvas.getContext('2d'), texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
-    const screen = part(new THREE.PlaneGeometry(2.86, 0.477), new THREE.MeshBasicMaterial({ map: texture, toneMapped: false }), panel);
-    screen.position.set(0, -0.98, -1.835);
-    const colors = { background: 'hsl(205 20% 10%)', ink: 'hsl(60 9% 96%)', muted: 'hsl(200 10% 65%)', signal: 'hsl(77 88% 67%)', sky: 'hsl(201 32% 31%)', earth: 'hsl(39 24% 30%)', line: 'hsl(205 15% 26%)' };
-    const text = (label, x, y, size = 18, color = colors.ink, align = 'left', weight = 500, family = 'DM Sans') => {
-      ctx.fillStyle = color; ctx.font = `${weight} ${size}px "${family}", sans-serif`; ctx.textAlign = align; ctx.fillText(label, x, y);
-    };
-    const value = (label, x, y, shown) => { text(label, x, y, 17, colors.muted, 'left', 400); text(shown, x, y + 44, 46, colors.ink, 'left', 500, 'Barlow Condensed'); };
-    function gauge(y, label, amount, shown, mark = null) {
-      text(label, 850, y, 17, colors.muted, 'left', 400);
-      ctx.fillStyle = colors.line; ctx.fillRect(930, y - 13, 160, 13);
-      ctx.fillStyle = colors.signal; ctx.fillRect(930, y - 13, 160 * clamp(amount, 0, 1), 13);
-      if (mark !== null) { ctx.fillStyle = colors.ink; ctx.fillRect(928 + 160 * mark, y - 18, 3, 23); }
-      text(shown, 1180, y, 24, colors.ink, 'right', 500, 'Barlow Condensed');
-    }
-    let last = '';
-    root.userData.update = state => {
-      const f = type.flight, rpm = clamp(state.rotorSpeed ?? 0, 0, 1), spool = clamp(state.spool ?? state.throttle ?? 0, 0, 1);
-      const shown = [Math.round(state.speed * 1.94384), Math.round(state.position.y * 3.28084), Math.round((state.verticalSpeed ?? 0) * 196.85 / 10) * 10,
-        Math.round((state.throttle ?? 0) * 100), Math.round(rpm * 100), Math.round(spool * 100), Math.round(state.bank * 60), Math.round(state.pitch * 60), state.autopilot, state.grounded];
-      if (shown.join() === last) return; last = shown.join();
-      ctx.fillStyle = colors.background; ctx.fillRect(0, 0, 1200, 200);
-      text(`${type.name.toUpperCase()}   /   ${type.registration}`, 24, 30, 19, colors.muted);
-      text(state.autopilot ? 'HOVER HOLD' : state.grounded ? 'ON WHEELS' : 'MANUAL', 1180, 30, 19, colors.signal, 'right', 600);
-      // Attitude: horizon behind a fixed chartreuse aircraft symbol.
-      ctx.save(); ctx.beginPath(); ctx.rect(24, 46, 230, 140); ctx.clip(); ctx.translate(139, 116); ctx.rotate(-state.bank); ctx.translate(0, state.pitch * 110);
-      ctx.fillStyle = colors.sky; ctx.fillRect(-260, -260, 520, 260); ctx.fillStyle = colors.earth; ctx.fillRect(-260, 0, 520, 260);
-      ctx.strokeStyle = colors.ink; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-250, 0); ctx.lineTo(250, 0); ctx.stroke(); ctx.restore();
-      ctx.strokeStyle = colors.signal; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(94, 116); ctx.lineTo(126, 116); ctx.lineTo(139, 124); ctx.lineTo(152, 116); ctx.lineTo(184, 116); ctx.stroke();
-      value('Airspeed / kt', 290, 82, String(shown[0])); value('Altitude / ft', 450, 82, String(shown[1])); value('VSI / ft/min', 640, 82, `${shown[2] > 0 ? '+' : ''}${shown[2]}`);
-      text(`Hover ${Math.round(f.hoverCollective * 100)}% · Space hover hold · wheels fixed`, 290, 178, 17, colors.muted, 'left', 400);
-      // Rotor and engine strip: rotor speed, collective with its hover mark, and both turbines sharing torque.
-      gauge(70, 'NR', rpm, `${shown[4]}%`);
-      gauge(108, 'COLL', state.throttle ?? 0, `${shown[3]}%`, f.hoverCollective);
-      gauge(146, 'TQ 1', spool * rpm, `${Math.round(spool * rpm * 100)}%`);
-      gauge(184, 'TQ 2', spool * rpm, `${Math.round(spool * rpm * 100)}%`);
-      texture.needsUpdate = true;
-    };
+  // Two fixed-size panels instead of one squeezed one: a wide deck for desktops and a compact rotor/engine strip for phones.
+  const panels = {};
+  for (const [name, p] of Object.entries({ wide: COCKPIT.wide, compact: COCKPIT.compact })) {
+    const group = new THREE.Group(); group.name = `${name} panel`; group.position.set(p.x, p.y, 0); root.add(group);
+    const shell = part(new THREE.BoxGeometry(p.width + 0.06, p.height + 0.06, 0.06), dark, group); shell.name = 'panel shell'; shell.position.z = COCKPIT.z - 0.04;
+    const hood = part(new THREE.BoxGeometry(p.width + 0.06, 0.035, 0.22), trim, group); hood.position.set(0, p.height / 2 + 0.05, COCKPIT.z - 0.1);
+    panels[name] = { group, ...p };
   }
+  let layout = 'wide';
+  const setLayout = name => { layout = name; panels.wide.group.visible = name === 'wide'; panels.compact.group.visible = name === 'compact'; };
+  setLayout('wide');
+  root.userData.panels = panels;
+  root.userData.update = () => {};
+  root.userData.fit = aspect => setLayout(aspect < 0.8 ? 'compact' : 'wide');
+  if (typeof document === 'undefined') return root;
+
+  const colors = { background: 'hsl(205 20% 10%)', ink: 'hsl(60 9% 96%)', muted: 'hsl(200 10% 65%)', signal: 'hsl(77 88% 67%)', sky: 'hsl(201 32% 31%)', earth: 'hsl(39 24% 30%)', line: 'hsl(205 15% 26%)' };
+  for (const p of Object.values(panels)) {
+    p.canvas = document.createElement('canvas'); [p.canvas.width, p.canvas.height] = p.pixels;
+    p.ctx = p.canvas.getContext('2d'); p.texture = new THREE.CanvasTexture(p.canvas); p.texture.colorSpace = THREE.SRGBColorSpace;
+    const screen = part(new THREE.PlaneGeometry(p.width, p.height), new THREE.MeshBasicMaterial({ map: p.texture, toneMapped: false }), p.group);
+    screen.name = 'panel screen'; screen.position.z = COCKPIT.z;
+  }
+  const draw = (ctx, size, label, x, y, color = colors.ink, align = 'left', weight = 500, family = 'DM Sans') => {
+    ctx.fillStyle = color; ctx.font = `${weight} ${size}px "${family}", sans-serif`; ctx.textAlign = align; ctx.fillText(label, x, y);
+  };
+  // A labelled bar: label on the left, value on the right, optional ivory mark (the hover collective).
+  function gauge(ctx, x, y, width, label, amount, shown, scale, mark = null, labelWidth = 170) {
+    draw(ctx, 26 * scale, label, x, y, colors.muted, 'left', 400);
+    const barX = x + labelWidth * scale, barW = width - labelWidth * scale - 120 * scale, h = 16 * scale;
+    ctx.fillStyle = colors.line; ctx.fillRect(barX, y - h, barW, h);
+    ctx.fillStyle = colors.signal; ctx.fillRect(barX, y - h, barW * clamp(amount, 0, 1), h);
+    if (mark !== null) { ctx.fillStyle = colors.ink; ctx.fillRect(barX + barW * mark - 2, y - h - 7 * scale, 4, h + 14 * scale); }
+    draw(ctx, 40 * scale, shown, x + width, y + 4 * scale, colors.ink, 'right', 500, 'Barlow Condensed');
+  }
+  let last = '';
+  root.userData.update = state => {
+    const f = type.flight, rpm = clamp(state.rotorSpeed ?? 0, 0, 1), spool = clamp(state.spool ?? state.throttle ?? 0, 0, 1);
+    const collective = clamp(state.throttle ?? 0, 0, 1), torque = spool * rpm;
+    const mode = state.autopilot ? 'HOVER HOLD' : state.grounded ? 'ON WHEELS' : 'MANUAL';
+    const values = [layout, Math.round(state.speed * 1.94384), Math.round(state.position.y * 3.28084), Math.round((state.verticalSpeed ?? 0) * 196.85 / 10) * 10,
+      Math.round(collective * 100), Math.round(rpm * 100), Math.round(torque * 100), Math.round(state.bank * 60), Math.round(state.pitch * 60), mode];
+    if (values.join() === last) return; last = values.join();
+    const p = panels[layout], ctx = p.ctx, [w, h] = p.pixels;
+    ctx.fillStyle = colors.background; ctx.fillRect(0, 0, w, h);
+    // Both turbine readouts are driven by one simulated torque value, and the labels say so.
+    const rows = [['Rotor NR', rpm, `${values[5]}%`, null], ['Collective', collective, `${values[4]}%`, f.hoverCollective], ['TQ 1·2 shared', torque, `${values[6]}%`, null]];
+    if (layout === 'compact') {
+      // Phones: the HUD already shows speed, altitude and VSI, so the strip carries rotor, collective and engines only.
+      draw(ctx, 28, `${type.name.toUpperCase()} · ROTOR / ENGINES`, 22, 34, colors.muted, 'left', 500);
+      draw(ctx, 28, mode, w - 22, 34, colors.signal, 'right', 600);
+      rows.forEach(([label, amount, shown, mark], i) => gauge(ctx, 22, 96 + i * 56, w - 44, label, amount, shown, 1.15, mark, 175));
+    } else {
+      draw(ctx, 26, `${type.name.toUpperCase()}   /   ${type.registration}`, 24, 36, colors.muted);
+      draw(ctx, 26, mode, w - 24, 36, colors.signal, 'right', 600);
+      // Attitude: horizon behind a fixed chartreuse aircraft symbol.
+      ctx.save(); ctx.beginPath(); ctx.rect(24, 52, 210, 200); ctx.clip(); ctx.translate(129, 152); ctx.rotate(-state.bank); ctx.translate(0, state.pitch * 150);
+      ctx.fillStyle = colors.sky; ctx.fillRect(-300, -300, 600, 300); ctx.fillStyle = colors.earth; ctx.fillRect(-300, 0, 600, 300);
+      ctx.strokeStyle = colors.ink; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-290, 0); ctx.lineTo(290, 0); ctx.stroke(); ctx.restore();
+      ctx.strokeStyle = colors.signal; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(79, 152); ctx.lineTo(111, 152); ctx.lineTo(129, 162); ctx.lineTo(147, 152); ctx.lineTo(179, 152); ctx.stroke();
+      [['Speed / kt', values[1]], ['Alt / ft', values[2]], ['VSI / fpm', `${values[3] > 0 ? '+' : ''}${values[3]}`]].forEach(([label, shown], i) => {
+        draw(ctx, 24, label, 262, 96 + i * 66, colors.muted, 'left', 400);
+        draw(ctx, 44, String(shown), 480, 100 + i * 66, colors.ink, 'right', 500, 'Barlow Condensed');
+      });
+      ctx.fillStyle = colors.line; ctx.fillRect(506, 54, 2, 196);
+      rows.forEach(([label, amount, shown, mark], i) => gauge(ctx, 534, 98 + i * 60, w - 558, label, amount, shown, 1, mark, 190));
+      draw(ctx, 24, 'Both turbines share one simulated torque', 534, 252, colors.muted, 'left', 400);
+    }
+    p.texture.needsUpdate = true;
+  };
   return root;
 }

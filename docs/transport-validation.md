@@ -29,6 +29,23 @@ Headless Chromium against the dev server, Low graphics, real Explore roster clic
 - Landing mission: the brief and card show 62%/59%/61%, below 9 kt and wheel wording. Ctrl taps alone flew it to success (188 ft/min, 0 kt, on the centreline); Retry, a held-Ctrl drop (failed: unsafe sink) and R each restore the same hover.
 - No page errors or console errors; only software-WebGL readback warnings from screenshots.
 
+## Cockpit readability follow-up
+
+The first H8 panel scaled one wide canvas horizontally and sat partly under the navigation map and instrument strip. The deck now uses two fixed-size panels; `fit(aspect)` only picks one:
+
+- **Desktop (wide, 2.1 × 0.44 m):** attitude, speed, altitude and VSI on the left; rotor NR, collective with its hover mark and engine torque on the right. The torque row is labelled "TQ 1·2 shared", with the note "Both turbines share one simulated torque". It sits above the instrument strip and between the camera chip and the map.
+- **Phone (compact, 0.96 × 0.27 m):** rotor NR, collective and shared torque only, since the HUD already shows speed, altitude and VSI. It sits as a strip between the map and the camera chip, left of the map and HUD toggles.
+
+The transport cockpit test now projects the visible panel with the 67° cockpit field of view onto 1600×900, 1280×800 and 390×844. It checks the panel against the page chrome's rectangles, measured in Chromium: map, map/HUD toggles, instrument strip, camera chip, mission card and the phone touch controls. It requires at least 0.36 CSS px per canvas px and keeps the desktop panel below the horizon. Fresh screenshots show hover and a partly spun-up ground start at all three sizes:
+
+| Size | Rotor NR | Collective | Torque |
+| --- | --- | --- | --- |
+| 1600×900 | 60% | 10% | 5% |
+| 1280×800 | 45% | 10% | 3% |
+| 390×844 | 66% | 27% | 14% |
+
+There were no page errors. The H4 cockpit, the shared HUD and the 1 m near plane are unchanged.
+
 ## Limits
 
 This VM renders with software WebGL at 1–4 FPS, and the per-frame step cap means sim time ran at roughly 0.3–0.55× wall time in the browser checks. That makes browser flying slower but still meaningful; physics magnitudes come from the deterministic tests. Hardware frame rate, subjective rotor sound and physical touch handling still need a real device. Rotor/body collisions use the aircraft origin and a footprint slope check, not swept-rotor geometry. Like the H4, the H8 is an accessible rotor-lift approximation without autorotation, torque coupling or vortex-ring state.

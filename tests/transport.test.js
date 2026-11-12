@@ -8,7 +8,7 @@ import { FLEET, aircraftType } from '../src/fleet.js';
 import { createAircraft, createCockpit } from '../src/aircraft.js';
 import { EXPANDED_AIRCRAFT } from '../src/fleet-models.js';
 import { disposeObject } from '../src/helicopter.js';
-import { D } from '../src/transport.js';
+import { D, COCKPIT } from '../src/transport.js';
 import { groundHeight } from '../src/world.js';
 import { AIRFIELD, runwayPoint } from '../src/airfield.js';
 import { LandingMission, landingProfile, TOUCHDOWN_ZONE } from '../src/landing-mission.js';
@@ -276,14 +276,28 @@ test('transport cockpit is its own low deck beyond the one-metre near plane and 
       assert.ok(b.max.z < -1, `${aspect}: surface inside the near plane at z ${b.max.z}`);
     } });
   }
-  // Panel and pedestal stay below the eye line, leaving the windscreen open.
-  const box = new Box3(); cockpit.traverse(o => { if (o.isMesh && o.geometry.type === 'BoxGeometry' && o.parent !== cockpit) box.expandByObject(o); });
-  assert.ok(box.max.y < -0.2, `panel top ${box.max.y}`);
-  // On a 390×844 phone the whole instrument panel stays inside the 67° cockpit field of view.
-  let shell; cockpit.traverse(o => { if (o.geometry?.parameters?.width === 3) shell = o; });
-  const panelBox = new Box3().setFromObject(shell), aspect = 390 / 844;
-  const halfWidth = -panelBox.max.z * Math.tan(67 * Math.PI / 360) * aspect;
-  assert.ok(Math.max(-panelBox.min.x, panelBox.max.x) < halfWidth, `${panelBox.min.x}…${panelBox.max.x} vs ±${halfWidth}`);
+  // The visible panel never sits under the default page chrome. Rectangles are [left, top, right, bottom] CSS px,
+  // measured in Chromium for the map and its toggles, instrument strip, camera chip, mission card and (phones) touch controls.
+  const layouts = {
+    '1600x900': { world: [70, 900], panel: 'wide', avoid: [[1316, 482, 1576, 728], [1539, 420, 1576, 502], [190, 748, 1410, 854], [24, 687, 244, 728], [24, 94, 314, 368]] },
+    '1280x800': { world: [70, 800], panel: 'wide', avoid: [[1016, 401, 1256, 632], [1219, 370, 1256, 452], [24, 648, 1256, 754], [24, 591, 244, 632], [24, 94, 310, 368]] },
+    '390x844': { world: [58, 844], panel: 'compact', avoid: [[234, 132, 376, 281], [346, 337, 376, 403], [14, 638, 376, 814], [14, 457, 156, 493], [14, 72, 207, 241], [22, 519, 124, 621], [311, 516, 350, 624], [138, 546, 212, 585]] },
+  };
+  for (const [size, { world: [top, bottom], panel, avoid }] of Object.entries(layouts)) {
+    const [width] = size.split('x').map(Number), height = bottom - top, focal = height / 2 / Math.tan(67 * Math.PI / 360);
+    cockpit.userData.fit(width / height); cockpit.updateMatrixWorld(true);
+    const visible = Object.entries(cockpit.userData.panels).filter(([, p]) => p.group.visible).map(([name]) => name);
+    assert.deepEqual(visible, [panel], size);
+    const box = new Box3().setFromObject(cockpit.userData.panels[panel].group), depth = -box.max.z;
+    const rect = [width / 2 + box.min.x / depth * focal, top + height / 2 - box.max.y / depth * focal, width / 2 + box.max.x / depth * focal, top + height / 2 - box.min.y / depth * focal];
+    assert.ok(rect[0] >= 0 && rect[2] <= width && rect[1] >= top, `${size}: panel ${rect.map(Math.round)} leaves the view`);
+    for (const r of avoid) assert.ok(rect[2] <= r[0] || rect[0] >= r[2] || rect[3] <= r[1] || rect[1] >= r[3], `${size}: panel ${rect.map(Math.round)} overlaps ${r}`);
+    // Big enough to read: at least 0.36 CSS px per canvas px, so 30 px canvas labels are about 11 px on screen.
+    const pixels = COCKPIT[panel].pixels[0];
+    assert.ok((rect[2] - rect[0]) / pixels > 0.36, `${size}: ${(rect[2] - rect[0]) / pixels} CSS px per canvas px`);
+    // Desktop decks keep the windscreen open above the horizon.
+    if (panel === 'wide') assert.ok(box.max.y < -0.12, `${size}: panel top ${box.max.y}`);
+  }
   assert.deepEqual(type.cockpitOffset.length, 3);
   disposeObject(cockpit);
 });
