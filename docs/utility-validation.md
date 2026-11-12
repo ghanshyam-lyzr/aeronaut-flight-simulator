@@ -37,3 +37,11 @@ Software WebGL in the headless VM browser (single-digit FPS); this says nothing 
 - Console: no errors; only the software renderer's GPU-stall-on-ReadPixels warnings from screenshots.
 
 Landing and takeoff were verified by the automated pilot only; no manual keyboard flight from approach to rollout was flown in the browser. Sound was checked by unit tests (bus routing, horn suppression, crash mute), not by listening. Disposal was checked in unit tests; GPU memory counters were not inspected in the browser. No cargo loading is modelled.
+
+## Integration with main `09c3000` (canard #17)
+
+Merged current `origin/main` into this branch. Shared files keep both aircraft: both type imports and the `canard, utility` FLEET entries, both model and cockpit dispatches in `aircraft.js`, every suite in the test script (`… tests/canard.test.js tests/utility.test.js`), both styleguide paragraphs and README sections, and the dynamic roster heading. `EXPANDED_AIRCRAFT` stays the original six; the fleet regression keeps the ten baseline ids explicit. The README landing paragraph now lists the U9's 72 kt approach.
+
+- `npm test`: **214 passed, 0 failed**. The shared landing-mission feedback pilot lands all 12 registered aircraft (jet, fighter, helicopter, airliner, trainer, bush, commuter, regional, widebody, aerobatic, canard, utility).
+- `npm run build` passes; `git diff --check` is clean.
+- Browser (software WebGL): roster reads “12 to fly” and lists canard and utility; switching canard → utility → canard → utility updates the saved choice, mission card, gear (fixed for both) and flaps (N/A for the canard, 0° for the U9). No console errors.
