@@ -1,6 +1,6 @@
 # Aeronaut
 
-A playable 3D browser flight simulator built with Three.js and Vite. Choose from a fleet of aircraft, from a forgiving high-wing trainer and powered sailplane to an aerobatic prop, bush plane, turboprop commuter, four-engine cargo turboprop, fighter, light and medium helicopters and passenger jets, and explore a procedural alpine world with snowy peaks, a turquoise lake, forests, villages, boats, and a working airfield.
+A playable 3D browser flight simulator built with Three.js and Vite. Choose from a fleet of aircraft, from a forgiving high-wing trainer and powered sailplane to an open-cockpit biplane, aerobatic prop, bush plane, turboprop commuter, four-engine cargo turboprop, fighter, light and medium helicopters and passenger jets, and explore a procedural alpine world with snowy peaks, a turquoise lake, forests, villages, boats, and a working airfield.
 
 ## Run
 
@@ -24,7 +24,7 @@ The Arolla F7 and Silex A3 have no pitch or bank limits: hold the stick for cont
 - **Space**: flight assistance.
 - **C**: chase, cockpit, and orbit camera. Drag and scroll in orbit view.
 - **P**: pause. **R**: restart.
-- **G**: retractable landing gear. **F**: cycle 0°, 15°, and 30° flaps where fitted. Fixed gear stays down; the Silex A3 and Neris P2 have no flaps.
+- **G**: retractable landing gear. **F**: cycle 0°, 15°, and 30° flaps where fitted. Fixed gear stays down; the Silex A3, Neris P2 and Alba B2 have no flaps.
 - **M**: map. **H**: instruments.
 
 On a phone, steer with the touch yoke and hold the + / − buttons to adjust power. In settings, mouse steering and inverted pitch are optional. Flight audio starts when the sound button is selected.
@@ -41,7 +41,7 @@ The **Neris P2** is an original two-seat canard pusher: a long glazed tandem nos
 
 ## Landing mission
 
-Choose **Landing mission** on the flight card or in **Explore**. Every fixed-wing aircraft begins 1.1 km before Alpine Field's runway 36, aligned north in their landing configuration. Approach speeds are Vela J8 109 kt, Arolla F7 136 kt, 737-800 140 kt, Mira T2 64 kt, Brenta B6 52 kt, Sarine C24 103 kt, Orsino R70 128 kt, Aven W280 150 kt and Montis C90 97 kt. These use 30° flaps; Silex A3 uses its clean wing at 87 kt and Neris P2 at 78 kt. Veyra U9 flies a 72 kt approach with 30° flaps. Varen G18 approaches at 49 kt with 30° flaps. Fixed gear remains fixed. Follow the chartreuse approach brackets, correct speed with power, and flare gently near 25 ft above the runway. The Laret H4 instead begins in a hover 46 ft above a small skid target at 58% collective; lower toward 55% to descend gently. The Sorna H8 begins the same way above its landing box at 62%; lower toward 59%.
+Choose **Landing mission** on the flight card or in **Explore**. Every fixed-wing aircraft begins 1.1 km before Alpine Field's runway 36, aligned north in their landing configuration. Approach speeds are Vela J8 109 kt, Arolla F7 136 kt, 737-800 140 kt, Mira T2 64 kt, Brenta B6 52 kt, Sarine C24 103 kt, Orsino R70 128 kt, Aven W280 150 kt and Montis C90 97 kt. These use 30° flaps; Silex A3 uses its clean wing at 87 kt Neris P2 at 78 kt and Alba B2 at 52 kt. Veyra U9 flies a 72 kt approach with 30° flaps. Varen G18 approaches at 49 kt with 30° flaps. Fixed gear remains fixed. Follow the chartreuse approach brackets, correct speed with power, and flare gently near 25 ft above the runway. The Laret H4 instead begins in a hover 46 ft above a small skid target at 58% collective; lower toward 55% to descend gently. The Sorna H8 begins the same way above its landing box at 62%; lower toward 59%.
 
 Land inside the outlined touchdown zone, level and within 12° of runway heading. Touchdown feedback retains sink rate, alignment, speed and centreline offset. Fixed-wing aircraft must then remain on the runway, reduce power below 20% and slow below 6 kt for two continuous seconds. Helicopters must settle inside their box with collective just below their hover setting: 57% for the Laret H4, 61% for the Sorna H8. Off-runway, hard, fast or long landings, runway excursions and overruns end the attempt. **Retry** or **R** starts the same approach again; **Free flight** returns to a fresh airborne flight. Aircraft switching cancels the mission. Pause and dialogs freeze mission progress.
 
@@ -95,3 +95,9 @@ An original self-launching motorglider (`motorglider`, A-VG18): slender pod-and-
 - **Sound:** the propeller bus with a higher, quieter small-prop voice. With the prop stopped (below 2% spool) its blade tone and propwash are silent and only the slipstream remains; they fade back in as the motor starts.
 
 Like the rest of the fleet, these are arcade-tuning targets for Alpine Field, not sailplane performance data.
+
+## Alba B2 biplane
+
+The **Alba B2** is an original open-cockpit biplane: two staggered fabric wings joined by cabane and I-struts with bracing wires, a polished rounded piston cowl and two-blade wooden propeller, a small windscreen, fixed V-strut main gear and a sprung tailwheel. Its olive-and-ivory livery carries one copper line, copper upper wingtips and a copper rudder. Four ailerons, the elevators and rudder move with the controls and the propeller follows engine RPM on the existing piston sound. The cockpit view sits behind a padded coaming under the upper wing, with airspeed, altitude, RPM and climb dials.
+
+It is one of the slowest powered types: about 85 kt cruise and a clean stall near 39 kt, so it turns tightly while brief key taps stay gentle and bank and pitch keep the normal limits (it is not aerobatic). There are no flaps and the gear cannot retract, so the gear horn never sounds and the landing mission asks for neither. Runway takeoff: full power with Shift, hold S near 47 kt. Approach at 52 kt on the clean wings and touch down below 74 kt and 650 ft/min. These are arcade targets for Alpine Field, not operating data for any real aircraft.

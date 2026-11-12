@@ -1,3 +1,4 @@
+import { biplane } from './biplane-type.js';
 import { canard } from './canard-type.js';
 import { utility } from './utility-type.js';
 import { transport } from './transport-type.js';
@@ -308,6 +309,6 @@ const aerobatic = {
   },
 };
 
-export const FLEET = { jet, fighter, helicopter, airliner, trainer, bush, commuter, regional, widebody, aerobatic, canard, utility, transport, cargo, motorglider };
+export const FLEET = { jet, fighter, helicopter, airliner, trainer, bush, commuter, regional, widebody, aerobatic, canard, utility, transport, cargo, motorglider, biplane };
 export const DEFAULT_AIRCRAFT = 'jet';
 export const aircraftType = id => FLEET[id] ?? FLEET[DEFAULT_AIRCRAFT];
