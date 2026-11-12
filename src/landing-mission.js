@@ -1,15 +1,14 @@
 import { AIRFIELD, runwayCoordinates, runwayPoint } from './airfield.js';
 
 const degrees = radians => Math.abs(Math.atan2(Math.sin(radians), Math.cos(radians))) * 180 / Math.PI;
-const approachSpeeds = { jet: 56, fighter: 70, airliner: 72 };
 export const TOUCHDOWN_ZONE = Object.freeze({ start: 60, end: 440, aim: 220 });
 
 export function landingProfile(type) {
-  const f = type.flight, helicopter = !!f.rotorcraft, speed = approachSpeeds[type.id] ?? 56;
-  const slope = 0.05;
+  const f = type.flight, helicopter = !!f.rotorcraft, speed = type.landing.speed;
+  const slope = 0.05, flaps = helicopter || type.noFlaps ? 0 : 2;
   const throttle = helicopter ? f.hoverCollective
-    : (speed - f.idleSpeed + 2 * f.flapDrag + f.gearDrag - slope * f.diveGain) / f.thrustSpeed;
-  return { helicopter, speed: helicopter ? 0 : speed, throttle, slope,
+    : (speed - f.idleSpeed + flaps * f.flapDrag + f.gearDrag - slope * f.diveGain) / f.thrustSpeed;
+  return { helicopter, flaps, speed: helicopter ? 0 : speed, throttle, slope,
     maxSink: f.maxTouchdownSink, maxSpeed: f.maxTouchdownSpeed,
     speedMin: helicopter ? 0 : speed - 5, speedMax: helicopter ? 5 : speed + 5,
     clearance: f.groundClearance ?? type.groundClearance ?? 2.8 };
@@ -37,7 +36,7 @@ export class LandingMission {
     s.position.set(point.x, Math.max(field.elevation + p.clearance + height, flight.groundAt(point.x, point.z) + p.clearance + 5), point.z);
     Object.assign(s, { speed: p.speed, throttle: p.throttle, spool: p.throttle,
       heading: field.heading, pitch: p.helicopter ? 0 : -Math.atan(p.slope), bank: 0,
-      gearDown: true, flaps: p.helicopter ? 0 : 2, autopilot: false, rotorSpeed: p.helicopter ? 1 : 0,
+      gearDown: true, flaps: p.flaps, autopilot: false, rotorSpeed: p.helicopter ? 1 : 0,
       verticalSpeed: p.helicopter ? 0 : -p.speed * p.slope });
     s.velocity.set(Math.sin(s.heading) * s.speed, s.verticalSpeed, -Math.cos(s.heading) * s.speed);
     flight.setQuaternion();
@@ -63,7 +62,7 @@ export class LandingMission {
       if (!t.gearDown) return this.fail('Landing gear was retracted');
       if (t.sink >= p.maxSink || t.speed >= p.maxSpeed || t.stalled) return this.fail('Unsafe touchdown speed or sink rate');
       if (t.alignment > 12 || Math.abs(t.bank) > 0.18 || Math.abs(t.pitch) > 0.22) return this.fail('Touch down level and aligned with runway 36');
-      if (!p.helicopter && t.flaps !== 2) return this.fail('Use full flaps for landing');
+      if (!p.helicopter && t.flaps !== p.flaps) return this.fail(p.flaps ? 'Use full flaps for landing' : 'This aircraft has no flaps');
       this.phase = 'rollout';
     }
     if (state.crashed) return this.fail(state.crashReason || 'Aircraft crashed');

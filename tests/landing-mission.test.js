@@ -33,7 +33,7 @@ for (const id of Object.keys(FLEET)) {
     const initial = { position: s.position.toArray(), speed: s.speed, power: s.throttle };
     assert.equal(s.heading, AIRFIELD.heading);
     assert.equal(s.gearDown, true); assert.equal(s.autopilot, false);
-    assert.equal(s.flaps, profile.helicopter ? 0 : 2);
+    assert.equal(s.flaps, profile.flaps);
     assert.equal(runwayCoordinates(s.position).cross, 0);
     assert.ok(s.position.y > groundHeight(s.position.x, s.position.z) + 5);
     if (!profile.helicopter) assert.ok(s.speed > flight.type.flight.stallSpeed - 2 * flight.type.flight.flapStallGain);
@@ -48,6 +48,8 @@ for (const id of Object.keys(FLEET)) {
     // Deterministic feedback pilot: ordinary rate inputs, no pose/velocity writes after mission start.
     const inputs = new FlightInputs(0);
     for (let frame = 1; frame < 90 * 60 && mission.active; frame++) {
+      if (frame === 300 && flight.type.fixedGear) { flight.toggleGear(); assert.equal(s.gearDown, true); }
+      if (frame === 300 && flight.type.noFlaps) { flight.cycleFlaps(); assert.equal(s.flaps, 0); }
       const height = s.position.y - AIRFIELD.elevation - p.clearance;
       const sink = height < 8 ? Math.min(1.8, p.maxSink * 0.65) : p.speed * p.slope;
       const idleSink = p.helicopter ? 0 : Math.max(0, 0.32 - s.spool) * 6;
@@ -60,7 +62,7 @@ for (const id of Object.keys(FLEET)) {
     assert.ok(mission.touchdown.sink > 0.3 && mission.touchdown.sink < p.maxSink);
     assert.ok(mission.touchdown.along >= TOUCHDOWN_ZONE.start && mission.touchdown.along <= TOUCHDOWN_ZONE.end);
     assert.ok(mission.guidance(s).remaining > 100);
-    assert.ok(p.helicopter || mission.touchdown.speed > 40, 'impact speed retained after rollout');
+    assert.ok(p.helicopter || mission.touchdown.speed > p.speed * 0.75, 'impact speed retained after rollout');
   });
 }
 
