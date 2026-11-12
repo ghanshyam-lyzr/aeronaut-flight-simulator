@@ -12,6 +12,9 @@ import { FlightController, FlightAudio, FollowFrame } from './flight.js';
 import { FLEET, aircraftType } from './fleet.js';
 import { FlightInputs } from './controls.js';
 import { disposeObject } from './helicopter.js';
+import { LandingMission, landingProfile } from './landing-mission.js';
+import { runwayPoint } from './airfield.js';
+import { createLandingGuidance } from './landing-guidance.js';
 
 const icons = {Plane,SlidersHorizontal,Maximize,Minimize,VolumeX,Volume2,MapPin,ArrowUpRight,Sun,CloudSun,Cloud,ChevronDown,ChevronsUpDown,Navigation,Video,Camera,Map,Scan,Minus,Plus,CircleDot,RotateCcw,Pause,Play,Keyboard,Move,TriangleAlert,X,Check,Mountain,Compass,Wind,Menu};
 const refreshIcons = () => createIcons({icons,attrs:{'stroke-width':1.6}});
@@ -48,6 +51,10 @@ const world = createWorld(scene,renderer);
 let aircraft = createAircraft(settings.aircraft);
 scene.add(aircraft.group);world.reflectSky(aircraft.group);
 const flight = new FlightController(world.heightAt, settings.aircraft);
+const landing = new LandingMission(world.airport);
+const signalProbe=document.createElement('span');signalProbe.style.color='var(--accent)';document.body.appendChild(signalProbe);
+const landingCues = createLandingGuidance(scene,world.airport,getComputedStyle(signalProbe).color);signalProbe.remove();
+let missionResultShown=false;
 flight.toggleAutopilot();
 const audio = new FlightAudio();
 let paused=false, view='chase', hudVisible=true, frameTime=0, orbitAngle=0.45, orbitHeight=9, orbitDistance=31;
@@ -87,14 +94,14 @@ $('map-panel').hidden=!settings.showMap;
 function toast(message){$('toast').textContent=message;$('toast').classList.add('visible');clearTimeout(toastTimeout);toastTimeout=setTimeout(()=>$('toast').classList.remove('visible'),3000);}
 function iconButton(id,icon){$(id).innerHTML=`<i data-lucide="${icon}"></i>`;refreshIcons();}
 function setPaused(value){
- if(flight.state.crashed)return;
+ if(flight.state.crashed||landing.finished)return;
  paused=value;sceneDirty=true;$('pause-overlay').hidden=!paused;$('sim-status').textContent=paused?'Simulation paused':'Live simulation';
  $('pause-btn').setAttribute('aria-label',paused?'Resume flight':'Pause flight');iconButton('pause-btn',paused?'play':'pause');
  if(paused)clearControls();
 }
 function saveFlight(){const s=flight.state;if(s.flightTime<10)return;const entry={date:new Date().toISOString(),time:s.flightTime,distance:s.distance,maxAltitude:flightMaxAlt,aircraft:s.aircraft};savedFlights.unshift(entry);savedFlights=savedFlights.slice(0,20);try{localStorage.setItem('aeronaut-flights',JSON.stringify(savedFlights));}catch{}}
 let flightMaxAlt=flight.state.position.y;
-function restart(notify=true){saveFlight();flight.reset();flight.toggleAutopilot();flightMaxAlt=flight.state.position.y;flightTrail.length=0;sceneDirty=true;paused=false;lastCrash=false;initialCamera=true;clearControls();$('pause-overlay').hidden=true;$('crash-overlay').hidden=true;$('sim-status').textContent='Live simulation';iconButton('pause-btn','pause');updateAssist();if(notify)toast('A fresh start. You have the skies.');}
+function restart(notify=true){if(landing.status!=='idle'){startLanding();return;}saveFlight();flight.reset();flight.toggleAutopilot();flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);sceneDirty=true;paused=false;lastCrash=false;initialCamera=true;clearControls();$('pause-overlay').hidden=true;$('crash-overlay').hidden=true;$('sim-status').textContent='Live simulation';iconButton('pause-btn','pause');updateAssist();if(notify)toast('A fresh start. You have the skies.');}
 // Every label that names the aircraft reads from the active fleet type.
 function updateAircraftLabels(){
  const t=flight.type,h=!!t.flight.rotorcraft;$('aircraft-name').textContent=t.name;$('aircraft-type').textContent=`${t.type} · ${t.registration}`;$('aircraft-badge').textContent=t.badge;
@@ -109,14 +116,59 @@ function updateAircraftLabels(){
 // Switching aircraft saves the current flight, then starts the new type fresh in the air with flight assist on.
 function setAircraft(id){
  const type=aircraftType(id);if(type.id===flight.type.id)return false;
- saveFlight();flight.setAircraft(type.id);settings.aircraft=type.id;saveSettings();
+ cancelLanding(false);saveFlight();flight.setAircraft(type.id);settings.aircraft=type.id;saveSettings();
  scene.remove(aircraft.group);aircraft.dispose?.();aircraft=createAircraft(type.id);scene.add(aircraft.group);world.reflectSky(aircraft.group);aircraft.setCockpit(view==='cockpit');
  camera.remove(cockpit);disposeObject(cockpit);cockpit=createCockpit(type.id);camera.add(cockpit);cockpit.visible=view==='cockpit';
  restart(false);updateAircraftLabels();toast(`${type.name} ready · a fresh start in the air`);return true;
 }
-function runwayStart(){restart(false);flight.runwayStart(900,world.heightAt(900,-1350)+(flight.type.groundClearance??2.8),-1350);updateAssist();initialCamera=true;sceneDirty=true;toast(flight.type.runwayHint);}
+function runwayStart(){cancelLanding(false);restart(false);const p=runwayPoint(100,0,world.airport);flight.runwayStart(p.x,world.heightAt(p.x,p.z)+(flight.type.groundClearance??2.8),p.z,world.airport.heading);trailOrigin.copy(flight.state.position);updateAssist();initialCamera=true;sceneDirty=true;toast(flight.type.runwayHint);}
+function startLanding(){
+ saveFlight();landing.start(flight);flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);trailClock=0;
+ paused=false;lastCrash=false;initialCamera=true;sceneDirty=true;missionResultShown=false;clearControls();
+ $('pause-overlay').hidden=$('crash-overlay').hidden=$('landing-result').hidden=true;
+ $('pause-btn').setAttribute('aria-label','Pause flight');iconButton('pause-btn','pause');
+ hudVisible=true;$('hud').hidden=false;$('restore-hud').hidden=true;
+ document.querySelector('.mission-panel').classList.remove('collapsed');
+ updateAssist();updateLandingUI();toast(landing.profile.helicopter?'You have control · gently lower collective to settle in the box':'You have control · follow runway 36, then flare and idle power');
+}
+function cancelLanding(fresh=false){
+ landing.cancel();missionResultShown=false;$('landing-result').hidden=true;landingCues.show(false);
+ updateLandingUI();if(fresh){restart(false);toast('Free flight · a fresh start in the air');}
+}
+function updateLandingUI(){
+ const underway=landing.status!=='idle',s=flight.state;
+ document.body.classList.toggle('landing-mode',underway);
+ document.body.classList.toggle('landing-finished',landing.finished);
+ $('flight-mode').textContent=underway?'Landing mission':'Free flight';
+ document.querySelector('.map-explore').textContent=underway?'Landing · runway 36':'Free exploration';
+ $('mission-title').textContent=underway?'Alpine Field · 36':'The Swiss Alps';
+ $('landing-guidance').hidden=!underway;$('landing-entry').hidden=underway;
+ landingCues.show(landing.active,landing.profile?.helicopter,landing.profile?.clearance);
+ if(!underway)return;
+ const p=landing.profile,g=landing.guidance(s),h=p.helicopter,rollout=landing.phase==='rollout';
+ $('landing-phase').textContent=rollout?'Touchdown · controlled rollout':h?'Precision landing · fixed skids':`Final approach · ${g.distance>0?(g.distance/1000).toFixed(2)+' km to threshold':'over runway'}`;
+ $('landing-speed').textContent=rollout?'Below 6 kt':h?'Below 10 kt':`${Math.round(p.speed*1.94384)} kt`;
+ $('landing-path-label').textContent=rollout?'Runway left':h?'Height above runway':'Glide path';
+ $('landing-path').textContent=rollout?`${Math.round(g.remaining)} m`:h?`${Math.max(0,Math.round(g.height*3.28084))} ft`:Math.abs(g.pathError)<4?'On path':`${Math.round(Math.abs(g.pathError)*3.28084)} ft ${g.pathError>0?'high':'low'}`;
+ let cue=rollout?(h?'Lower collective · stay settled':'Idle power · keep straight with Q / E'):h?'Ease down with collective; 58% holds a hover.':g.height<8?'Flare gently with S · reduce power with Ctrl':'Follow the chartreuse cues · small pitch corrections.';
+ if(!rollout&&Math.abs(g.cross)>8)cue=`${Math.round(Math.abs(g.cross))} m ${g.cross>0?'right':'left'} of centre · correct gently`;
+ else if(!rollout&&g.alignment>12)cue='Align north · heading 000°';
+ else if(!rollout&&!h&&(s.speed<p.speedMin||s.speed>p.speedMax))cue=s.speed>p.speedMax?'Too fast · ease power down with Ctrl':'Too slow · add power with Shift';
+ $('landing-cue').textContent=cue;
+ $('landing-objective').textContent=rollout?`Stay on runway · ${h?'collective <57%':'power <20%'} · settle 2 sec (${Math.min(2,landing.stableTime).toFixed(1)}/2)`:`${h?'Skids fixed':`Gear ${s.gearDown?'down':'UP'} · flaps ${s.flaps*15}°`} · sink <${Math.round(p.maxSink*196.85)} fpm · alignment ≤12°`;
+ if(landing.finished&&!missionResultShown){
+  missionResultShown=true;clearControls();clearTimeout(toastTimeout);$('toast').classList.remove('visible');$('pause-overlay').hidden=$('crash-overlay').hidden=true;
+  const success=landing.status==='success',t=landing.touchdown;
+  $('sim-status').textContent=success?'Landing complete':'Mission ended';
+  $('landing-result-status').textContent=success?'Mission complete':'Try the approach again';
+  $('landing-result-title').textContent=success?'Welcome to Alpine Field.':'Landing not completed.';
+  $('landing-result-reason').textContent=success?(h?'Skids settled safely in the target box.':'Safe touchdown and controlled rollout on runway 36.'):landing.reason;
+  $('landing-result-metrics').innerHTML=t?`<div><dt>Touchdown sink</dt><dd>${Math.round(t.sink*196.85)} <small>fpm</small></dd></div><div><dt>Alignment</dt><dd>${t.alignment.toFixed(1)}<small>°</small></dd></div><div><dt>Touchdown speed</dt><dd>${Math.round(t.speed*1.94384)} <small>kt</small></dd></div><div><dt>Centreline offset</dt><dd>${Math.abs(t.cross).toFixed(1)} <small>m</small></dd></div>`:'<p>No runway touchdown recorded.</p>';
+  $('landing-result').hidden=false;$('landing-result-retry').focus();sceneDirty=true;
+ }else if(!landing.finished)$('sim-status').textContent=paused?'Simulation paused':'Landing mission · live';
+}
 function updateAssist(){const a=flight.state.autopilot;document.querySelector('.mission-action').classList.toggle('manual',!a);document.querySelector('.mission-action').classList.toggle('rotorcraft',!!flight.type.flight.rotorcraft);$('assist-status').textContent=a?(flight.type.flight.rotorcraft?'Hover hold':'Flight assist enabled'):'Manual flight';$('take-control').innerHTML=`${a?'Take control':'Enable assist'} <i data-lucide="arrow-up-right"></i>`;refreshIcons();}
-function toggleAssist(){flight.toggleAutopilot();updateAssist();toast(flight.state.autopilot?(flight.type.flight.rotorcraft?'Hover hold · braking to hold position, altitude and heading':'Flight assist on · holding altitude and heading'):(flight.type.flight.rotorcraft?'Manual flight · cyclic to move, collective to climb or descend':'You have control · W/S to pitch, A/D to bank'));}
+function toggleAssist(){if(landing.finished)return;flight.toggleAutopilot();updateAssist();toast(flight.state.autopilot?(flight.type.flight.rotorcraft?'Hover hold · braking to hold position, altitude and heading':'Flight assist on · holding altitude and heading'):(flight.type.flight.rotorcraft?'Manual flight · cyclic to move, collective to climb or descend':'You have control · W/S to pitch, A/D to bank'));}
 function setView(value){sceneDirty=true;view=value;aircraft.setCockpit(view==='cockpit');if(cockpit)cockpit.visible=view==='cockpit';$('camera-label').textContent=({chase:'Chase camera',cockpit:'Cockpit view',orbit:'Orbit camera'})[view];initialCamera=true;toast(`${$('camera-label').textContent}${view==='orbit'?' · drag to look around':''}`);}
 function cycleView(){const views=['chase','cockpit','orbit'];setView(views[(views.indexOf(view)+1)%views.length]);}
 function toggleMap(){settings.showMap=!settings.showMap;$('map-panel').hidden=!settings.showMap;saveSettings();}
@@ -124,6 +176,9 @@ function toggleHud(){hudVisible=!hudVisible;$('hud').hidden=!hudVisible;$('resto
 function gear(){if(flight.type.flight.rotorcraft){toast('Fixed landing skids · always down');return;}sceneDirty=true;flight.toggleGear();toast(`Landing gear ${flight.state.gearDown?'down':'retracted'}`);}
 function flaps(){if(flight.type.flight.rotorcraft){toast('Cyclic and collective control this helicopter · no flaps');return;}sceneDirty=true;flight.cycleFlaps();toast(`Flaps set to ${flight.state.flaps*15}°`);}
 $('pause-btn').onclick=()=>setPaused(!paused);$('resume-btn').onclick=()=>setPaused(false);$('reset-btn').onclick=()=>restart();$('crash-reset').onclick=()=>restart();$('take-control').onclick=toggleAssist;$('camera-btn').onclick=cycleView;$('map-toggle').onclick=toggleMap;$('map-close').onclick=toggleMap;$('hud-toggle').onclick=toggleHud;$('restore-hud').onclick=toggleHud;$('gear-btn').onclick=gear;$('flaps-btn').onclick=flaps;
+$('landing-entry').onclick=()=>showDialog('landing');
+for(const id of ['landing-retry','landing-result-retry'])$(id).onclick=startLanding;
+for(const id of ['landing-cancel','landing-result-exit'])$(id).onclick=()=>cancelLanding(true);
 $('collapse-mission').onclick=()=>{const c=document.querySelector('.mission-panel');c.classList.toggle('collapsed');iconButton('collapse-mission',c.classList.contains('collapsed')?'plus':'minus');};
 $('throttle-slider').addEventListener('input',e=>{flight.state.throttle=Number(e.target.value)/100;if(flight.type.flight.rotorcraft)flight.state.autopilot=false;});
 $('sound-btn').onclick=async()=>{if(!audio.enabled)await audio.start();else audio.toggle();iconButton('sound-btn',audio.enabled?'volume-2':'volume-x');$('sound-btn').setAttribute('aria-label',audio.enabled?'Mute flight sound':'Enable flight sound');toast(audio.enabled?'Flight sound on':'Flight sound off');};
@@ -146,8 +201,11 @@ function showDialog(type){
  }else if(type==='controls'){
  const controls=[[heli?'Cyclic forward / backward':'Pitch down / up',['W','S']],[heli?'Cyclic left / right':'Bank left / right',['A','D']],['Alternate flight controls',['←','↑','↓','→']],[heli?'Yaw left / right':'Rudder left / right',['Q','E']],[heli?'Raise / lower collective':'Increase / decrease throttle',['Shift','Ctrl']],['Change camera',['C']],['Pause / resume',['P']],[heli?'Hover hold':'Flight assist',['Space']],...(!heli?[['Landing gear',['G']],['Cycle flaps',['F']]]:[]),['Navigation map',['M']],['Hide instruments',['H']],['Restart flight',['R']]];
  content=dialogHead('You have control')+`<div class="dialog-body"><p>${heli?'58% collective hovers. Tilt forward with W to move; center the cyclic to level. Space brakes into a steady hover.':'A little input goes a long way. Bank gently into turns and add power to climb.'}</p><div class="controls-list">${controls.map(([label,k])=>`<div class="control-row"><span>${label}</span><span>${k.map(v=>`<kbd>${v}</kbd>`).join('')}</span></div>`).join('')}</div><p class="dialog-note">On a phone, drag the left ${heli?'cyclic':'yoke'} to steer and hold + / − to adjust ${heli?'collective; use the two yaw buttons to turn':'throttle'}. In orbit view, drag to look around and scroll to zoom. ${flight.type.name}: ${flight.type.help}</p></div>`;
+ }else if(type==='landing'){
+ const p=landingProfile(flight.type),h=p.helicopter;
+ content=dialogHead('Land at Alpine Field')+`<div class="dialog-body landing-brief"><span class="landing-eyebrow">Landing mission · runway 36</span><h3>${flight.type.name}</h3><p>${h?'Begin in a hover 46 ft above the marked skid box. Ease down with collective; keep the cyclic centred and use Q / E to align north.':'Begin on a short final, aligned north with gear down and full flaps. Follow the three chartreuse approach cues to the outlined touchdown zone.'}</p><ol><li>${h?'Land inside the small chartreuse box, level and below 10 kt.':`Hold ${Math.round(p.speed*1.94384)} kt on approach. W / S adjusts pitch; Shift / Ctrl adjusts power.`}</li><li>${h?'Start at 58% collective in a hover. Lower toward 55% with short taps to descend.':'Near 25 ft above the runway, gently raise the nose with S to soften the descent. Reduce power with Ctrl.'}</li><li>Touch down below ${Math.round(p.maxSink*196.85)} ft/min, aligned within 12°. ${h?'Keep collective below 57% and settle for 2 seconds.':'Keep straight with Q / E, set power below 20% and slow below 6 kt for 2 seconds.'}</li></ol><p class="dialog-note">Manual control from the start. Assist remains available. ${h?'Skids are fixed; no gear or flaps required.':'Use the first chartreuse zone; leaving the runway or overrunning ends the attempt.'} R retries this mission. Weather is visual; aircraft and runway performance use the existing arcade model.</p><button class="primary-btn" id="start-landing">${h?'Start precision landing':'Start final approach'} <i data-lucide="arrow-up-right"></i></button></div>`;
  }else if(type==='explore'){
- content=dialogHead('A world above it all')+`<div class="dialog-body"><div class="explore-hero"><svg viewBox="0 0 420 140" aria-label="Alpine mountains"><rect width="420" height="140" fill="hsl(197 30% 66%)"/><path d="M0 98 65 25 92 56 155 9 212 88 270 17 352 102 390 48 420 85v55H0" fill="hsl(205 17% 44%)"/><path d="m65 25-27 30 18-5 11 9 8-18 17 15Zm90-16-39 48 29-14 17 9 14-13 36 49Zm115 8-26 32 17-4 12 13 12-10 25 15Z" fill="hsl(195 20% 91%)"/><path d="M0 109 91 69 177 123 271 72 420 112v28H0" fill="hsl(162 18% 29%)"/><path d="M0 140 168 113 252 117 342 140" fill="hsl(182 42% 42%)"/></svg></div><div class="explore-name"><h3>The Swiss Alps</h3><span>FREE FLIGHT</span></div><p class="explore-description">A winding turquoise lake. Snow-covered ridgelines. Quiet villages tucked into the mountains. Explore our original world inspired by Switzerland's Bernese Oberland.</p><h3 class="dialog-section-title">Aircraft</h3><div class="weather-options aircraft-options" role="radiogroup" aria-label="Aircraft">${Object.values(FLEET).map(t=>`<button class="weather-option ${t.id===flight.type.id?'selected':''}" role="radio" aria-checked="${t.id===flight.type.id}" data-aircraft="${t.id}"><i data-lucide="plane"></i><div><strong>${t.summary}</strong><span>${t.choice}</span></div><span></span></button>`).join('')}</div><p class="dialog-note">Changing aircraft saves this flight and starts the new one in the air.</p><div class="log-row"><span>Airfield</span><strong>Alpine Valley · runway 36</strong></div><div class="log-row"><span>Experience</span><strong>Open world · no flight plan</strong></div><button class="primary-btn" id="explore-start">Start in the air <i data-lucide="arrow-up-right"></i></button><button class="secondary-btn" id="runway-start">${heli?'Start on the ground':'Start on the runway'} <i data-lucide="plane"></i></button><p class="dialog-note">Original procedural scenery and aircraft. An accessible flight experience with an arcade flight model.</p></div>`;
+ content=dialogHead('A world above it all')+`<div class="dialog-body"><div class="explore-hero"><svg viewBox="0 0 420 140" aria-label="Alpine mountains"><rect width="420" height="140" fill="hsl(197 30% 66%)"/><path d="M0 98 65 25 92 56 155 9 212 88 270 17 352 102 390 48 420 85v55H0" fill="hsl(205 17% 44%)"/><path d="m65 25-27 30 18-5 11 9 8-18 17 15Zm90-16-39 48 29-14 17 9 14-13 36 49Zm115 8-26 32 17-4 12 13 12-10 25 15Z" fill="hsl(195 20% 91%)"/><path d="M0 109 91 69 177 123 271 72 420 112v28H0" fill="hsl(162 18% 29%)"/><path d="M0 140 168 113 252 117 342 140" fill="hsl(182 42% 42%)"/></svg></div><div class="explore-name"><h3>The Swiss Alps</h3><span>FREE FLIGHT</span></div><p class="explore-description">A winding turquoise lake. Snow-covered ridgelines. Quiet villages tucked into the mountains. Explore our original world inspired by Switzerland's Bernese Oberland.</p><h3 class="dialog-section-title">Aircraft</h3><div class="weather-options aircraft-options" role="radiogroup" aria-label="Aircraft">${Object.values(FLEET).map(t=>`<button class="weather-option ${t.id===flight.type.id?'selected':''}" role="radio" aria-checked="${t.id===flight.type.id}" data-aircraft="${t.id}"><i data-lucide="plane"></i><div><strong>${t.summary}</strong><span>${t.choice}</span></div><span></span></button>`).join('')}</div><p class="dialog-note">Changing aircraft saves this flight and starts the new one in the air.</p><div class="log-row"><span>Airfield</span><strong>Alpine Valley · runway 36</strong></div><div class="log-row"><span>Experience</span><strong>Free flight or landing mission</strong></div><button class="primary-btn" id="explore-landing">Landing mission <i data-lucide="arrow-up-right"></i></button><button class="primary-btn" id="explore-start">Start in the air <i data-lucide="arrow-up-right"></i></button><button class="secondary-btn" id="runway-start">${heli?'Start on the ground':'Start on the runway'} <i data-lucide="plane"></i></button><p class="dialog-note">Original procedural scenery and aircraft. An accessible flight experience with an arcade flight model.</p></div>`;
  }else if(type==='logbook'){
  const totalTime=savedFlights.reduce((n,f)=>n+f.time,0)+flight.state.flightTime,totalDistance=savedFlights.reduce((n,f)=>n+f.distance,0)+flight.state.distance;
  content=dialogHead('Every flight is a story')+`<div class="dialog-body"><p>Your time in the skies, saved on this browser.</p><div class="log-stats"><div class="log-stat"><span>Total flight time</span><strong>${formatTime(totalTime)}</strong></div><div class="log-stat"><span>Distance explored</span><strong>${(totalDistance/1852).toFixed(1)} <span>NM</span></strong></div></div><h3 class="dialog-section-title">Current flight</h3><div class="log-row"><span>The Swiss Alps · ${flight.type.name}</span><strong>${formatTime(flight.state.flightTime)}</strong></div><h3 class="dialog-section-title">Previous flights</h3>${savedFlights.length?savedFlights.slice(0,5).map(f=>`<div class="log-row"><span>${new Date(f.date).toLocaleDateString(undefined,{month:'short',day:'numeric'})}${f.aircraft?` · ${aircraftType(f.aircraft).name}`:''} · ${(f.distance/1852).toFixed(1)} NM</span><strong>${formatTime(f.time)}</strong></div>`).join(''):'<div class="empty-log">Your adventure is just beginning. Flights are saved when you restart or leave the simulator.</div>'}</div>`;
@@ -162,7 +220,8 @@ function showDialog(type){
  for(const [id,key] of [['setting-invert','invertPitch'],['setting-mouse','mouseSteering']])$(id).onclick=e=>{settings[key]=!settings[key];clearControls();e.currentTarget.setAttribute('aria-checked',settings[key]);saveSettings();};
  $('setting-map').onclick=e=>{toggleMap();e.currentTarget.setAttribute('aria-checked',settings.showMap);};
  }
- if(type==='explore'){$('explore-start').onclick=()=>{restart();dialog.close();};$('runway-start').onclick=()=>{runwayStart();dialog.close();};dialog.querySelectorAll('[data-aircraft]').forEach(b=>b.onclick=()=>{if(setAircraft(b.dataset.aircraft))showDialog('explore');});}
+ if(type==='landing')$('start-landing').onclick=()=>{startLanding();dialog.close();};
+ if(type==='explore'){$('explore-landing').onclick=()=>showDialog('landing');$('explore-start').onclick=()=>{cancelLanding(false);restart();dialog.close();};$('runway-start').onclick=()=>{runwayStart();dialog.close();};dialog.querySelectorAll('[data-aircraft]').forEach(b=>b.onclick=()=>{if(setAircraft(b.dataset.aircraft))showDialog('explore');});}
 }
 document.querySelectorAll('[data-dialog]').forEach(b=>b.onclick=()=>showDialog(b.dataset.dialog));
 dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});
@@ -208,19 +267,22 @@ for(let y=0;y<155;y++)for(let x=0;x<240;x++){
  let c;if(h<=10.1)c=[39,90,94];else{const shade=THREE.MathUtils.clamp((world.heightAt(wx+35,wz)-h)*.17,-15,15),n=Math.min(h/2500,1),contour=h%180<15?-9:0;c=[40+n*46+shade+contour,59+n*42+shade+contour,46+n*44+shade+contour];}mapImage.data.set([...c,255],i);
 }mapTextureCtx.putImageData(mapImage,0,0);
 function mapPoint(x,z){return[(x-mapBounds.xmin)/(mapBounds.xmax-mapBounds.xmin)*480,(z-mapBounds.zmin)/(mapBounds.zmax-mapBounds.zmin)*310];}
-const flightTrail=[];let trailClock=0;
-function drawMap(){mapCtx.drawImage(mapTexture,0,0,480,310);mapCtx.strokeStyle='rgba(205,245,107,.55)';mapCtx.lineWidth=1.5;mapCtx.setLineDash([5,5]);mapCtx.beginPath();const start=mapPoint(0,1900);mapCtx.moveTo(...start);for(const p of flightTrail)mapCtx.lineTo(...mapPoint(p.x,p.z));const p=mapPoint(flight.state.position.x,flight.state.position.z);mapCtx.lineTo(...p);mapCtx.stroke();mapCtx.setLineDash([]);mapCtx.save();mapCtx.translate(...p);mapCtx.rotate(flight.state.heading);mapCtx.beginPath();mapCtx.moveTo(0,-11);mapCtx.lineTo(7,9);mapCtx.lineTo(0,5);mapCtx.lineTo(-7,9);mapCtx.closePath();mapCtx.fillStyle='#d0f767';mapCtx.strokeStyle='#1d332a';mapCtx.lineWidth=2;mapCtx.fill();mapCtx.stroke();mapCtx.restore();const ap=mapPoint(900,-1800);mapCtx.fillStyle='#c4cbb7';mapCtx.save();mapCtx.translate(...ap);mapCtx.rotate(-.1);mapCtx.fillRect(-2,-10,4,20);mapCtx.restore();}
+const flightTrail=[];let trailClock=0;const trailOrigin=flight.state.position.clone();
+function drawMap(){mapCtx.drawImage(mapTexture,0,0,480,310);mapCtx.strokeStyle='rgba(205,245,107,.55)';mapCtx.lineWidth=1.5;mapCtx.setLineDash([5,5]);mapCtx.beginPath();const start=mapPoint(trailOrigin.x,trailOrigin.z);mapCtx.moveTo(...start);for(const p of flightTrail)mapCtx.lineTo(...mapPoint(p.x,p.z));const p=mapPoint(flight.state.position.x,flight.state.position.z);mapCtx.lineTo(...p);mapCtx.stroke();mapCtx.setLineDash([]);mapCtx.save();mapCtx.translate(...p);mapCtx.rotate(flight.state.heading);mapCtx.beginPath();mapCtx.moveTo(0,-11);mapCtx.lineTo(7,9);mapCtx.lineTo(0,5);mapCtx.lineTo(-7,9);mapCtx.closePath();mapCtx.fillStyle='#d0f767';mapCtx.strokeStyle='#1d332a';mapCtx.lineWidth=2;mapCtx.fill();mapCtx.stroke();mapCtx.restore();const ap=mapPoint(world.airport.x,world.airport.z);mapCtx.fillStyle='#c4cbb7';mapCtx.save();mapCtx.translate(...ap);mapCtx.rotate(world.airport.heading);mapCtx.fillRect(-2,-10,4,20);mapCtx.restore();}
 let lastAssist=true,lastUi=0,lastFps=performance.now(),fpsFrames=0;
 function updateUI(time){
  const s=flight.state,h=!!flight.type.flight.rotorcraft;const speed=s.speed*1.94384,alt=s.position.y*3.28084,heading=(s.heading*180/Math.PI+360)%360,vsi=Math.round(s.verticalSpeed*196.85/10)*10;
  $('g-force').textContent=(Math.abs(s.gForce)<0.05?0:s.gForce).toFixed(1);$('g-force-instrument').classList.toggle('overload',s.gForce>6);
  $('speed').textContent=Math.round(speed);$('altitude').textContent=Math.round(alt).toLocaleString();$('agl').textContent=Math.round((s.position.y-world.heightAt(s.position.x,s.position.z))*3.28084).toLocaleString();$('heading').textContent=String(Math.round(heading)%360).padStart(3,'0');$('vertical-speed').textContent=`${vsi>0?'+':''}${vsi}`;$('vertical-state').textContent=Math.abs(vsi)<50?(h&&s.speed<.5?'Hovering':'Level flight'):vsi>0?'Climbing':'Descending';$('heading-cardinal').textContent=['N','NE','E','SE','S','SW','W','NW'][Math.round(heading/45)%8];$('throttle-value').textContent=`${Math.round(s.throttle*100)}%${s.afterburner?' · AB':''}`;$('touch-power-label').textContent=h?`Collective ${Math.round(s.throttle*100)}%`:'Power';$('throttle-slider').value=s.throttle*100;$('gear-state').textContent=h?'FIXED':s.gearDown?'DOWN':'UP';$('gear-btn').classList.toggle('active',s.gearDown);$('flaps-state').textContent=h?'N/A':`${s.flaps*15}°`;$('flaps-btn').classList.toggle('active',s.flaps>0);$('flight-timer').textContent=formatTime(s.flightTime);$('map-distance').textContent=`${(s.distance/1852).toFixed(1)} NM`;$('speed-marker').style.left=`${Math.min(96,speed/flight.type.speedScale*100)}%`;$('attitude-inner').style.transform=`rotate(${-s.bank*180/Math.PI}deg) translateY(${s.pitch*45}px)`;
  if(lastAssist!==s.autopilot){lastAssist=s.autopilot;updateAssist();}
- $('gear-warning').hidden=!flight.gearWarning;
- const stalled=s.stalled&&!s.grounded&&!s.crashed&&!paused&&!dialog.open;
- let notice='';const agl=s.position.y-world.heightAt(s.position.x,s.position.z);if(stalled)notice='STALL · Add power and regain airspeed';else if(agl<(h?12:100)&&!s.grounded&&!s.crashed&&(!h||s.verticalSpeed < -2))notice=h?'TERRAIN · Raise collective':'TERRAIN · Pull up';else if(s.grounded)notice=h?'On the ground · Raise collective to lift vertically':'On the ground · Add power and pitch up to take off';
+ $('gear-warning').hidden=!flight.gearWarning||landing.finished;
+ const stalled=s.stalled&&!landing.finished&&!s.grounded&&!s.crashed&&!paused&&!dialog.open;
+ const runwayPosition=landing.guidance(s);
+ const onFinal=landing.active&&s.gearDown&&Math.abs(runwayPosition.cross)<world.airport.runwayWidth&&runwayPosition.along>=-1500&&runwayPosition.along<=world.airport.runwayLength;
+ let notice='';const agl=s.position.y-world.heightAt(s.position.x,s.position.z);if(stalled)notice='STALL · Add power and regain airspeed';else if(!onFinal&&!landing.finished&&agl<(h?12:100)&&!s.grounded&&!s.crashed&&(!h||s.verticalSpeed < -2))notice=h?'TERRAIN · Raise collective':'TERRAIN · Pull up';else if(s.grounded&&landing.status==='idle')notice=h?'On the ground · Raise collective to lift vertically':'On the ground · Add power and pitch up to take off';
  if(notice!==lastNotice){lastNotice=notice;$('flight-notice').textContent=notice;$('flight-notice').classList.toggle('visible',!!notice);$('flight-notice').classList.toggle('warning',stalled||notice.startsWith('TERRAIN'));$('flight-notice').classList.toggle('stall',stalled);}
- if(s.crashed&&!lastCrash){lastCrash=true;$('crash-overlay').hidden=false;$('sim-status').textContent='Flight ended';}
+ updateLandingUI();
+ if(s.crashed&&!lastCrash&&landing.status==='idle'){lastCrash=true;$('crash-overlay').hidden=false;$('sim-status').textContent='Flight ended';}
  if(settings.showMap)drawMap();
 }
 function updateCamera(dt){
@@ -245,13 +307,13 @@ function updateCamera(dt){
 const clock=new THREE.Clock();
 function tick(){
  requestAnimationFrame(tick);const dt=Math.min(clock.getDelta(),.25);frameTime+=dt;
- const canFly=!paused&&!dialog.open&&!flight.state.crashed;
+ const canFly=!paused&&!dialog.open&&!flight.state.crashed&&!landing.finished;
  if(canFly){
-  controls.advance(performance.now()/1000,(step,inputs)=>flight.update(step,inputs));flightMaxAlt=Math.max(flightMaxAlt,flight.state.position.y);
+  controls.advance(performance.now()/1000,(step,inputs)=>{if(landing.finished)return;flight.update(step,inputs);landing.update(step,flight.state);});flightMaxAlt=Math.max(flightMaxAlt,flight.state.position.y);
   trailClock+=dt;if(trailClock>1){trailClock=0;flightTrail.push({x:flight.state.position.x,z:flight.state.position.z});if(flightTrail.length>2000)flightTrail.shift();}
  }else controls.reset(performance.now()/1000);
  aircraft.group.position.copy(flight.state.position);aircraft.group.quaternion.copy(flight.state.quaternion);cockpit.userData.update?.(flight.state);aircraft.update(canFly?dt:flight.type.flight.rotorcraft?0:dt*.15,flight.state.throttle,{...flight.state,time:frameTime});
- if(canFly||sceneDirty||orbitDrag){world.update(dt,frameTime,flight.state.position);updateCamera(dt);renderer.render(scene,camera);sceneDirty=false;fpsFrames++;}audio.update({...flight.state,stalled:canFly&&flight.state.stalled,throttle:paused?0:flight.state.throttle,speed:paused?0:flight.state.speed,crashed:flight.state.crashed||paused},flight.gearWarning);
+ if(canFly||sceneDirty||orbitDrag){world.update(dt,frameTime,flight.state.position);updateCamera(dt);renderer.render(scene,camera);sceneDirty=false;fpsFrames++;}audio.update({...flight.state,stalled:canFly&&flight.state.stalled,throttle:paused||landing.finished?0:flight.state.throttle,speed:paused||landing.finished?0:flight.state.speed,crashed:flight.state.crashed||paused||landing.finished},flight.gearWarning);
  if(frameTime-lastUi>.12){lastUi=frameTime;updateUI(frameTime);}const now=performance.now();if(now-lastFps>1500){if(canFly)$('fps-label').textContent=`${Math.round(fpsFrames/((now-lastFps)/1000))} FPS`;fpsFrames=0;lastFps=now;}
 }
 function resize(){sceneDirty=true;const w=worldContainer.clientWidth,h=worldContainer.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);initialCamera=true;}
@@ -260,4 +322,4 @@ window.addEventListener('beforeunload',saveFlight);
 updateAircraftLabels();updateAssist();updateUI(0);updateCamera(1);renderer.render(scene,camera);tick();
 setTimeout(()=>{$('loading').classList.add('leaving');setTimeout(()=>$('loading').remove(),750);},500);
 // Expose read-only diagnostic snapshots for repeatable rendering and control checks.
-window.aeronaut={getState:()=>({...flight.state,position:flight.state.position.toArray(),quaternion:flight.state.quaternion.toArray(),paused,view,quality:settings.quality,weather:settings.weather}),getRendererInfo:()=>({...renderer.info.render}),reset:restart,setPaused, setQuality,setAircraft,runwayStart,getAircraft:()=>({id:flight.type.id,name:flight.type.name,gearPosition:aircraft.gearPosition,surfaces:aircraft.surfaces,afterburner:aircraft.afterburner})};
+window.aeronaut={getState:()=>({...flight.state,position:flight.state.position.toArray(),quaternion:flight.state.quaternion.toArray(),paused,view,quality:settings.quality,weather:settings.weather}),getMission:()=>landing.snapshot(),startLanding,getRendererInfo:()=>({...renderer.info.render}),reset:restart,setPaused, setQuality,setAircraft,runwayStart,getAircraft:()=>({id:flight.type.id,name:flight.type.name,gearPosition:aircraft.gearPosition,surfaces:aircraft.surfaces,afterburner:aircraft.afterburner})};

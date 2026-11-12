@@ -82,6 +82,7 @@ export function stepHelicopter(flight, dt, controls) {
   if (s.position.y <= surface) {
     const penetration = surface - s.position.y;
     s.position.y = surface;
+    flight.recordTouchdown();
     const skidHeights = [[-1.2, -1.2], [1.2, -1.2], [-1.2, 1.2], [1.2, 1.2]].map(([x, z]) => flight.groundAt(s.position.x + x, s.position.z + z));
     const levelGround = Math.max(...skidHeights) - Math.min(...skidHeights) < 0.8;
     const water = flight.heightAt(s.position.x, s.position.z) <= 10.2;

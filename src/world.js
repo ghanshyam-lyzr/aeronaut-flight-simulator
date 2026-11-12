@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { AIRFIELD } from './airfield.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -10,8 +11,8 @@ function fbm(x, z) { return noise(x, z) * .55 + noise(x * 2.03 + 17, z * 2.03 + 
 function ridge(x, z) { return 1 - Math.abs(noise(x, z) * 2 - 1); }
 let randomSeed = 784391;
 function random() { randomSeed = (Math.imul(randomSeed, 1664525) + 1013904223) | 0; return (randomSeed >>> 0) / 4294967296; }
-const airportX = 900, airportZ = -1800, airportY = 78;
-function groundHeight(x, z) {
+const { x: airportX, z: airportZ, elevation: airportY } = AIRFIELD;
+export function groundHeight(x, z) {
   const curve = Math.sin(z * .00028) * 480 + Math.sin(z * .00074) * 170;
   const dist = Math.abs(x - curve + (noise(x * .00055, z * .00055) - .5) * 230);
   const foot = smooth(1000, 4900, dist);
@@ -327,7 +328,7 @@ function airport(scene) {
     glass: new THREE.MeshStandardMaterial({ color: 0x41626d, roughness: .2, metalness: .3 })
   };
   function box(w, h, d, x, y, z, mat) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); group.add(m); return m; }
-  box(53, .45, 1100, 0, 0, 0, materials.runway);
+  box(AIRFIELD.runwayWidth, .45, AIRFIELD.runwayLength, 0, 0, 0, materials.runway);
   box(125, .30, 275, 110, 0, -220, materials.concrete);
   box(90, .30, 15, 65, 0, -115, materials.runway);
   box(90, .30, 15, 65, 0, -330, materials.runway);
@@ -375,7 +376,7 @@ function airport(scene) {
     geometries.forEach(geometry => geometry.dispose());
     group.add(new THREE.Mesh(combined, material));
   }
-  return { position: new THREE.Vector3(airportX, airportY, airportZ), runwayLength: 1100, heading: 0, name: 'Alpine Field', elevation: airportY, windsock: sock };
+  return { ...AIRFIELD, position: new THREE.Vector3(airportX, airportY, airportZ), windsock: sock };
 }
 
 function buildVillages(scene) {
