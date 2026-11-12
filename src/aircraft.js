@@ -3,12 +3,14 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 import { createFleetAircraft, EXPANDED_AIRCRAFT } from './fleet-models.js';
 import { createFleetCockpit } from './fleet-cockpit.js';
+import { createUtility, createUtilityCockpit } from './utility.js';
 import { create737 } from './airliner.js';
 import { createCargo, createCargoCockpit } from './cargo.js';
 import { createFighter } from './fighter.js';
 import { createHelicopter, createHelicopterCockpit } from './helicopter.js';
 import { aircraftType } from './fleet.js';
 import { createCanard, createCanardCockpit } from './canard.js';
+import { createTransport, createTransportCockpit } from './transport.js';
 
 const clamp = THREE.MathUtils.clamp;
 const ease = (value, target, rate, dt) => THREE.MathUtils.lerp(value, target, 1 - Math.exp(-rate * dt));
@@ -19,6 +21,8 @@ export const AIRCRAFT = { name: 'Vela J8', registration: 'A-VJ08' };
 export function createAircraft(type = 'jet') {
   if (EXPANDED_AIRCRAFT.includes(type)) return createFleetAircraft(type);
   if (type === 'canard') return createCanard();
+  if (type === 'utility') return createUtility();
+  if (type === 'transport') return createTransport();
   if (type === 'cargo') return createCargo();
   return type === 'airliner' ? create737() : type === 'helicopter' ? createHelicopter() : type === 'fighter' ? createFighter() : createVela();
 }
@@ -438,8 +442,10 @@ function createVela() {
 export function createCockpit(type = 'jet') {
   if (EXPANDED_AIRCRAFT.includes(type)) return createFleetCockpit(type);
   if (type === 'canard') return createCanardCockpit();
+  if (type === 'utility') return createUtilityCockpit();
   if (type === 'cargo') return createCargoCockpit();
   if (type === 'helicopter') return createHelicopterCockpit();
+  if (type === 'transport') return createTransportCockpit();
   const fighter = type === 'fighter', airliner = type === 'airliner';
   const info = aircraftType(type);
   const cockpit = new THREE.Group();

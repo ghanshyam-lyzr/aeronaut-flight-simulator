@@ -31,12 +31,12 @@ export function stepHelicopter(flight, dt, controls) {
   } else {
     flight.pitchRate = mix(flight.pitchRate, controls.pitch * f.pitchRate, f.pitchResponse, dt);
     flight.rollRate = mix(flight.rollRate, controls.roll * f.rollRate, f.rollResponse, dt);
-    flight.yawRate = mix(flight.yawRate, controls.yaw * f.yawRate, 6, dt);
+    flight.yawRate = mix(flight.yawRate, controls.yaw * f.yawRate, f.yawResponse ?? 6, dt);
     s.pitch += flight.pitchRate * dt;
     s.bank += flight.rollRate * dt;
     // A centered cyclic levels the disc; momentum still needs time or opposite cyclic to stop.
-    if (Math.abs(controls.pitch) < 0.001) s.pitch = mix(s.pitch, 0, 1.6, dt);
-    if (Math.abs(controls.roll) < 0.001) s.bank = mix(s.bank, 0, 1.6, dt);
+    if (Math.abs(controls.pitch) < 0.001) s.pitch = mix(s.pitch, 0, f.levelRate ?? 1.6, dt);
+    if (Math.abs(controls.roll) < 0.001) s.bank = mix(s.bank, 0, f.levelRate ?? 1.6, dt);
   }
   s.pitch = clamp(s.pitch, ...f.pitchLimits);
   s.bank = clamp(s.bank, -f.bankLimit, f.bankLimit);
@@ -47,7 +47,7 @@ export function stepHelicopter(flight, dt, controls) {
   // A governed rotor stays at flight RPM above idle. Collective changes blade pitch, not RPM.
   s.rotorSpeed = mix(s.rotorSpeed, s.throttle > 0.02 ? 1 : 0, s.throttle > 0.02 ? f.rotorSpinUp : f.rotorSpinDown, dt);
   up.set(0, 1, 0).applyQuaternion(s.quaternion);
-  // Modest tilt compensation keeps this light helicopter accessible while translating.
+  // Modest tilt compensation keeps every helicopter accessible while translating.
   const lift = g * s.spool / f.hoverCollective * s.rotorSpeed ** 2 / Math.max(0.6, up.y);
   const ground = flight.groundAt(s.position.x, s.position.z) + f.groundClearance;
   if (s.grounded) {
@@ -83,8 +83,10 @@ export function stepHelicopter(flight, dt, controls) {
     const penetration = surface - s.position.y;
     s.position.y = surface;
     flight.recordTouchdown();
-    const skidHeights = [[-1.2, -1.2], [1.2, -1.2], [-1.2, 1.2], [1.2, 1.2]].map(([x, z]) => flight.groundAt(s.position.x + x, s.position.z + z));
-    const levelGround = Math.max(...skidHeights) - Math.min(...skidHeights) < 0.8;
+    // Skids or wheels: sample the corners of the type's footprint (the Laret H4's skids by default).
+    const [halfWidth, halfLength] = f.footprint ?? [1.2, 1.2];
+    const contacts = [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([x, z]) => flight.groundAt(s.position.x + x * halfWidth, s.position.z + z * halfLength));
+    const levelGround = Math.max(...contacts) - Math.min(...contacts) < 0.8;
     const water = flight.heightAt(s.position.x, s.position.z) <= 10.2;
     const gentle = !water && levelGround && penetration < 0.3 && Math.abs(v.y) < f.maxTouchdownSink
       && Math.hypot(v.x, v.z) < f.maxTouchdownSpeed && Math.abs(s.bank) < 0.22 && Math.abs(s.pitch) < 0.22;

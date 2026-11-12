@@ -15,7 +15,7 @@ const run = (flight, seconds, controls = {}) => { for (let i = 0; i < seconds * 
 const flying = id => new FlightController(groundHeight, id);
 
 test('complete fleet choices retain the original ten and explicit approach/engine data', () => {
-  for (const id of ['jet', 'fighter', 'helicopter', 'airliner', ...EXPANDED_AIRCRAFT]) assert.ok(FLEET[id], id);
+  for (const id of ['jet', 'fighter', 'helicopter', 'airliner', 'trainer', 'bush', 'commuter', 'regional', 'widebody', 'aerobatic']) assert.ok(FLEET[id], id);
   assert.equal(new Set(Object.values(FLEET).map(t => t.registration)).size, Object.keys(FLEET).length);
   for (const t of Object.values(FLEET)) {
     assert.ok(t.engine && Number.isFinite(t.landing.speed));

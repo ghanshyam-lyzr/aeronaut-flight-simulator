@@ -4,7 +4,7 @@ Based on main `36a934b` (fleet expansion #16). Adds one original selectable airc
 
 ## Aircraft
 
-- Montis C90 (`A-MC90`, badge CARGO): original four-engine cargo turboprop. Broad high wing (40.4 m span), four separate nacelles with four-blade propellers, deep boxy hold sweeping up to a rear loading-ramp seam (not animated), small flight-deck panes, tall fin, sponsons with retracting tandem main wheels and a twin-wheel nose gear (six tyres). Ivory with plum accent and pale gold stripe.
+- Montis C90 (`A-MC90`, badge CARGO): original four-engine cargo turboprop. Broad high wing (40.4 m span), four separate nacelles with four-blade propellers, deep boxy hold sweeping up to a rear loading-ramp seam (not animated), small flight-deck panes, tall fin, sponsons with retracting tandem main wheels and a twin-wheel nose gear (six tyres). Ivory with deep olive accent (changed from plum after merging, to stay distinct from the Veyra U9's aubergine) and pale gold stripe.
 - Metadata in `src/cargo-type.js`, model and cockpit in `src/cargo.js`, tests in `tests/cargo.test.js`. Shared files only register it (`fleet.js`, `aircraft.js`) and make the roster count dynamic (`main.js`).
 - Reuses `FlightController` and the existing turboprop sound bus (`engine: 'turboprop'`), with explicit `engines: 4` capability data.
 - Arcade tuning: ~198 kt cruise at 72%, slow turbine spool (slower than the Sarine twin), gentle roll/pitch, clean stall 89 kt, 15° flaps rotate near 90 kt, 97 kt full-flap approach at ~35% power, touchdown below 120 kt / 630 fpm.
@@ -42,3 +42,7 @@ Landing and takeoff are validated by automated normal-input pilots, not sustaine
 ## Rebased onto canard (#17)
 
 Merged main `09c3000` (Neris P2 canard) with both aircraft kept in `FLEET`, the factories, styleguide, README and the npm test script. `npm test`: **215 passed, 0 failed**; the shared landing suite lands all 12 registered types, including canard and cargo. `EXPANDED_AIRCRAFT` is still the original six. Build and `git diff --check` pass. In the browser the roster reads "12 to fly" with 12 rows, and roster-button switching canard → cargo → jet → cargo updates the labels, selection and saved id with no console errors.
+
+## Merged with Veyra U9 (#21) and Sorna H8 (#23)
+
+Merged main `fe9f7b4`. Fleet, factory and cockpit dispatch, README, styleguide and the npm test script now hold every merged aircraft plus the Montis C90. Audio routing is unchanged: `turboprop` still selects the propeller bus. The Montis accent moved from plum to deep olive hsl(84 22% 30%), because the Veyra U9's aubergine hsl(318 26% 29%) was nearly identical. `npm test`: **246 passed, 0 failed**; the shared landing suite lands all 14 registered types. There are 14 unique registrations, badges and names. Build and `git diff --check` pass. In the browser the roster reads "14 to fly" with 14 rows. Switching transport → utility → canard → cargo updates labels and the saved id, and the C90 landing mission starts at 97 kt with gear down and 30° flaps, with no console errors. The landing-start, runway close-up and phone chase screenshots were retaken in olive; the earlier plum-era chase and orbit shots were removed.

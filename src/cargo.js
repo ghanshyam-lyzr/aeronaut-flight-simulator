@@ -40,7 +40,7 @@ export function createCargo() {
   const standard = (color, roughness = 0.35, metalness = 0.2) => new THREE.MeshStandardMaterial({ color, roughness, metalness, side: THREE.DoubleSide });
   const materials = {
     paint: new THREE.MeshPhysicalMaterial({ color: 'hsl(48, 20%, 90%)', roughness: 0.34, metalness: 0.1, clearcoat: 0.6, side: THREE.DoubleSide }),
-    accent: standard('hsl(318, 24%, 30%)'), stripe: standard('hsl(44, 62%, 64%)'), rubber: standard('hsl(210, 15%, 9%)', 0.88),
+    accent: standard('hsl(84, 22%, 30%)'), stripe: standard('hsl(44, 62%, 64%)'), rubber: standard('hsl(210, 15%, 9%)', 0.88),
     metal: standard('hsl(200, 12%, 62%)', 0.3, 0.8), dark: standard('hsl(205, 18%, 15%)', 0.55, 0.4),
     glass: new THREE.MeshPhysicalMaterial({ color: 'hsl(201, 37%, 19%)', roughness: 0.1, metalness: 0.5, clearcoat: 1 }),
   };
