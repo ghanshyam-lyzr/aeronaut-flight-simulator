@@ -5,6 +5,7 @@ import { createFleetAircraft, EXPANDED_AIRCRAFT } from './fleet-models.js';
 import { createFleetCockpit } from './fleet-cockpit.js';
 import { createUtility, createUtilityCockpit } from './utility.js';
 import { create737 } from './airliner.js';
+import { createCargo, createCargoCockpit } from './cargo.js';
 import { createFighter } from './fighter.js';
 import { createHelicopter, createHelicopterCockpit } from './helicopter.js';
 import { aircraftType } from './fleet.js';
@@ -22,6 +23,7 @@ export function createAircraft(type = 'jet') {
   if (type === 'canard') return createCanard();
   if (type === 'utility') return createUtility();
   if (type === 'transport') return createTransport();
+  if (type === 'cargo') return createCargo();
   return type === 'airliner' ? create737() : type === 'helicopter' ? createHelicopter() : type === 'fighter' ? createFighter() : createVela();
 }
 
@@ -441,6 +443,7 @@ export function createCockpit(type = 'jet') {
   if (EXPANDED_AIRCRAFT.includes(type)) return createFleetCockpit(type);
   if (type === 'canard') return createCanardCockpit();
   if (type === 'utility') return createUtilityCockpit();
+  if (type === 'cargo') return createCargoCockpit();
   if (type === 'helicopter') return createHelicopterCockpit();
   if (type === 'transport') return createTransportCockpit();
   const fighter = type === 'fighter', airliner = type === 'airliner';

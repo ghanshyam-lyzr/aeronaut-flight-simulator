@@ -1,6 +1,7 @@
 import { canard } from './canard-type.js';
 import { utility } from './utility-type.js';
 import { transport } from './transport-type.js';
+import { cargo } from './cargo-type.js';
 
 // Flyable aircraft. Flight numbers are metres, seconds and radians; labels feed every screen that names the aircraft.
 const jet = {
@@ -306,6 +307,6 @@ const aerobatic = {
   },
 };
 
-export const FLEET = { jet, fighter, helicopter, airliner, trainer, bush, commuter, regional, widebody, aerobatic, canard, utility, transport };
+export const FLEET = { jet, fighter, helicopter, airliner, trainer, bush, commuter, regional, widebody, aerobatic, canard, utility, transport, cargo };
 export const DEFAULT_AIRCRAFT = 'jet';
 export const aircraftType = id => FLEET[id] ?? FLEET[DEFAULT_AIRCRAFT];

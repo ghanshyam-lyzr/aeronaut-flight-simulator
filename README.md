@@ -1,6 +1,6 @@
 # Aeronaut
 
-A playable 3D browser flight simulator built with Three.js and Vite. Choose from a fleet of aircraft, from a forgiving high-wing trainer to an aerobatic prop, bush plane, turboprop commuter, fighter, light and medium helicopters and passenger jets, and explore a procedural alpine world with snowy peaks, a turquoise lake, forests, villages, boats, and a working airfield.
+A playable 3D browser flight simulator built with Three.js and Vite. Choose from a fleet of aircraft, from a forgiving high-wing trainer to an aerobatic prop, bush plane, turboprop commuter, four-engine cargo turboprop, fighter, light and medium helicopters and passenger jets, and explore a procedural alpine world with snowy peaks, a turquoise lake, forests, villages, boats, and a working airfield.
 
 ## Run
 
@@ -41,7 +41,7 @@ The **Neris P2** is an original two-seat canard pusher: a long glazed tandem nos
 
 ## Landing mission
 
-Choose **Landing mission** on the flight card or in **Explore**. Every fixed-wing aircraft begins 1.1 km before Alpine Field's runway 36, aligned north in their landing configuration. Approach speeds are Vela J8 109 kt, Arolla F7 136 kt, 737-800 140 kt, Mira T2 64 kt, Brenta B6 52 kt, Sarine C24 103 kt, Orsino R70 128 kt and Aven W280 150 kt. These use 30° flaps; Silex A3 uses its clean wing at 87 kt and Neris P2 at 78 kt. Veyra U9 flies a 72 kt approach with 30° flaps. Fixed gear remains fixed. Follow the chartreuse approach brackets, correct speed with power, and flare gently near 25 ft above the runway. The Laret H4 instead begins in a hover 46 ft above a small skid target at 58% collective; lower toward 55% to descend gently. The Sorna H8 begins the same way above its landing box at 62%; lower toward 59%.
+Choose **Landing mission** on the flight card or in **Explore**. Every fixed-wing aircraft begins 1.1 km before Alpine Field's runway 36, aligned north in their landing configuration. Approach speeds are Vela J8 109 kt, Arolla F7 136 kt, 737-800 140 kt, Mira T2 64 kt, Brenta B6 52 kt, Sarine C24 103 kt, Orsino R70 128 kt, Aven W280 150 kt and Montis C90 97 kt. These use 30° flaps; Silex A3 uses its clean wing at 87 kt and Neris P2 at 78 kt. Veyra U9 flies a 72 kt approach with 30° flaps. Fixed gear remains fixed. Follow the chartreuse approach brackets, correct speed with power, and flare gently near 25 ft above the runway. The Laret H4 instead begins in a hover 46 ft above a small skid target at 58% collective; lower toward 55% to descend gently. The Sorna H8 begins the same way above its landing box at 62%; lower toward 59%.
 
 Land inside the outlined touchdown zone, level and within 12° of runway heading. Touchdown feedback retains sink rate, alignment, speed and centreline offset. Fixed-wing aircraft must then remain on the runway, reduce power below 20% and slow below 6 kt for two continuous seconds. Helicopters must settle inside their box with collective just below their hover setting: 57% for the Laret H4, 61% for the Sorna H8. Off-runway, hard, fast or long landings, runway excursions and overruns end the attempt. **Retry** or **R** starts the same approach again; **Free flight** returns to a fresh airborne flight. Aircraft switching cancels the mission. Pause and dialogs freeze mission progress.
 
@@ -51,7 +51,7 @@ The mission uses the existing arcade flight and ground-roll model, including rol
 
 Clear, golden-hour, and overcast presets affect the sky, sunlight, fog, clouds, and water. Graphics quality controls render resolution, terrain detail, tree density, clouds, and shadows. High quality works best with a hardware-accelerated WebGL 2 browser. The flight log and preferences are saved locally in the current browser.
 
-All scenery, aircraft geometry, textures, and sound are generated in code. The world is inspired by the Swiss Alps; it is not a real geospatial dataset. The original Vela, Arolla and 737 cockpit face textures are decorative; the six newer aircraft, helicopter panels and HUD carry live flight data. Weather presets are simulated. No external imagery or model assets are used.
+All scenery, aircraft geometry, textures, and sound are generated in code. The world is inspired by the Swiss Alps; it is not a real geospatial dataset. The original Vela, Arolla and 737 cockpit face textures are decorative; the newer fleet aircraft, helicopter panels and HUD carry live flight data. Weather presets are simulated. No external imagery or model assets are used.
 
 
 ## Boeing 737-800
@@ -79,3 +79,7 @@ The six aircraft have live camera-local cockpit instruments, moving control surf
 ## Veyra U9 utility turboprop
 
 The **Veyra U9** (`utility`, A-VU09) is an original single-engine utility turboprop: a tall, square-sided high-wing cabin with passenger windows, a framed cargo door on the left side and a belly cargo pod, a long turbine nose with chin intake, exhaust stacks and a five-blade propeller, single lift struts, a conventional low tail with dorsal fillet, and sturdy fixed tricycle gear. Its ivory airframe carries aubergine and copper accents. It cruises near 150 kt at the default 72% power and stalls near 58 kt clean (43 kt with 30° flaps). The single turbine spools up gradually, so set power early. Take off with 15° flaps and rotate near 56 kt; the landing mission flies a 72 kt full-flap approach at about 33% power, and touchdown must stay below 90 kt and 650 ft/min. The gear is fixed, so the HUD, help and mission never ask for it. Its own single-pilot cockpit shows a primary flight display with a torque, ITT, gas-generator and propeller-speed strip, and it shares the turboprop sound on the propeller bus. No cargo loading is modelled; performance is arcade tuning for Alpine Field.
+
+## Montis C90 cargo transport
+
+The **Montis C90** is an original olive-and-ivory four-engine cargo turboprop: a broad high wing with four separate four-blade propellers, a deep boxy hold that sweeps up into a rear loading ramp (seams only; it does not open), small flight-deck panes, a tall fin, and tandem main wheels that retract into fuselage sponsons with a twin-wheel nose gear. Its turbines spool slowly and it answers gently: about 200 kt cruise, 15° flaps and rotation near 90 kt (roughly 480 m of runway with steady full power), and a 97 kt full-flap approach at about 35% power. The transport deck shows four engine-power columns and four power levers; this model has one shared engine spool, so all four always agree. It uses the turboprop sound bus. Performance is arcade tuning for Alpine Field.
