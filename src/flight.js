@@ -488,15 +488,20 @@ export function passengerSound(engine, spool, speed = 0) {
   return base;
 }
 
-/** Rotor blade-pass thrum, turbine whine and cabin airflow; RPM is independent of collective. */
-export function helicopterSound(rotorSpeed, collective = 0.58, speed = 0) {
+/**
+ * Rotor blade-pass thrum, turbine whine and cabin airflow; RPM is independent of collective.
+ * `rotor` describes the type's main rotor; the defaults are the Laret H4's three blades at 363 RPM.
+ */
+export function helicopterSound(rotorSpeed, collective = 0.58, speed = 0, rotor = {}) {
   const rpm = clamp(Number(rotorSpeed) || 0, 0, 1), load = clamp(Number(collective) || 0, 0, 1);
+  const { blades = 3, rate = 38, turbine = 600 } = rotor;
   return {
-    bladePass: rpm * 38 / (2 * Math.PI) * 3, // three blades at the model’s 363 RPM
-    rotor: 38 + rpm * 54,
+    bladePass: rpm * rate / (2 * Math.PI) * blades,
+    // A larger, slower rotor sits lower in pitch.
+    rotor: (38 + rpm * 54) * rate / 38,
     rotorGain: rpm * (0.08 + load * 0.12),
     chopGain: rpm * (0.12 + load * 0.16),
-    turbine: 600 + rpm * 1400 + load * 220,
+    turbine: turbine + rpm * 1400 + load * 220,
     turbineGain: rpm * 0.018,
     wind: clamp((Number(speed) || 0) / 350, 0, 0.2),
     master: rpm * (0.55 + load * 0.18),
@@ -682,7 +687,7 @@ export class FlightAudio {
       return;
     }
     if (helicopter) {
-      const h = helicopterSound(state.rotorSpeed, state.spool ?? state.throttle, state.speed), v = this.helicopter;
+      const h = helicopterSound(state.rotorSpeed, state.spool ?? state.throttle, state.speed, type.rotor), v = this.helicopter;
       v.rotor.frequency.setTargetAtTime(h.rotor, now, 0.12);
       v.rotorVoice.gain.gain.setTargetAtTime(h.rotorGain, now, 0.12);
       v.pulse.frequency.setTargetAtTime(h.bladePass, now, 0.12);

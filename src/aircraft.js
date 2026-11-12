@@ -9,6 +9,7 @@ import { createFighter } from './fighter.js';
 import { createHelicopter, createHelicopterCockpit } from './helicopter.js';
 import { aircraftType } from './fleet.js';
 import { createCanard, createCanardCockpit } from './canard.js';
+import { createTransport, createTransportCockpit } from './transport.js';
 
 const clamp = THREE.MathUtils.clamp;
 const ease = (value, target, rate, dt) => THREE.MathUtils.lerp(value, target, 1 - Math.exp(-rate * dt));
@@ -20,6 +21,7 @@ export function createAircraft(type = 'jet') {
   if (EXPANDED_AIRCRAFT.includes(type)) return createFleetAircraft(type);
   if (type === 'canard') return createCanard();
   if (type === 'utility') return createUtility();
+  if (type === 'transport') return createTransport();
   return type === 'airliner' ? create737() : type === 'helicopter' ? createHelicopter() : type === 'fighter' ? createFighter() : createVela();
 }
 
@@ -440,6 +442,7 @@ export function createCockpit(type = 'jet') {
   if (type === 'canard') return createCanardCockpit();
   if (type === 'utility') return createUtilityCockpit();
   if (type === 'helicopter') return createHelicopterCockpit();
+  if (type === 'transport') return createTransportCockpit();
   const fighter = type === 'fighter', airliner = type === 'airliner';
   const info = aircraftType(type);
   const cockpit = new THREE.Group();
