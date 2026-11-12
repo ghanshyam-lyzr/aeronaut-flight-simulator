@@ -8,6 +8,7 @@ import { LandingMission, landingProfile, TOUCHDOWN_ZONE } from '../src/landing-m
 import { groundHeight } from '../src/world.js';
 
 const dt = 1 / 120;
+const ROTORCRAFT = Object.keys(FLEET).filter(id => FLEET[id].flight.rotorcraft);
 function attempt(id = 'jet') {
   const flight = new FlightController(groundHeight, id), mission = new LandingMission();
   mission.start(flight);
@@ -54,7 +55,7 @@ for (const id of Object.keys(FLEET)) {
       const sink = height < 8 ? Math.min(1.8, p.maxSink * 0.65) : p.speed * p.slope;
       const idleSink = p.helicopter ? 0 : Math.max(0, 0.32 - s.spool) * (flight.type.flight.idleSink ?? 6);
       const desiredPitch = p.helicopter ? 0 : Math.asin((-sink + idleSink) / Math.max(s.speed, 1));
-      inputs.set({ pitch: (desiredPitch - s.pitch) * 4, throttle: s.grounded || (p.helicopter && s.throttle > 0.55) ? -1 : 0 }, (frame - 1) / 60);
+      inputs.set({ pitch: (desiredPitch - s.pitch) * 4, throttle: s.grounded || (p.helicopter && s.throttle > p.throttle - 0.03) ? -1 : 0 }, (frame - 1) / 60);
       inputs.advance(frame / 60, (step, controls) => { if (!mission.active) return; flight.update(step, controls); mission.update(step, s); });
     }
     assert.equal(mission.status, 'success', JSON.stringify(mission.snapshot()));
@@ -126,15 +127,30 @@ for (const [label, mutate, reason] of [
   });
 }
 
-test('helicopter needs its skid box and rejects excessive lateral speed', () => {
-  for (const overrides of [{ position: { ...runwayPoint(280), y: 79.6 }, speed: 0 }, { speed: 5 }]) {
-    const { flight, mission } = attempt('helicopter'); touchdown(flight, mission, overrides);
-    assert.equal(mission.status, 'failed');
+test('every helicopter needs its landing box and rejects excessive lateral speed', () => {
+  assert.deepEqual(ROTORCRAFT, ['helicopter', 'transport']);
+  for (const id of ROTORCRAFT) for (const overrides of [{ position: { ...runwayPoint(280), y: 79.6 }, speed: 0 }, { speed: FLEET[id].flight.maxTouchdownSpeed }]) {
+    const { flight, mission } = attempt(id); touchdown(flight, mission, overrides);
+    assert.equal(mission.status, 'failed', id);
+    if (overrides.position) assert.equal(mission.reason, `Land the ${FLEET[id].landingGear ?? 'skids'} inside the target box`);
+  }
+});
+
+test('every helicopter settles only below its own hover collective', () => {
+  for (const id of ROTORCRAFT) {
+    const { flight, mission } = attempt(id), hover = FLEET[id].flight.hoverCollective;
+    touchdown(flight, mission, { speed: 0, sink: 1 });
+    Object.assign(flight.state, { speed: 0, throttle: hover });
+    for (let i = 0; i < 3 / dt; i++) mission.update(dt, flight.state);
+    assert.equal(mission.status, 'flying', `${id}: hover collective is not settled`);
+    flight.state.throttle = hover - 0.02;
+    for (let i = 0; i < 2.1 / dt; i++) mission.update(dt, flight.state);
+    assert.equal(mission.status, 'success', id);
   }
 });
 
 test('real crash retains impact sink/speed before physics zeroes them; retry clears telemetry', () => {
-  for (const id of ['jet', 'helicopter']) {
+  for (const id of ['jet', ...ROTORCRAFT]) {
     const { flight, mission, s } = attempt(id), p = runwayPoint(220);
     s.position.set(p.x, 78 + mission.profile.clearance + 0.01, p.z);
     s.verticalSpeed = -8; s.velocity.set(0, -8, 0);
@@ -170,8 +186,8 @@ test('heading wrap at north and offset runway position use absolute alignment', 
 });
 
 
-test('helicopter begins in a true hover and requires a collective input to descend', () => {
-  const { flight, mission, s } = attempt('helicopter'), initialHeight = s.position.y;
+for (const id of ROTORCRAFT) test(`${id} begins in a true hover and requires a collective input to descend`, () => {
+  const { flight, mission, s } = attempt(id), initialHeight = s.position.y;
   for (let i = 0; i < 10 / dt; i++) { flight.update(dt); mission.update(dt, s); }
   assert.equal(mission.status, 'flying'); assert.equal(s.grounded, false);
   assert.ok(Math.abs(s.position.y - initialHeight) < 0.01);

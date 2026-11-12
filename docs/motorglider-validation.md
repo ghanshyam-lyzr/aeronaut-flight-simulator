@@ -1,6 +1,6 @@
 # Varen G18 motorglider validation
 
-Based on main `09c3000` (fleet expansion #16 and the Neris P2 canard #17, merged into this branch). Adds one original aircraft, the Varen G18 self-launching powered sailplane (`motorglider`, A-VG18). No dependencies, downloaded models or assets. Water rendering, timestamped controls, centred cameras and the one-metre near plane are unchanged; the original ten aircraft keep their behaviour.
+Based on main `702f67f` (fleet expansion #16, Neris P2 #17, Montis C90 #18, Veyra U9 #21 and Sorna H8 #23, merged into this branch). Adds one original aircraft, the Varen G18 self-launching powered sailplane (`motorglider`, A-VG18). No dependencies, downloaded models or assets. Water rendering, timestamped controls, centred cameras and the one-metre near plane are unchanged; the original ten aircraft keep their behaviour.
 
 ## What changed
 
@@ -13,13 +13,13 @@ Based on main `09c3000` (fleet expansion #16 and the Neris P2 canard #17, merged
 
 ## Automated checks
 
-`npm test` on the branch merged with current main: **214 passed, 0 failed**, including the canard suite. The shared landing-mission suite's feedback pilot lands all 12 registered types (jet, fighter, helicopter, airliner, trainer, bush, commuter, regional, widebody, aerobatic, canard, motorglider). `npm run build` passes (Vite keeps its large-bundle advisory).
+`npm test` on the branch merged with current main: **259 passed, 0 failed**, including the canard, utility, transport and cargo suites. The shared landing-mission suite's feedback pilot lands all 15 registered types (jet, fighter, helicopter, airliner, trainer, bush, commuter, regional, widebody, aerobatic, canard, utility, transport, cargo, motorglider); 15 unique registrations. `npm run build` passes (Vite keeps its large-bundle advisory).
 
 Deterministic G18 cases on the real terrain with ordinary inputs: 67 kt motoring cruise holds altitude; power-off hands-off glide settles at about 49 kt, −260 ft/min (~19:1) and always descends; nose-high power-off stall below 37 kt with gentle recovery; 15° flap self-launch roll about 117 m, 400–600 ft/min initial climb; fixed gear never warns; flaps cycle 15/30/0; the shared all-fleet mission pilot and its own copy both land in the touchdown zone at the 49 kt approach (touchdown ~1.7 m/s); hands-off approaches float long and fail; a full-power dive fails as a hard landing and retries cleanly; 30/100 ms taps on every axis stay small and frame-rate independent (10–120 Hz); roll is slower than the Mira T2; stopped-prop audio is silent below `stopBelow` with wind kept, fades in monotonically, matches the quiet level when running, and FlightAudio drives the tone/wash voices to zero while stopped; other prop aircraft keep their idle sound; geometry span 18.1 m, monowheel and tailwheel meet the runway datum to 1 µm with outriggers 6 cm clear; prop stopped at idle and turning with spool; flaps, opposite ailerons, elevators and rudder move; every geometry/material disposes.
 
 ## Browser review
 
-After the merge: the Explore roster lists all 12 ids with the heading "12 to fly"; selecting the Neris P2 and then the G18 through the roster works; no console errors or warnings.
+After the merge: the Explore roster lists all 15 ids with the heading "15 to fly"; switching through the merged types to the G18 via the roster works, a G18 runway self-launch and its landing-mission start behave as before; no console errors or warnings.
 
 
 Existing `forge serve` preview on 0.0.0.0:5173, headless Chromium. Selected through the real Explore roster (heading reads "11 to fly"), reload restored the G18 from saved settings, controls dialog omits G and lists F, gear button disabled/"FIXED". Landing mission brief/HUD read 49 kt, "Gear fixed · flaps 30°". Chase, orbit and cockpit checked at 1600×900; landing-start chase/orbit at 1280×800; chase and cockpit at 390×844 (whole span framed, no horizontal overflow). A saved 40 s G18 flight appears as "Varen G18" in the flight log after switching to the Mira T2; repeated switching returned to the G18. No console errors or warnings.
