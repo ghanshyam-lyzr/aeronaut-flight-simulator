@@ -14,10 +14,9 @@ import { LandingMission } from '../src/landing-mission.js';
 const run = (flight, seconds, controls = {}) => { for (let i = 0; i < seconds * 120; i++) flight.update(1 / 120, controls); return flight.state; };
 const flying = id => new FlightController(groundHeight, id);
 
-test('ten complete fleet choices retain the original four and explicit approach/engine data', () => {
-  assert.equal(Object.keys(FLEET).length, 10);
-  for (const id of ['jet', 'fighter', 'helicopter', 'airliner']) assert.ok(FLEET[id]);
-  assert.equal(new Set(Object.values(FLEET).map(t => t.registration)).size, 10);
+test('complete fleet choices retain the original ten and explicit approach/engine data', () => {
+  for (const id of ['jet', 'fighter', 'helicopter', 'airliner', ...EXPANDED_AIRCRAFT]) assert.ok(FLEET[id], id);
+  assert.equal(new Set(Object.values(FLEET).map(t => t.registration)).size, Object.keys(FLEET).length);
   for (const t of Object.values(FLEET)) {
     assert.ok(t.engine && Number.isFinite(t.landing.speed));
     assert.ok(t.name && t.help && t.choice && t.runwayHint && t.summary && t.badge);
