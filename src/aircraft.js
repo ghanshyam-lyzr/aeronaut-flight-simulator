@@ -4,12 +4,16 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createFleetAircraft, EXPANDED_AIRCRAFT } from './fleet-models.js';
 import { createFleetCockpit } from './fleet-cockpit.js';
 import { createUtility, createUtilityCockpit } from './utility.js';
+import { createBiplane, createBiplaneCockpit } from './biplane.js';
 import { createCityliner, createCitylinerCockpit } from './cityliner.js';
 import { create737 } from './airliner.js';
+import { createCargo, createCargoCockpit } from './cargo.js';
 import { createFighter } from './fighter.js';
 import { createHelicopter, createHelicopterCockpit } from './helicopter.js';
 import { aircraftType } from './fleet.js';
 import { createCanard, createCanardCockpit } from './canard.js';
+import { createTransport, createTransportCockpit } from './transport.js';
+import { createMotorglider, createMotorgliderCockpit } from './motorglider.js';
 
 const clamp = THREE.MathUtils.clamp;
 const ease = (value, target, rate, dt) => THREE.MathUtils.lerp(value, target, 1 - Math.exp(-rate * dt));
@@ -21,6 +25,10 @@ export function createAircraft(type = 'jet') {
   if (EXPANDED_AIRCRAFT.includes(type)) return createFleetAircraft(type);
   if (type === 'canard') return createCanard();
   if (type === 'utility') return createUtility();
+  if (type === 'transport') return createTransport();
+  if (type === 'cargo') return createCargo();
+  if (type === 'motorglider') return createMotorglider();
+  if (type === 'biplane') return createBiplane();
   if (type === 'cityliner') return createCityliner();
   return type === 'airliner' ? create737() : type === 'helicopter' ? createHelicopter() : type === 'fighter' ? createFighter() : createVela();
 }
@@ -441,8 +449,12 @@ export function createCockpit(type = 'jet') {
   if (EXPANDED_AIRCRAFT.includes(type)) return createFleetCockpit(type);
   if (type === 'canard') return createCanardCockpit();
   if (type === 'utility') return createUtilityCockpit();
+  if (type === 'cargo') return createCargoCockpit();
+  if (type === 'motorglider') return createMotorgliderCockpit();
+  if (type === 'biplane') return createBiplaneCockpit();
   if (type === 'cityliner') return createCitylinerCockpit();
   if (type === 'helicopter') return createHelicopterCockpit();
+  if (type === 'transport') return createTransportCockpit();
   const fighter = type === 'fighter', airliner = type === 'airliner';
   const info = aircraftType(type);
   const cockpit = new THREE.Group();
