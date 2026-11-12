@@ -257,7 +257,8 @@ export function createCitylinerCockpit() {
     bar([side * 1.6, -0.9, -1.6], [side * 1.6, -0.75, -2.65], 0.05);
     bar([side * 1.6, -0.8, -1.8], [side * 1.3, 1.6, -2.3], 0.05);
   }
-  bar([0.5, -0.6, -2.25], [0.42, 1.65, -2.35], 0.035);
+  // The centre post ends inside the hood's lip, above the screen's top edge (y −0.45, or −0.40 when raised for phones).
+  bar([0.5, -0.37, -2.32], [0.42, 1.65, -2.35], 0.035);
   bar([-1.35, 1.62, -2.3], [1.35, 1.62, -2.3], 0.06, accent);
   const shell = part(new THREE.BoxGeometry(3, 0.54, 0.18), dark, panel); shell.position.set(0, -0.94, -1.9);
   const hood = part(new THREE.BoxGeometry(3.1, 0.06, 0.42), trim, panel); hood.position.set(0, -0.65, -1.97);
@@ -297,13 +298,15 @@ export function createCitylinerCockpit() {
       text(`VS ${Math.round((state.verticalSpeed ?? 0) * 196.85)}`, 565, 225, 16);
       // Engine column: four N1 bars. All four read one simulated spool, and the label says so.
       text('N1 % · ONE SHARED SPOOL', 652, 62, 14, colors.muted, 'left');
+      // Readouts sit above the bars and everything stays in the upper 80% of the screen, clear of the HUD strip on small laptops.
       for (let i = 0; i < 4; i++) {
         const x = 668 + i * 60, n1 = 22 + spool * 76;
-        ctx.fillStyle = colors.line; ctx.fillRect(x, 78, 26, 110);
-        ctx.fillStyle = colors.signal; ctx.fillRect(x, 188 - 110 * spool, 26, 110 * spool);
-        text(String(i + 1), x + 13, 208, 14, colors.muted); text(String(Math.round(n1)), x + 13, 232, 17);
+        text(String(Math.round(n1)), x + 13, 92, 18);
+        ctx.fillStyle = colors.line; ctx.fillRect(x, 102, 26, 76);
+        ctx.fillStyle = colors.signal; ctx.fillRect(x, 178 - 76 * spool, 26, 76 * spool);
+        text(`ENG ${i + 1}`, x + 13, 196, 13, colors.muted);
       }
-      // Flap stages and gear state: the selected flap stage fills, gear reads green-signal when down.
+      // Flap stages and gear state: the selected flap stage fills, gear reads in the signal colour when down.
       text('FLAPS', 935, 62, 15, colors.muted, 'left');
       [0, 15, 30].forEach((deg, i) => {
         const x = 935 + i * 72, on = (state.flaps ?? 0) === i;
@@ -313,8 +316,8 @@ export function createCitylinerCockpit() {
       });
       text('GEAR', 935, 145, 15, colors.muted, 'left');
       text(state.gearDown ? 'DOWN · 3 GREEN' : 'UP', 1150, 145, 19, state.gearDown ? colors.signal : colors.ink, 'right');
-      const unsafe = !state.gearDown && !state.grounded && (state.throttle ?? 1) < 0.2;
-      text(state.stalled ? 'STALL' : unsafe ? 'GEAR' : type.badge, 1040, 205, 26, state.stalled || unsafe ? colors.warn : colors.muted);
+      // Gear warnings stay with the shared HUD banner and horn; the deck shows only the gear position.
+      text(state.stalled ? 'STALL' : type.badge, 1040, 188, 26, state.stalled ? colors.warn : colors.muted);
       texture.needsUpdate = true;
     };
   }

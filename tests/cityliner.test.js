@@ -115,12 +115,17 @@ test('stall near 89 kt clean breaks gently, flaps lower it, and power recovers i
 });
 
 test('retractable gear warns when low and slow; flap stages add useful drag and lift', () => {
-  const flight = flying(), s = flight.state;
-  s.position.set(900, AIRFIELD.elevation + 150, -1800); s.throttle = 0.1;
-  assert.equal(s.gearDown, false); assert.equal(flight.gearWarning, true);
-  assert.equal(flight.toggleGear(), true); assert.equal(flight.gearWarning, false);
-  assert.equal(flight.toggleGear(), false); s.throttle = 0.5; assert.equal(flight.gearWarning, false);
-  s.throttle = 0.1; s.position.y = AIRFIELD.elevation + 400; assert.equal(flight.gearWarning, false);
+  const flight = flying(), s = flight.state, ground = groundHeight(900, -1800);
+  assert.equal(ground, AIRFIELD.elevation);
+  // The shared rule: gear up, power below 20% and below 1,000 ft (304.8 m) AGL; both thresholds exclusive.
+  const warns = (agl, throttle, gearDown = false) => { s.position.set(900, ground + agl, -1800); Object.assign(s, { throttle, gearDown }); return flight.gearWarning; };
+  assert.equal(warns(150, 0.1), true);
+  assert.equal(warns(304.7, 0.1), true, 'just below 1,000 ft AGL');
+  assert.equal(warns(304.8, 0.1), false, 'at 1,000 ft AGL'); assert.equal(warns(400, 0.1), false, 'above 1,000 ft AGL');
+  assert.equal(warns(150, 0.19), true); assert.equal(warns(150, 0.2), false, 'at 20% power');
+  assert.equal(warns(150, 0.1, true), false, 'gear down');
+  warns(150, 0.1); assert.equal(flight.toggleGear(), true); assert.equal(flight.gearWarning, false);
+  assert.equal(flight.toggleGear(), false); assert.equal(flight.gearWarning, true);
   assert.deepEqual([flight.cycleFlaps(), flight.cycleFlaps(), flight.cycleFlaps()], [1, 2, 0]);
   const settled = flaps => { const fl = flying(); for (let i = 0; i < flaps; i++) fl.cycleFlaps(); return run(fl, 40).speed; };
   const [clean, takeoffFlaps, full] = [0, 1, 2].map(settled);
