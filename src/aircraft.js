@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 import { createFleetAircraft, EXPANDED_AIRCRAFT } from './fleet-models.js';
 import { createFleetCockpit } from './fleet-cockpit.js';
+import { createUtility, createUtilityCockpit } from './utility.js';
 import { create737 } from './airliner.js';
 import { createFighter } from './fighter.js';
 import { createHelicopter, createHelicopterCockpit } from './helicopter.js';
@@ -16,6 +17,7 @@ export const AIRCRAFT = { name: 'Vela J8', registration: 'A-VJ08' };
 /** Builds the procedural airframe for any fleet id; unknown saved choices fall back to the Vela J8. */
 export function createAircraft(type = 'jet') {
   if (EXPANDED_AIRCRAFT.includes(type)) return createFleetAircraft(type);
+  if (type === 'utility') return createUtility();
   return type === 'airliner' ? create737() : type === 'helicopter' ? createHelicopter() : type === 'fighter' ? createFighter() : createVela();
 }
 
@@ -433,6 +435,7 @@ function createVela() {
 // Camera-local cockpit. Attach directly to the active camera; no animation loop is needed.
 export function createCockpit(type = 'jet') {
   if (EXPANDED_AIRCRAFT.includes(type)) return createFleetCockpit(type);
+  if (type === 'utility') return createUtilityCockpit();
   if (type === 'helicopter') return createHelicopterCockpit();
   const fighter = type === 'fighter', airliner = type === 'airliner';
   const info = aircraftType(type);
