@@ -52,7 +52,7 @@ for (const id of Object.keys(FLEET)) {
       if (frame === 300 && flight.type.noFlaps) { flight.cycleFlaps(); assert.equal(s.flaps, 0); }
       const height = s.position.y - AIRFIELD.elevation - p.clearance;
       const sink = height < 8 ? Math.min(1.8, p.maxSink * 0.65) : p.speed * p.slope;
-      const idleSink = p.helicopter ? 0 : Math.max(0, 0.32 - s.spool) * 6;
+      const idleSink = p.helicopter ? 0 : Math.max(0, 0.32 - s.spool) * (flight.type.flight.idleSink ?? 6);
       const desiredPitch = p.helicopter ? 0 : Math.asin((-sink + idleSink) / Math.max(s.speed, 1));
       inputs.set({ pitch: (desiredPitch - s.pitch) * 4, throttle: s.grounded || (p.helicopter && s.throttle > 0.55) ? -1 : 0 }, (frame - 1) / 60);
       inputs.advance(frame / 60, (step, controls) => { if (!mission.active) return; flight.update(step, controls); mission.update(step, s); });

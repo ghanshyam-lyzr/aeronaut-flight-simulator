@@ -176,7 +176,9 @@ export class FlightController {
       s.bank += this.rollRate * dt;
       // Soft self-stability makes cruising possible without continuous corrections.
       if (Math.abs(controls.roll) < 0.05) s.bank = mix(s.bank, 0, 0.17, dt);
-      if (Math.abs(controls.pitch) < 0.05) s.pitch = mix(s.pitch, 0, 0.045, dt);
+      // A glider's released stick settles to its idle-power glide attitude rather than level.
+      const trim = f.glidePitch ? -f.glidePitch * clamp(1 - s.spool / 0.32, 0, 1) : 0;
+      if (Math.abs(controls.pitch) < 0.05) s.pitch = mix(s.pitch, trim, 0.045, dt);
     }
 
     if (!free) {
@@ -214,7 +216,7 @@ export class FlightController {
       s.autopilot = false;
     }
 
-    const idleSink = Math.max(0, 0.32 - s.spool) * 6;
+    const idleSink = Math.max(0, 0.32 - s.spool) * (f.idleSink ?? 6);
     const lowSpeedSink = stallAmount * stallAmount * 8;
     if (free) {
       this.turnFree(dt);
@@ -470,12 +472,13 @@ export function airlinerSound(spool, speed = 0) {
 }
 
 /** Piston firing/prop blade-pass tones; the commuter adds a separate turbine whistle. */
-export function propellerSound(engine, spool, speed = 0) {
+export function propellerSound(engine, spool, speed = 0, voice = {}) {
+  const { pitch = 1, level = 1 } = voice ?? {};
   const power = clamp(Number(spool) || 0, 0, 1), airspeed = Math.max(0, Number(speed) || 0);
   const turbine = engine === 'turboprop', aerobatic = engine === 'aeroprop';
-  return { tone: (turbine ? 100 : aerobatic ? 48 : 38) + power * (turbine ? 110 : 75),
-    toneGain: 0.1 + power * 0.12, pulse: (turbine ? 28 : 16) + power * (turbine ? 65 : 34),
-    pulseDepth: turbine ? 0.025 : 0.045, wash: 180 + power * 650, washGain: 0.03 + power * power * 0.15,
+  return { tone: ((turbine ? 100 : aerobatic ? 48 : 38) + power * (turbine ? 110 : 75)) * pitch,
+    toneGain: (0.1 + power * 0.12) * level, pulse: ((turbine ? 28 : 16) + power * (turbine ? 65 : 34)) * pitch,
+    pulseDepth: (turbine ? 0.025 : 0.045) * level, wash: 180 + power * 650, washGain: (0.03 + power * power * 0.15) * level,
     turbine: 700 + power * 1800, turbineGain: turbine ? 0.01 + power * 0.025 : 0,
     wind: clamp(airspeed / 500, 0, 0.25), master: 0.42 + power * 0.22 };
 }
@@ -672,7 +675,7 @@ export class FlightAudio {
     this.helicopterBus.gain.setTargetAtTime(helicopter ? 1 : 0, now, 0.08);
     this.propBus?.gain.setTargetAtTime(propeller ? 1 : 0, now, 0.08);
     if (propeller) {
-      const p = propellerSound(engine, state.spool ?? state.throttle, state.speed), v = this.prop;
+      const p = propellerSound(engine, state.spool ?? state.throttle, state.speed, type.propVoice), v = this.prop;
       v.tone.frequency.setTargetAtTime(p.tone, now, 0.12); v.toneVoice.gain.gain.setTargetAtTime(p.toneGain, now, 0.12);
       v.pulse.frequency.setTargetAtTime(p.pulse, now, 0.12); v.depth.gain.setTargetAtTime(p.pulseDepth, now, 0.12);
       v.wash.filter.frequency.setTargetAtTime(p.wash, now, 0.15); v.wash.gain.gain.setTargetAtTime(p.washGain, now, 0.15);
