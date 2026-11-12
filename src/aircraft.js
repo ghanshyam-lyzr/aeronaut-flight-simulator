@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createFleetAircraft, EXPANDED_AIRCRAFT } from './fleet-models.js';
 import { createFleetCockpit } from './fleet-cockpit.js';
 import { createUtility, createUtilityCockpit } from './utility.js';
+import { createCityliner, createCitylinerCockpit } from './cityliner.js';
 import { create737 } from './airliner.js';
 import { createFighter } from './fighter.js';
 import { createHelicopter, createHelicopterCockpit } from './helicopter.js';
@@ -20,6 +21,7 @@ export function createAircraft(type = 'jet') {
   if (EXPANDED_AIRCRAFT.includes(type)) return createFleetAircraft(type);
   if (type === 'canard') return createCanard();
   if (type === 'utility') return createUtility();
+  if (type === 'cityliner') return createCityliner();
   return type === 'airliner' ? create737() : type === 'helicopter' ? createHelicopter() : type === 'fighter' ? createFighter() : createVela();
 }
 
@@ -439,6 +441,7 @@ export function createCockpit(type = 'jet') {
   if (EXPANDED_AIRCRAFT.includes(type)) return createFleetCockpit(type);
   if (type === 'canard') return createCanardCockpit();
   if (type === 'utility') return createUtilityCockpit();
+  if (type === 'cityliner') return createCitylinerCockpit();
   if (type === 'helicopter') return createHelicopterCockpit();
   const fighter = type === 'fighter', airliner = type === 'airliner';
   const info = aircraftType(type);

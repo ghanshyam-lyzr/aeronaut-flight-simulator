@@ -485,6 +485,8 @@ export function passengerSound(engine, spool, speed = 0) {
   const base = engine === 'turbofan' ? jetSound(spool, speed) : airlinerSound(spool, speed);
   if (engine === 'regional') return { ...base, whine: base.whine * 1.13, fan: base.fan * 1.18, rumbleGain: base.rumbleGain * 0.8 };
   if (engine === 'widebody') return { ...base, whine: base.whine * 0.78, fan: base.fan * 0.72, rumbleGain: base.rumbleGain * 1.2 };
+  // Four small turbofans: a higher, busier fan tone and a softer exhaust than the twin airliners.
+  if (engine === 'cityliner') return { ...base, whine: base.whine * 1.22, fan: base.fan * 1.32, roarGain: base.roarGain * 0.82, rumbleGain: base.rumbleGain * 0.75 };
   return base;
 }
 
