@@ -1,6 +1,6 @@
 # Aeronaut
 
-A playable 3D browser flight simulator built with Three.js and Vite. Choose from ten aircraft, from a forgiving high-wing trainer to an aerobatic prop, bush plane, turboprop commuter, fighter, helicopter and passenger jets, and explore a procedural alpine world with snowy peaks, a turquoise lake, forests, villages, boats, and a working airfield.
+A playable 3D browser flight simulator built with Three.js and Vite. Choose an aircraft from the Explore roster, from a forgiving high-wing trainer to an aerobatic prop, bush plane, turboprop commuter, four-engine cargo turboprop, fighter, helicopter and passenger jets, and explore a procedural alpine world with snowy peaks, a turquoise lake, forests, villages, boats, and a working airfield.
 
 ## Run
 
@@ -13,7 +13,7 @@ The development server binds to `0.0.0.0:5173`. Production build: `npm run build
 
 ## Fly
 
-The simulator opens airborne with flight assist holding heading and altitude. Select **Take control**, or use the flight keys to disengage assistance. The **Explore** menu also offers a runway start and a scrollable ten-aircraft roster. Arrow keys and Home / End select aircraft while the roster has focus. Changing aircraft saves the current flight and starts the new one in the air; restarts and runway starts keep the chosen aircraft, and the choice is remembered in this browser.
+The simulator opens airborne with flight assist holding heading and altitude. Select **Take control**, or use the flight keys to disengage assistance. The **Explore** menu also offers a runway start and a scrollable aircraft roster (its heading counts the fleet). Arrow keys and Home / End select aircraft while the roster has focus. Changing aircraft saves the current flight and starts the new one in the air; restarts and runway starts keep the chosen aircraft, and the choice is remembered in this browser.
 
 The Arolla F7 and Silex A3 have no pitch or bank limits: hold the stick for continuous loops and rolls, and it stays inverted or vertical when you let go. Flight assist from any attitude first rolls and pitches the short way back to level, at no more than about 70°/s, then holds the heading and altitude it has there.
 
@@ -37,17 +37,17 @@ The **Laret H4** starts in a zero-airspeed hover with its rotors at flight RPM. 
 
 ## Landing mission
 
-Choose **Landing mission** on the flight card or in **Explore**. The nine fixed-wing aircraft begin 1.1 km before Alpine Field's runway 36, aligned north in their landing configuration. Approach speeds are Vela J8 109 kt, Arolla F7 136 kt, 737-800 140 kt, Mira T2 64 kt, Brenta B6 52 kt, Sarine C24 103 kt, Orsino R70 128 kt and Aven W280 150 kt. These use 30° flaps; Silex A3 uses its clean wing at 87 kt. Fixed gear remains fixed. Follow the chartreuse approach brackets, correct speed with power, and flare gently near 25 ft above the runway. The Laret H4 instead begins in a hover 46 ft above a small skid target at 58% collective; lower toward 55% to descend gently.
+Choose **Landing mission** on the flight card or in **Explore**. Fixed-wing aircraft begin 1.1 km before Alpine Field's runway 36, aligned north in their landing configuration. Approach speeds are Vela J8 109 kt, Arolla F7 136 kt, 737-800 140 kt, Mira T2 64 kt, Brenta B6 52 kt, Sarine C24 103 kt, Orsino R70 128 kt, Aven W280 150 kt and Montis C90 97 kt. These use 30° flaps; Silex A3 uses its clean wing at 87 kt. Fixed gear remains fixed. Follow the chartreuse approach brackets, correct speed with power, and flare gently near 25 ft above the runway. The Laret H4 instead begins in a hover 46 ft above a small skid target at 58% collective; lower toward 55% to descend gently.
 
 Land inside the outlined touchdown zone, level and within 12° of runway heading. Touchdown feedback retains sink rate, alignment, speed and centreline offset. Fixed-wing aircraft must then remain on the runway, reduce power below 20% and slow below 6 kt for two continuous seconds. The helicopter must settle inside its box with collective below 57%. Off-runway, hard, fast or long landings, runway excursions and overruns end the attempt. **Retry** or **R** starts the same approach again; **Free flight** returns to a fresh airborne flight. Aircraft switching cancels the mission. Pause and dialogs freeze mission progress.
 
-The mission uses the existing arcade flight and ground-roll model, including rolling resistance rather than wheel brakes or reverse thrust. These are gameplay targets for the procedural runway, not real aircraft landing procedures. `npm test` includes deterministic approach/flare/rollout scenarios using normal flight inputs for all ten aircraft, plus failure and lifecycle regressions.
+The mission uses the existing arcade flight and ground-roll model, including rolling resistance rather than wheel brakes or reverse thrust. These are gameplay targets for the procedural runway, not real aircraft landing procedures. `npm test` includes deterministic approach/flare/rollout scenarios using normal flight inputs for every aircraft in the roster, plus failure and lifecycle regressions.
 
 ## Environment
 
 Clear, golden-hour, and overcast presets affect the sky, sunlight, fog, clouds, and water. Graphics quality controls render resolution, terrain detail, tree density, clouds, and shadows. High quality works best with a hardware-accelerated WebGL 2 browser. The flight log and preferences are saved locally in the current browser.
 
-All scenery, aircraft geometry, textures, and sound are generated in code. The world is inspired by the Swiss Alps; it is not a real geospatial dataset. The original Vela, Arolla and 737 cockpit face textures are decorative; the six newer aircraft, helicopter panels and HUD carry live flight data. Weather presets are simulated. No external imagery or model assets are used.
+All scenery, aircraft geometry, textures, and sound are generated in code. The world is inspired by the Swiss Alps; it is not a real geospatial dataset. The original Vela, Arolla and 737 cockpit face textures are decorative; the newer fleet aircraft, helicopter panels and HUD carry live flight data. Weather presets are simulated. No external imagery or model assets are used.
 
 
 ## Boeing 737-800
@@ -71,3 +71,7 @@ Six original procedural aircraft join the existing Vela J8, Arolla F7, Laret H4 
 - **Silex A3**: red-and-ivory low-wing aerobatic single with bubble canopy, fixed tailwheel and no flaps. Quick piston response and unrestricted loops/rolls; 146 kt cruise, 87 kt approach.
 
 The six aircraft have live camera-local cockpit instruments, moving control surfaces and propellers/fans, appropriate piston/turboprop/turbofan sound, and type-specific camera framing. Gear retracts over four seconds on the commuter, regional jet and widebody. Fixed-gear HUD/help and landing missions never ask the pilot to retract gear; the Silex mission never requires flaps.
+
+## Montis C90 cargo transport
+
+The **Montis C90** is an original plum-and-ivory four-engine cargo turboprop: a broad high wing with four separate four-blade propellers, a deep boxy hold that sweeps up into a rear loading ramp (seams only; it does not open), small flight-deck panes, a tall fin, and tandem main wheels that retract into fuselage sponsons with a twin-wheel nose gear. Its turbines spool slowly and it answers gently: about 200 kt cruise, 15° flaps and rotation near 90 kt (roughly 480 m of runway with steady full power), and a 97 kt full-flap approach at about 35% power. The transport deck shows four engine-power columns and four power levers; this model has one shared engine spool, so all four always agree. It uses the turboprop sound bus. Performance is arcade tuning for Alpine Field.
