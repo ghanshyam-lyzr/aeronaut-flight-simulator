@@ -11,6 +11,9 @@ export function landingProfile(type) {
   return { helicopter, flaps, speed: helicopter ? 0 : speed, throttle, slope,
     maxSink: f.maxTouchdownSink, maxSpeed: f.maxTouchdownSpeed,
     speedMin: helicopter ? 0 : speed - 5, speedMax: helicopter ? 5 : speed + 5,
+    // Rotorcraft settle just below their own hover collective; fixed-wing aircraft idle below 20% power.
+    settlePower: helicopter ? Math.round((f.hoverCollective - 0.01) * 100) / 100 : 0.2,
+    contact: helicopter ? (type.landingGear ?? 'skids') : 'gear',
     clearance: f.groundClearance ?? type.groundClearance ?? 2.8 };
 }
 
@@ -58,7 +61,7 @@ export class LandingMission {
       const t = this.touchdown;
       if (!onRunway(t)) return this.fail('Touchdown outside the runway');
       if (t.along < TOUCHDOWN_ZONE.start || t.along > TOUCHDOWN_ZONE.end) return this.fail('Missed the touchdown zone');
-      if (p.helicopter && (Math.abs(t.along - TOUCHDOWN_ZONE.aim) > 18 || Math.abs(t.cross) > 10)) return this.fail('Land the skids inside the target box');
+      if (p.helicopter && (Math.abs(t.along - TOUCHDOWN_ZONE.aim) > 18 || Math.abs(t.cross) > 10)) return this.fail(`Land the ${p.contact} inside the target box`);
       if (!t.gearDown) return this.fail('Landing gear was retracted');
       if (t.sink >= p.maxSink || t.speed >= p.maxSpeed || t.stalled) return this.fail('Unsafe touchdown speed or sink rate');
       if (t.alignment > 12 || Math.abs(t.bank) > 0.18 || Math.abs(t.pitch) > 0.22) return this.fail('Touch down level and aligned with runway 36');
@@ -72,7 +75,7 @@ export class LandingMission {
       if (!state.grounded) return this.fail('Keep the aircraft on the runway after touchdown');
       if (!state.gearDown) return this.fail('Keep the landing gear down during rollout');
       const controlled = state.speed < 3 && degrees(state.heading - field.heading) <= 12
-        && state.throttle < (p.helicopter ? 0.57 : 0.2);
+        && state.throttle < p.settlePower;
       this.stableTime = controlled ? this.stableTime + dt : 0;
       if (this.stableTime >= 2) this.status = 'success';
     } else if (position.along > field.runwayLength) this.fail('Runway passed · retry the approach');
