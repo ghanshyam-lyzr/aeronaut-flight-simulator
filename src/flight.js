@@ -473,12 +473,14 @@ export function airlinerSound(spool, speed = 0) {
 
 /** Piston firing/prop blade-pass tones; the commuter adds a separate turbine whistle. */
 export function propellerSound(engine, spool, speed = 0, voice = {}) {
-  const { pitch = 1, level = 1 } = voice ?? {};
+  const { pitch = 1, level = 1, stopBelow = 0 } = voice ?? {};
   const power = clamp(Number(spool) || 0, 0, 1), airspeed = Math.max(0, Number(speed) || 0);
   const turbine = engine === 'turboprop', aerobatic = engine === 'aeroprop';
+  // A prop that stops at idle is silent below stopBelow and fades in over the next equal band; airflow stays.
+  const running = stopBelow > 0 ? clamp((power - stopBelow) / stopBelow, 0, 1) : 1, gain = level * running;
   return { tone: ((turbine ? 100 : aerobatic ? 48 : 38) + power * (turbine ? 110 : 75)) * pitch,
-    toneGain: (0.1 + power * 0.12) * level, pulse: ((turbine ? 28 : 16) + power * (turbine ? 65 : 34)) * pitch,
-    pulseDepth: (turbine ? 0.025 : 0.045) * level, wash: 180 + power * 650, washGain: (0.03 + power * power * 0.15) * level,
+    toneGain: (0.1 + power * 0.12) * gain, pulse: ((turbine ? 28 : 16) + power * (turbine ? 65 : 34)) * pitch,
+    pulseDepth: (turbine ? 0.025 : 0.045) * gain, wash: 180 + power * 650, washGain: (0.03 + power * power * 0.15) * gain,
     turbine: 700 + power * 1800, turbineGain: turbine ? 0.01 + power * 0.025 : 0,
     wind: clamp(airspeed / 500, 0, 0.25), master: 0.42 + power * 0.22 };
 }

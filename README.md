@@ -1,6 +1,6 @@
 # Aeronaut
 
-A playable 3D browser flight simulator built with Three.js and Vite. Choose from a fleet that runs from a forgiving high-wing trainer and powered sailplane to an aerobatic prop, bush plane, turboprop commuter, fighter, helicopter and passenger jets, and explore a procedural alpine world with snowy peaks, a turquoise lake, forests, villages, boats, and a working airfield.
+A playable 3D browser flight simulator built with Three.js and Vite. Choose from a fleet of aircraft, from a forgiving high-wing trainer and powered sailplane to an aerobatic prop, bush plane, turboprop commuter, fighter, helicopter and passenger jets, and explore a procedural alpine world with snowy peaks, a turquoise lake, forests, villages, boats, and a working airfield.
 
 ## Run
 
@@ -13,7 +13,7 @@ The development server binds to `0.0.0.0:5173`. Production build: `npm run build
 
 ## Fly
 
-The simulator opens airborne with flight assist holding heading and altitude. Select **Take control**, or use the flight keys to disengage assistance. The **Explore** menu also offers a runway start and a scrollable aircraft roster whose heading counts every choice. Arrow keys and Home / End select aircraft while the roster has focus. Changing aircraft saves the current flight and starts the new one in the air; restarts and runway starts keep the chosen aircraft, and the choice is remembered in this browser.
+The simulator opens airborne with flight assist holding heading and altitude. Select **Take control**, or use the flight keys to disengage assistance. The **Explore** menu also offers a runway start and a scrollable aircraft roster; its heading counts the aircraft available. Arrow keys and Home / End select aircraft while the roster has focus. Changing aircraft saves the current flight and starts the new one in the air; restarts and runway starts keep the chosen aircraft, and the choice is remembered in this browser.
 
 The Arolla F7 and Silex A3 have no pitch or bank limits: hold the stick for continuous loops and rolls, and it stays inverted or vertical when you let go. Flight assist from any attitude first rolls and pitches the short way back to level, at no more than about 70°/s, then holds the heading and altitude it has there.
 
@@ -24,7 +24,7 @@ The Arolla F7 and Silex A3 have no pitch or bank limits: hold the stick for cont
 - **Space**: flight assistance.
 - **C**: chase, cockpit, and orbit camera. Drag and scroll in orbit view.
 - **P**: pause. **R**: restart.
-- **G**: retractable landing gear. **F**: cycle 0°, 15°, and 30° flaps where fitted. Fixed gear stays down; the Silex A3 has no flaps.
+- **G**: retractable landing gear. **F**: cycle 0°, 15°, and 30° flaps where fitted. Fixed gear stays down; the Silex A3 and Neris P2 have no flaps.
 - **M**: map. **H**: instruments.
 
 On a phone, steer with the touch yoke and hold the + / − buttons to adjust power. In settings, mouse steering and inverted pitch are optional. Flight audio starts when the sound button is selected.
@@ -35,9 +35,11 @@ The engines spool up and down over a few seconds, so lead with power changes. Fo
 
 The **Laret H4** starts in a zero-airspeed hover with its rotors at flight RPM. **58% collective** holds a level hover; Shift / Ctrl or the lever raises / lowers collective to climb / descend. **W / S** tilts the cyclic forward / backward and **A / D** tilts left / right for lateral motion. Release cyclic to level; momentum slows gradually, so use opposite cyclic or **Space** to brake into a hover and hold position, altitude and heading. **Q / E** yaws the nose independently. Collective, cyclic or yaw input takes over from hover hold. On phones, drag the cyclic in the direction you want to travel, hold + / − for collective, and use the two yaw buttons to turn. The ground start begins with stopped rotors: raise collective and allow a few seconds to spin up before lifting vertically. Land with level skids below 10 knots of horizontal motion and 400 ft/min descent on fairly level ground. Fixed skids cannot retract; there are no flaps or fixed-wing stall/gear warnings. The rotor sound follows RPM and collective load, and silences on mute, pause or crash. This is an accessible rotor-lift approximation with tilt compensation, damping and hover stabilization; it does not model autorotation, torque coupling, vortex-ring state or certified helicopter performance.
 
+The **Neris P2** is an original two-seat canard pusher: a long glazed tandem nose, a small forewing whose elevators pitch the aircraft, a swept main wing with ailerons, rudders on twin wingtip fins and a three-blade propeller behind the engine. It cruises near 155 knots, is slow to lose speed at idle, rotates near 68 knots and lands from a 78-knot approach on fixed tricycle gear with no flaps. Its forewing stalls first and lowers the nose; add power and ease back to recover. Pitch and bank stay within gentle limits, like the other touring aircraft.
+
 ## Landing mission
 
-Choose **Landing mission** on the flight card or in **Explore**. Every fixed-wing aircraft begins 1.1 km before Alpine Field's runway 36, aligned north in their landing configuration. Approach speeds are Vela J8 109 kt, Arolla F7 136 kt, 737-800 140 kt, Mira T2 64 kt, Brenta B6 52 kt, Sarine C24 103 kt, Orsino R70 128 kt and Aven W280 150 kt. These use 30° flaps; Silex A3 uses its clean wing at 87 kt. Fixed gear remains fixed. Follow the chartreuse approach brackets, correct speed with power, and flare gently near 25 ft above the runway. The Laret H4 instead begins in a hover 46 ft above a small skid target at 58% collective; lower toward 55% to descend gently.
+Choose **Landing mission** on the flight card or in **Explore**. Every fixed-wing aircraft begins 1.1 km before Alpine Field's runway 36, aligned north in their landing configuration. Approach speeds are Vela J8 109 kt, Arolla F7 136 kt, 737-800 140 kt, Mira T2 64 kt, Brenta B6 52 kt, Sarine C24 103 kt, Orsino R70 128 kt and Aven W280 150 kt. These use 30° flaps; Silex A3 uses its clean wing at 87 kt and Neris P2 at 78 kt. Varen G18 approaches at 49 kt with 30° flaps. Fixed gear remains fixed. Follow the chartreuse approach brackets, correct speed with power, and flare gently near 25 ft above the runway. The Laret H4 instead begins in a hover 46 ft above a small skid target at 58% collective; lower toward 55% to descend gently.
 
 Land inside the outlined touchdown zone, level and within 12° of runway heading. Touchdown feedback retains sink rate, alignment, speed and centreline offset. Fixed-wing aircraft must then remain on the runway, reduce power below 20% and slow below 6 kt for two continuous seconds. The helicopter must settle inside its box with collective below 57%. Off-runway, hard, fast or long landings, runway excursions and overruns end the attempt. **Retry** or **R** starts the same approach again; **Free flight** returns to a fresh airborne flight. Aircraft switching cancels the mission. Pause and dialogs freeze mission progress.
 
@@ -80,6 +82,6 @@ An original self-launching motorglider (`motorglider`, A-VG18): slender pod-and-
 - **Gliding:** at idle the prop stops. Released, the nose trims about 2° low for a 49 kt glide sinking near 260 ft/min, roughly 19:1. There is no lift, thermal or ridge model, so a power-off glide always descends; add power to climb again. Flight assist holds altitude, so it needs power.
 - **Handling:** slow, smooth and deliberately gentle in roll. Stalls below about 37 kt clean (31 kt with full flaps); nose-high and power-off it drops the nose and recovers with little height loss.
 - **Landing mission:** the lowest fixed-wing approach, 49 kt with 30° flaps and about 16% power. It floats, so a hands-off approach lands long; ease the nose down early and flare gently.
-- **Sound:** the propeller bus with a higher, quieter small-prop voice.
+- **Sound:** the propeller bus with a higher, quieter small-prop voice. With the prop stopped (below 2% spool) its blade tone and propwash are silent and only the slipstream remains; they fade back in as the motor starts.
 
 Like the rest of the fleet, these are arcade-tuning targets for Alpine Field, not sailplane performance data.

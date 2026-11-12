@@ -152,6 +152,22 @@ test('quiet small-prop voice on the propeller bus; no gear horn; mutes on crash'
   assert.deepEqual(propellerSound('piston', 0.5, 20, undefined), propellerSound('piston', 0.5, 20));
   const idle = propellerSound('piston', 0, 0, type.propVoice), full = propellerSound('piston', 1, 60, type.propVoice);
   for (const key of ['tone', 'toneGain', 'washGain', 'wind', 'master']) assert.ok(full[key] > idle[key]);
+  // Stopped prop: blade tone, pulse and propwash are silent; slipstream wind and the master bus remain.
+  const { stopBelow } = type.propVoice, stopped = propellerSound('piston', stopBelow * 0.99, 26, type.propVoice);
+  assert.equal(stopped.toneGain, 0); assert.equal(stopped.washGain, 0); assert.equal(stopped.pulseDepth, 0);
+  assert.ok(stopped.wind > 0.04 && stopped.master > 0.4);
+  assert.equal(propellerSound('piston', 0, 26, type.propVoice).wind, propellerSound('piston', 0, 26).wind);
+  // It fades in over one more band of spool, then runs at the quiet level.
+  const fading = [1, 1.25, 1.5, 1.75, 2].map(k => propellerSound('piston', stopBelow * k, 26, type.propVoice).toneGain);
+  for (let i = 1; i < fading.length; i++) assert.ok(fading[i] > fading[i - 1]);
+  const running = propellerSound('piston', 0.3, 26, type.propVoice), plain = propellerSound('piston', 0.3, 26);
+  assert.ok(Math.abs(running.toneGain - plain.toneGain * type.propVoice.level) < 1e-12);
+  // Every other aircraft (no voice, or no stopBelow) keeps its idle prop sound exactly.
+  for (const other of Object.values(FLEET)) if (other.id !== id && ['piston', 'aeroprop', 'turboprop'].includes(other.engine)) {
+    const idleOther = propellerSound(other.engine, 0, 20, other.propVoice);
+    assert.ok(idleOther.toneGain > 0 && idleOther.washGain > 0, other.id);
+    if (!other.propVoice) assert.deepEqual(idleOther, propellerSound(other.engine, 0, 20, {}));
+  }
   const param = () => ({ value: 0, setTargetAtTime(value) { this.value = value; } }), node = () => ({ gain: param() }), voice = () => ({ filter: { frequency: param() }, gain: node() });
   const audio = new FlightAudio(); audio.context = { currentTime: 1 }; audio.enabled = true;
   for (const key of ['master', 'gearHorn', 'propBus', 'jetBus', 'fighterBus', 'helicopterBus', 'wind']) audio[key] = node();
@@ -160,6 +176,9 @@ test('quiet small-prop voice on the propeller bus; no gear horn; mutes on crash'
   audio.update(s, true);
   assert.equal(audio.propBus.gain.value, 1); assert.equal(audio.jetBus.gain.value, 0); assert.equal(audio.gearHorn.gain.value, 0);
   assert.equal(audio.prop.tone.frequency.value, propellerSound('piston', 0.72, f.cruiseSpeed, type.propVoice).tone);
+  audio.update({ ...s, spool: 0, throttle: 0, speed: 26 }, false);
+  assert.equal(audio.prop.toneVoice.gain.gain.value, 0); assert.equal(audio.prop.wash.gain.gain.value, 0);
+  assert.ok(audio.wind.gain.value > 0 && audio.master.gain.value > 0, 'airflow remains with the prop stopped');
   audio.update({ ...s, crashed: true }, true); assert.equal(audio.master.gain.value, 0);
 });
 
@@ -178,6 +197,8 @@ test('slender airframe: span, ground contact, stopped/turning prop, moving surfa
   assert.equal(touching, 2);
   // The prop is still with the engine stopped and turns with spool; wheels roll on the ground.
   const angle = props[0].rotation.z; a.update(0.5, 0, s); assert.equal(props[0].rotation.z, angle);
+  const stop = type.propVoice.stopBelow; a.update(0.5, 0, { ...s, spool: stop * 0.99 }); assert.equal(props[0].rotation.z, angle);
+  a.update(0.1, 0, { ...s, spool: stop * 1.01 }); assert.notEqual(props[0].rotation.z, angle);
   a.update(0.1, 1, { ...s, spool: 1, speed: 10 }); assert.notEqual(props[0].rotation.z, angle);
   Object.assign(s, { grounded: false, flightTime: 10, flaps: 2, speed: 26 });
   for (let i = 0; i < 300; i++) a.update(1 / 60, 0.3, s);

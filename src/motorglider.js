@@ -8,7 +8,7 @@ const mix = THREE.MathUtils.lerp;
 // Metres, nose towards -Z. An original 18 m self-launching sailplane: slender pod-and-boom fuselage, shoulder wing
 // with polyhedral outer panels, T-tail, mast-mounted tractor prop, fixed monowheel, tailwheel and wing outriggers.
 const SPAN = 18, ROOT_X = 0.3, BREAK = 0.45;
-const ACCENT = 'hsl(338, 40%, 34%)', TIP = 'hsl(77, 70%, 59%)';
+const ACCENT = 'hsl(255, 28%, 38%)', TIP = 'hsl(77, 70%, 59%)';
 
 /** Procedural Varen G18 airframe. Same contract as the fleet models: update, gearPosition, surfaces, setCockpit, dispose. */
 export function createMotorglider() {
@@ -167,7 +167,7 @@ export function createMotorglider() {
     update(dt, throttle = 0.72, state = {}) {
       // The small prop is stopped at idle and turns with engine spool; it never windmills in the glide.
       const spool = clamp(state.spool ?? throttle, 0, 1);
-      prop.rotation.z += dt * (spool < 0.02 ? 0 : 20 + spool * 150);
+      prop.rotation.z += dt * (spool < type.propVoice.stopBelow ? 0 : 20 + spool * 150);
       if (state.grounded) for (const { hub, radius } of wheels) hub.rotation.x -= dt * (state.speed ?? 0) / radius;
       if (dt > 0) {
         previous ??= { bank: state.bank ?? 0, pitch: state.pitch ?? 0, heading: state.heading ?? 0 };
@@ -251,8 +251,8 @@ export function createMotorgliderCockpit() {
       }
       needle(550, Math.PI + vario / 5 * Math.PI * 0.8, 72);
       text('VARIO', 550, 102, 13, colors.muted); text(`${vario > 0 ? '+' : ''}${(state.verticalSpeed ?? 0).toFixed(1)}`, 610, 141, 20); text('M/S', 610, 160, 11, colors.muted);
-      const spool = state.spool ?? 0;
-      text('MOTOR', 800, 70, 14, colors.muted); text(spool < 0.02 ? 'PROP STOP' : `${Math.round(spool * 6200)} RPM`, 800, 108, 22, spool < 0.02 ? colors.muted : colors.signal);
+      const spool = state.spool ?? 0, stopped = spool < type.propVoice.stopBelow;
+      text('MOTOR', 800, 70, 14, colors.muted); text(stopped ? 'PROP STOP' : `${Math.round(spool * 6200)} RPM`, 800, 108, 22, stopped ? colors.muted : colors.signal);
       text(`FLAPS ${(state.flaps ?? 0) * 15}°`, 800, 152, 18); text('GEAR FIXED', 800, 186, 18, colors.muted);
       text(`HDG ${String(Math.round((state.heading ?? 0) * 180 / Math.PI) % 360).padStart(3, '0')}`, 990, 108, 20);
       text(type.badge, 990, 152, 20, colors.muted);
