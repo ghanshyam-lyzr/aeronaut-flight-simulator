@@ -55,6 +55,7 @@ export class FlightController {
       distance: 0,
       autopilot: false,
       crashReason: '',
+      touchdown: null,
       bodyRates: { pitch: 0, roll: 0, yaw: 0 },
     });
     this.pitchRate = 0;
@@ -253,6 +254,7 @@ export class FlightController {
     const ground = this.groundAt(s.position.x, s.position.z) + (this.type.groundClearance ?? 2.8);
     if (s.position.y <= ground) {
       s.position.y = ground;
+      this.recordTouchdown();
       const landable = this.heightAt(s.position.x, s.position.z) > 10.2 && s.gearDown && Math.abs(s.verticalSpeed) < f.maxTouchdownSink && s.speed < f.maxTouchdownSpeed && Math.abs(s.bank) < 0.3;
       if (landable) {
         s.grounded = true;
@@ -269,6 +271,15 @@ export class FlightController {
       }
     }
     if (free) this.readAttitude();
+  }
+
+  // Capture impact telemetry before collision handling clears speed, sink and control state.
+  recordTouchdown() {
+    const s = this.state;
+    s.touchdown = { position: { x: s.position.x, y: s.position.y, z: s.position.z },
+      speed: this.type.flight.rotorcraft ? Math.hypot(s.velocity.x, s.velocity.z) : s.speed,
+      sink: Math.abs(s.verticalSpeed), heading: s.heading, bank: s.bank, pitch: s.pitch,
+      gearDown: s.gearDown, flaps: s.flaps, stalled: s.stalled, time: s.flightTime };
   }
 
   stepGround(dt, controls, burner = 0) {

@@ -14,9 +14,16 @@
     <div class="loading-screen" id="loading"><svg viewBox="0 0 40 40" fill="none"><path d="m6 29 13-22h4L12 29H6Zm13 0 9-15 8 15H19Z" fill="currentColor"/></svg><strong class="loading-title">Aeronaut</strong><p>Preparing your aircraft</p><div class="loading-track"><span></span></div></div>
     <div class="hud" id="hud">
       <section class="mission-panel panel">
-        <div class="mission-top"><span class="mode-label"><span class="status-dot"></span>Free flight</span><button class="tiny-btn" id="collapse-mission" aria-label="Collapse flight details"><i data-lucide="minus"></i></button></div>
-        <h1>The Swiss Alps</h1><p class="location-line"><i data-lucide="map-pin"></i>Alpine Valley, Switzerland</p>
+        <div class="mission-top"><span class="mode-label"><span class="status-dot"></span><span id="flight-mode">Free flight</span></span><button class="tiny-btn" id="collapse-mission" aria-label="Collapse flight details"><i data-lucide="minus"></i></button></div>
+        <h1 id="mission-title">The Swiss Alps</h1><p class="location-line"><i data-lucide="map-pin"></i>Alpine Valley, Switzerland</p>
         <div class="mission-details"><div class="aircraft-icon"><i data-lucide="plane"></i></div><div><strong id="aircraft-name">Vela J8</strong><span id="aircraft-type">Twin turbofan · A-VJ08</span></div><span class="aircraft-badge" id="aircraft-badge">JET</span></div>
+        <button class="mission-entry" id="landing-entry">Landing mission <i data-lucide="arrow-up-right"></i></button>
+        <div id="landing-guidance" class="landing-guidance" hidden>
+          <p id="landing-phase">Final approach · runway 36</p>
+          <div class="landing-readings"><div><span>Target speed</span><strong id="landing-speed"></strong></div><div><span id="landing-path-label">Glide path</span><strong id="landing-path"></strong></div></div>
+          <p id="landing-cue"></p><p id="landing-objective" class="landing-objective"></p>
+          <div class="landing-actions"><button id="landing-retry">Retry</button><button id="landing-cancel">Free flight</button></div>
+        </div>
         <div class="mission-action"><span><span class="status-dot"></span><span id="assist-status">Flight assist enabled</span></span><button id="take-control" title="Switch between assisted and manual flight">Take control <i data-lucide="arrow-up-right"></i></button></div>
       </section>
       <div class="environment-panel panel"><button id="weather-btn" data-dialog="environment" aria-label="Change weather"><i data-lucide="sun"></i><div><strong id="weather-label">Clear skies</strong><span id="weather-description">18°C <span class="separator">/</span> Wind 240° at 6 kt</span></div><i data-lucide="chevron-down" class="chevron"></i></button><div class="local-time"><span id="world-time">14:32</span><span>Local time</span></div></div>
@@ -41,6 +48,12 @@
       <footer class="control-strip"><div class="key-hints" id="key-hints"><span><kbd>W</kbd><kbd>S</kbd>Pitch</span><span><kbd>A</kbd><kbd>D</kbd>Roll</span><span><kbd>Q</kbd><kbd>E</kbd>Rudder</span><span><kbd>⇧</kbd><kbd>Ctrl</kbd>Throttle</span><span><kbd>P</kbd>Pause</span></div><button data-dialog="controls"><i data-lucide="keyboard"></i>All controls <i data-lucide="arrow-up-right"></i></button><div class="render-status"><span class="status-dot"></span><span id="fps-label">— FPS</span><span class="footer-divider">|</span><span id="quality-label">High</span></div></footer>
     </div>
     <button class="restore-hud panel" id="restore-hud" hidden><i data-lucide="scan"></i>Show instruments <kbd>H</kbd></button>
+    <section class="landing-result panel" id="landing-result" role="dialog" aria-modal="false" aria-labelledby="landing-result-title" hidden>
+      <span class="landing-eyebrow" id="landing-result-status"></span><h2 id="landing-result-title"></h2><p id="landing-result-reason"></p>
+      <dl class="landing-metrics" id="landing-result-metrics"></dl>
+      <button class="primary-btn" id="landing-result-retry">Retry landing <i data-lucide="rotate-ccw"></i></button>
+      <button class="secondary-btn" id="landing-result-exit">Return to free flight</button>
+    </section>
     <div class="pause-overlay" id="pause-overlay" hidden><span class="pause-symbol"><i data-lucide="pause"></i></span><h2>Enjoy the view.</h2><p>Your flight is paused.</p><button id="resume-btn">Resume flight <i data-lucide="play"></i></button></div>
     <div class="crash-overlay" id="crash-overlay" hidden><i data-lucide="triangle-alert"></i><h2>Let's try that again.</h2><p>Watch your altitude and keep an eye on the terrain.</p><button id="crash-reset">Restart flight <i data-lucide="rotate-ccw"></i></button></div>
   </main>

@@ -35,3 +35,50 @@
 .touch-yaw{pointer-events:auto;position:absolute;left:116px;top:30px;display:flex;gap:6px}
 .touch-yaw button{width:34px;height:39px;border-radius:6px;background:var(--panel);border:1px solid var(--border);color:var(--foreground);font-size:22px;touch-action:none}
 @media(max-width:550px){.mission-action{gap:4px}.mission-action.rotorcraft>span:after{content:"Hover hold"}.mission-action.rotorcraft.manual>span:after{content:"Manual"}.touch-throttle{min-width:48px}}
+
+/* Landing mission — Alpine Flight instruments, with the runway kept in view. */
+.mission-entry{display:flex;width:100%;align-items:center;justify-content:space-between;gap:8px;padding:10px 0 12px;border-top:1px solid var(--border);font-size:12px;color:var(--accent)}
+.mission-entry svg{width:14px;height:14px}
+.landing-mode .mission-details,.landing-mode .location-line,.landing-mode .scene-label{display:none}
+.landing-mode .mission-panel h1{font-size:23px;margin-bottom:12px}
+.landing-guidance>p{font-size:12px;line-height:1.55;margin:0 0 12px}
+#landing-phase{color:var(--accent)}
+.landing-readings{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:10px 0 12px;border-top:1px solid var(--border)}
+.landing-readings span{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
+.landing-readings strong{font-family:var(--numbers);font-weight:500;font-size:24px}
+.landing-guidance .landing-objective{color:var(--muted);font-size:11px}
+.landing-actions{display:flex;gap:8px;justify-content:space-between;padding:0 0 12px}
+.landing-actions button{font-size:12px;background:var(--surface-raised);border:1px solid var(--border);border-radius:6px;min-height:32px;padding:0 12px}
+.landing-actions button:last-child{color:var(--muted)}
+.landing-eyebrow{display:block;color:var(--accent);font-size:11px;margin-bottom:12px}
+.landing-brief h3{font-weight:500;margin:0 0 14px;font-size:20px}
+.landing-brief>p,.landing-brief li{font-size:13px;line-height:1.65;color:var(--muted)}
+.landing-brief ol{padding-left:20px;margin:12px 0}.landing-brief li{padding-left:4px;margin-bottom:12px}
+.landing-result{position:absolute;z-index:8;top:45%;left:50%;transform:translate(-50%,-50%);width:390px;max-width:calc(100% - 28px);max-height:calc(100% - 32px);overflow:auto;padding:26px}
+.landing-result h2{font-weight:500;font-size:26px;line-height:1.2;letter-spacing:-.5px;margin:0 0 12px}
+.landing-result>p{font-size:13px;color:var(--muted);line-height:1.6;margin:0 0 20px}
+.landing-metrics{display:grid;grid-template-columns:1fr 1fr;gap:18px 16px;margin:0 0 22px;padding:18px 0;border-block:1px solid var(--border)}
+.landing-metrics dt{font-size:11px;color:var(--muted);margin-bottom:6px}.landing-metrics dd{margin:0;font-family:var(--numbers);font-size:27px;line-height:1}.landing-metrics small{font-family:var(--font);font-size:12px}.landing-metrics>p{grid-column:1/-1;font-size:12px;color:var(--muted);margin:0}
+.landing-mode .mission-panel.collapsed .landing-guidance{display:none}
+@media(max-width:550px){
+ .mission-entry{font-size:11px;padding:9px 0}.landing-mode .mission-panel{width:calc(100% - 28px)}
+ .landing-mode .mission-panel h1{font-size:21px;margin-bottom:7px}.landing-mode .mission-top{margin-bottom:7px}
+ .landing-guidance>p{font-size:11px;margin-bottom:7px}.landing-readings{padding:7px 0;gap:10px}.landing-readings strong{font-size:22px}
+ .landing-actions{padding-bottom:9px}.landing-actions button{min-height:30px;font-size:11px}
+ .landing-mode .environment-panel,.landing-mode .map-panel{display:none}
+ .landing-mode .flight-notice,.landing-mode .flight-notice.stall{top:292px;max-width:calc(100% - 28px)}
+ .landing-mode .gear-warning{top:337px}.landing-mode .right-tools{top:292px}
+ .landing-result{top:42%;padding:22px}.landing-result h2{font-size:24px}
+}
+.scene-label{top:305px}
+@media(max-width:800px){.scene-label{top:285px}}
+@media(max-width:550px){
+ .landing-mode .mission-top{position:absolute;right:12px;top:11px;margin:0}
+ .landing-mode .mode-label,.landing-mode .mission-action{display:none}
+ .landing-mode .mission-panel h1{padding-right:24px;margin:0 0 4px}
+ .landing-guidance>p{margin-bottom:4px}
+ .landing-readings{padding:5px 0}.landing-readings strong{font-size:20px}
+ .landing-actions{padding-bottom:9px;padding-top:3px}
+}
+.landing-result{background:var(--surface)}
+.landing-finished .mission-panel{visibility:hidden}
