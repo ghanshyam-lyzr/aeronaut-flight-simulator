@@ -8,6 +8,7 @@ import { createCargo, createCargoCockpit } from './cargo.js';
 import { createFighter } from './fighter.js';
 import { createHelicopter, createHelicopterCockpit } from './helicopter.js';
 import { aircraftType } from './fleet.js';
+import { createCanard, createCanardCockpit } from './canard.js';
 
 const clamp = THREE.MathUtils.clamp;
 const ease = (value, target, rate, dt) => THREE.MathUtils.lerp(value, target, 1 - Math.exp(-rate * dt));
@@ -17,6 +18,7 @@ export const AIRCRAFT = { name: 'Vela J8', registration: 'A-VJ08' };
 /** Builds the procedural airframe for any fleet id; unknown saved choices fall back to the Vela J8. */
 export function createAircraft(type = 'jet') {
   if (EXPANDED_AIRCRAFT.includes(type)) return createFleetAircraft(type);
+  if (type === 'canard') return createCanard();
   if (type === 'cargo') return createCargo();
   return type === 'airliner' ? create737() : type === 'helicopter' ? createHelicopter() : type === 'fighter' ? createFighter() : createVela();
 }
@@ -435,6 +437,7 @@ function createVela() {
 // Camera-local cockpit. Attach directly to the active camera; no animation loop is needed.
 export function createCockpit(type = 'jet') {
   if (EXPANDED_AIRCRAFT.includes(type)) return createFleetCockpit(type);
+  if (type === 'canard') return createCanardCockpit();
   if (type === 'cargo') return createCargoCockpit();
   if (type === 'helicopter') return createHelicopterCockpit();
   const fighter = type === 'fighter', airliner = type === 'airliner';

@@ -38,3 +38,7 @@ Screenshots in `docs/cargo-qa/`. For clean captures the simulation was paused an
 ## Limits
 
 Landing and takeoff are validated by automated normal-input pilots, not sustained manual flying. The loading ramp is a seam only; no cargo mode. All four engines share one spool in this flight model, so the four engine columns and levers always agree. Ground handling remains the existing rolling-resistance model (no brakes or reverse). Audio timbre was not reviewed by ear.
+
+## Rebased onto canard (#17)
+
+Merged main `09c3000` (Neris P2 canard) with both aircraft kept in `FLEET`, the factories, styleguide, README and the npm test script. `npm test`: **215 passed, 0 failed**; the shared landing suite lands all 12 registered types, including canard and cargo. `EXPANDED_AIRCRAFT` is still the original six. Build and `git diff --check` pass. In the browser the roster reads "12 to fly" with 12 rows, and roster-button switching canard → cargo → jet → cargo updates the labels, selection and saved id with no console errors.
