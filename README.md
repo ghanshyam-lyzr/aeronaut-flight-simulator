@@ -1,6 +1,6 @@
 # Aeronaut
 
-A playable 3D browser flight simulator built with Three.js and Vite. Choose from a fleet of aircraft, from a forgiving high-wing trainer to an aerobatic prop, bush plane, turboprop commuter, four-engine cargo turboprop, fighter, light and medium helicopters and passenger jets, and explore a procedural alpine world with snowy peaks, a turquoise lake, forests, villages, boats, and a working airfield.
+A playable 3D browser flight simulator built with Three.js and Vite. Choose from a fleet of aircraft, from a forgiving high-wing trainer and powered sailplane to an aerobatic prop, bush plane, turboprop commuter, four-engine cargo turboprop, fighter, light and medium helicopters and passenger jets, and explore a procedural alpine world with snowy peaks, a turquoise lake, forests, villages, boats, and a working airfield.
 
 ## Run
 
@@ -41,7 +41,7 @@ The **Neris P2** is an original two-seat canard pusher: a long glazed tandem nos
 
 ## Landing mission
 
-Choose **Landing mission** on the flight card or in **Explore**. Every fixed-wing aircraft begins 1.1 km before Alpine Field's runway 36, aligned north in their landing configuration. Approach speeds are Vela J8 109 kt, Arolla F7 136 kt, 737-800 140 kt, Mira T2 64 kt, Brenta B6 52 kt, Sarine C24 103 kt, Orsino R70 128 kt, Aven W280 150 kt and Montis C90 97 kt. These use 30° flaps; Silex A3 uses its clean wing at 87 kt and Neris P2 at 78 kt. Veyra U9 flies a 72 kt approach with 30° flaps. Fixed gear remains fixed. Follow the chartreuse approach brackets, correct speed with power, and flare gently near 25 ft above the runway. The Laret H4 instead begins in a hover 46 ft above a small skid target at 58% collective; lower toward 55% to descend gently. The Sorna H8 begins the same way above its landing box at 62%; lower toward 59%.
+Choose **Landing mission** on the flight card or in **Explore**. Every fixed-wing aircraft begins 1.1 km before Alpine Field's runway 36, aligned north in their landing configuration. Approach speeds are Vela J8 109 kt, Arolla F7 136 kt, 737-800 140 kt, Mira T2 64 kt, Brenta B6 52 kt, Sarine C24 103 kt, Orsino R70 128 kt, Aven W280 150 kt and Montis C90 97 kt. These use 30° flaps; Silex A3 uses its clean wing at 87 kt and Neris P2 at 78 kt. Veyra U9 flies a 72 kt approach with 30° flaps. Varen G18 approaches at 49 kt with 30° flaps. Fixed gear remains fixed. Follow the chartreuse approach brackets, correct speed with power, and flare gently near 25 ft above the runway. The Laret H4 instead begins in a hover 46 ft above a small skid target at 58% collective; lower toward 55% to descend gently. The Sorna H8 begins the same way above its landing box at 62%; lower toward 59%.
 
 Land inside the outlined touchdown zone, level and within 12° of runway heading. Touchdown feedback retains sink rate, alignment, speed and centreline offset. Fixed-wing aircraft must then remain on the runway, reduce power below 20% and slow below 6 kt for two continuous seconds. Helicopters must settle inside their box with collective just below their hover setting: 57% for the Laret H4, 61% for the Sorna H8. Off-runway, hard, fast or long landings, runway excursions and overruns end the attempt. **Retry** or **R** starts the same approach again; **Free flight** returns to a fresh airborne flight. Aircraft switching cancels the mission. Pause and dialogs freeze mission progress.
 
@@ -83,3 +83,15 @@ The **Veyra U9** (`utility`, A-VU09) is an original single-engine utility turbop
 ## Montis C90 cargo transport
 
 The **Montis C90** is an original olive-and-ivory four-engine cargo turboprop: a broad high wing with four separate four-blade propellers, a deep boxy hold that sweeps up into a rear loading ramp (seams only; it does not open), small flight-deck panes, a tall fin, and tandem main wheels that retract into fuselage sponsons with a twin-wheel nose gear. Its turbines spool slowly and it answers gently: about 200 kt cruise, 15° flaps and rotation near 90 kt (roughly 480 m of runway with steady full power), and a 97 kt full-flap approach at about 35% power. The transport deck shows four engine-power columns and four power levers; this model has one shared engine spool, so all four always agree. It uses the turboprop sound bus. Performance is arcade tuning for Alpine Field.
+
+## Varen G18 powered sailplane
+
+An original self-launching motorglider (`motorglider`, A-VG18): slender pod-and-boom fuselage, a one-piece single-seat canopy, an 18 m high-aspect-ratio wing with polyhedral tips and winglets, a T-tail, and a small two-blade prop on a mast behind the cockpit. Fixed gear is an in-line monowheel and tailwheel with two short wing outriggers that sit just clear of the runway while the wings are level; G reports the gear as fixed. F sets 15° / 30° flaps.
+
+- **Self-launch:** 15° flaps, full power, hold S near 40 kt; the roll is about 120 m and the initial climb a modest 400–600 ft/min; keep a little back-pressure to hold it. Motoring cruise is about 67 kt at 72% power.
+- **Gliding:** at idle the prop stops. Released, the nose trims about 2° low for a 49 kt glide sinking near 260 ft/min, roughly 19:1. There is no lift, thermal or ridge model, so a power-off glide always descends; add power to climb again. Flight assist holds altitude, so it needs power.
+- **Handling:** slow, smooth and deliberately gentle in roll. Stalls below about 37 kt clean (31 kt with full flaps); nose-high and power-off it drops the nose and recovers with little height loss.
+- **Landing mission:** the lowest fixed-wing approach, 49 kt with 30° flaps and about 16% power. It floats, so a hands-off approach lands long; ease the nose down early and flare gently.
+- **Sound:** the propeller bus with a higher, quieter small-prop voice. With the prop stopped (below 2% spool) its blade tone and propwash are silent and only the slipstream remains; they fade back in as the motor starts.
+
+Like the rest of the fleet, these are arcade-tuning targets for Alpine Field, not sailplane performance data.
