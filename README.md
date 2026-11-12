@@ -1,6 +1,6 @@
 # Aeronaut
 
-A playable 3D browser flight simulator built with Three.js and Vite. Choose from a fleet of aircraft, from a forgiving high-wing trainer and powered sailplane to an open-cockpit biplane, aerobatic prop, bush plane, turboprop commuter, four-engine cargo turboprop, fighter, light and medium helicopters and passenger jets, and explore a procedural alpine world with snowy peaks, a turquoise lake, forests, villages, boats, and a working airfield.
+A playable 3D browser flight simulator built with Three.js and Vite. Choose from a fleet of aircraft, from a forgiving high-wing trainer and powered sailplane to an open-cockpit biplane, aerobatic prop, bush plane, turboprop commuter, four-engine cargo turboprop, fighter, light and medium helicopters and passenger jets, and explore a 70 km procedural alpine world: the turquoise central lake valley with its working airfield, the Serein lake basin to the south, the Val Verdance meadow valley to the west and the high Orvane Plateau to the east, linked by passes and a gorge, with snowy peaks, forests, villages and boats.
 
 ## Run
 
