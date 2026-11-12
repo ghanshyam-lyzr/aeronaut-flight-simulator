@@ -45,7 +45,7 @@ export class FlightController {
       bank: 0,
       verticalSpeed: 0,
       gForce: 1,
-      gearDown: !!f.rotorcraft,
+      gearDown: !!f.rotorcraft || !!this.type.fixedGear,
       rotorSpeed: f.rotorcraft ? 1 : 0,
       flaps: 0,
       crashed: false,
@@ -96,7 +96,7 @@ export class FlightController {
   get gearWarning() {
     const s = this.state;
     // 1,000 feet is exactly 304.8 metres; both thresholds are exclusive.
-    return !this.type.flight.rotorcraft && !s.gearDown && s.throttle < 0.2
+    return !this.type.flight.rotorcraft && !this.type.fixedGear && !s.gearDown && s.throttle < 0.2
       && s.position.y < this.groundAt(s.position.x, s.position.z) + 304.8;
   }
 
@@ -112,13 +112,13 @@ export class FlightController {
   }
 
   toggleGear() {
-    if (this.type.flight.rotorcraft) return true;
+    if (this.type.flight.rotorcraft || this.type.fixedGear) return true;
     this.state.gearDown = !this.state.gearDown;
     return this.state.gearDown;
   }
 
   cycleFlaps() {
-    if (this.type.flight.rotorcraft) return 0;
+    if (this.type.flight.rotorcraft || this.type.noFlaps) return 0;
     this.state.flaps = (this.state.flaps + 1) % 3;
     return this.state.flaps;
   }
@@ -469,6 +469,25 @@ export function airlinerSound(spool, speed = 0) {
     rumbleGain: 0.09 + n1 * n1 * 0.36, master: 0.46 + n1 * 0.3 };
 }
 
+/** Piston firing/prop blade-pass tones; the commuter adds a separate turbine whistle. */
+export function propellerSound(engine, spool, speed = 0) {
+  const power = clamp(Number(spool) || 0, 0, 1), airspeed = Math.max(0, Number(speed) || 0);
+  const turbine = engine === 'turboprop', aerobatic = engine === 'aeroprop';
+  return { tone: (turbine ? 100 : aerobatic ? 48 : 38) + power * (turbine ? 110 : 75),
+    toneGain: 0.1 + power * 0.12, pulse: (turbine ? 28 : 16) + power * (turbine ? 65 : 34),
+    pulseDepth: turbine ? 0.025 : 0.045, wash: 180 + power * 650, washGain: 0.03 + power * power * 0.15,
+    turbine: 700 + power * 1800, turbineGain: turbine ? 0.01 + power * 0.025 : 0,
+    wind: clamp(airspeed / 500, 0, 0.25), master: 0.42 + power * 0.22 };
+}
+
+/** Explicit engine metadata routes each passenger jet to an appropriate fan/exhaust mix. */
+export function passengerSound(engine, spool, speed = 0) {
+  const base = engine === 'turbofan' ? jetSound(spool, speed) : airlinerSound(spool, speed);
+  if (engine === 'regional') return { ...base, whine: base.whine * 1.13, fan: base.fan * 1.18, rumbleGain: base.rumbleGain * 0.8 };
+  if (engine === 'widebody') return { ...base, whine: base.whine * 0.78, fan: base.fan * 0.72, rumbleGain: base.rumbleGain * 1.2 };
+  return base;
+}
+
 /** Rotor blade-pass thrum, turbine whine and cabin airflow; RPM is independent of collective. */
 export function helicopterSound(rotorSpeed, collective = 0.58, speed = 0) {
   const rpm = clamp(Number(rotorSpeed) || 0, 0, 1), load = clamp(Number(collective) || 0, 0, 1);
@@ -544,7 +563,15 @@ export class FlightAudio {
         input.connect(filter).connect(gain).connect(bus);
         return { filter, gain };
       };
+      this.propBus = ctx.createGain(); this.propBus.gain.value = 0; this.propBus.connect(this.master);
+      const prop = this.prop = { tone: ctx.createOscillator(), pulse: ctx.createOscillator(), turbine: ctx.createOscillator() };
+      prop.tone.type = 'sawtooth'; prop.tone.start();
+      prop.toneVoice = voice(prop.tone, 'lowpass', 500, 0.5, this.propBus);
+      prop.pulse.type = 'sine'; prop.pulse.start(); prop.depth = ctx.createGain();
+      prop.pulse.connect(prop.depth).connect(prop.toneVoice.gain.gain);
+      prop.turbine.type = 'sine'; prop.turbine.start(); prop.turbineVoice = voice(prop.turbine, 'highpass', 700, 0.4, this.propBus);
       const exhaust = noise(false);
+      prop.wash = voice(exhaust, 'lowpass', 400, 0.4, this.propBus);
       this.helicopter = { rotor: ctx.createOscillator(), turbine: ctx.createOscillator(), pulse: ctx.createOscillator() };
       const heli = this.helicopter;
       heli.rotor.type = 'triangle'; heli.rotor.start();
@@ -631,17 +658,29 @@ export class FlightAudio {
 
   update(state, gearWarning = false) {
     if (!this.context || !this.master) return;
-    const helicopter = state.aircraft === 'helicopter';
+    const type = aircraftType(state.aircraft), engine = type.engine, propeller = ['piston', 'aeroprop', 'turboprop'].includes(engine);
+    const helicopter = !!type.flight.rotorcraft;
     const stalled = !helicopter && this.enabled && state.stalled && !state.grounded && !state.crashed;
     if (stalled && !this.stallActive) this.soundStallHorn();
     if (!stalled) this.stopStallHorn();
     this.stallActive = stalled;
     const now = this.context.currentTime;
-    this.gearHorn.gain.setTargetAtTime(this.enabled && !state.crashed && !helicopter && gearWarning ? 0.12 : 0, now, 0.03);
+    this.gearHorn.gain.setTargetAtTime(this.enabled && !state.crashed && !helicopter && !type.fixedGear && gearWarning ? 0.12 : 0, now, 0.03);
     const fighter = state.aircraft === 'fighter';
-    this.jetBus.gain.setTargetAtTime(fighter || helicopter ? 0 : 1, now, 0.08);
+    this.jetBus.gain.setTargetAtTime(fighter || helicopter || propeller ? 0 : 1, now, 0.08);
     this.fighterBus.gain.setTargetAtTime(fighter ? 1 : 0, now, 0.08);
     this.helicopterBus.gain.setTargetAtTime(helicopter ? 1 : 0, now, 0.08);
+    this.propBus?.gain.setTargetAtTime(propeller ? 1 : 0, now, 0.08);
+    if (propeller) {
+      const p = propellerSound(engine, state.spool ?? state.throttle, state.speed), v = this.prop;
+      v.tone.frequency.setTargetAtTime(p.tone, now, 0.12); v.toneVoice.gain.gain.setTargetAtTime(p.toneGain, now, 0.12);
+      v.pulse.frequency.setTargetAtTime(p.pulse, now, 0.12); v.depth.gain.setTargetAtTime(p.pulseDepth, now, 0.12);
+      v.wash.filter.frequency.setTargetAtTime(p.wash, now, 0.15); v.wash.gain.gain.setTargetAtTime(p.washGain, now, 0.15);
+      v.turbine.frequency.setTargetAtTime(p.turbine, now, 0.2); v.turbineVoice.gain.gain.setTargetAtTime(p.turbineGain, now, 0.2);
+      this.wind.gain.setTargetAtTime(p.wind, now, 0.2);
+      this.master.gain.setTargetAtTime(this.enabled && !state.crashed ? p.master : 0, now, 0.1);
+      return;
+    }
     if (helicopter) {
       const h = helicopterSound(state.rotorSpeed, state.spool ?? state.throttle, state.speed), v = this.helicopter;
       v.rotor.frequency.setTargetAtTime(h.rotor, now, 0.12);
@@ -667,7 +706,7 @@ export class FlightAudio {
       this.master.gain.setTargetAtTime(this.enabled && !state.crashed ? f.master : 0, now, 0.15);
       return;
     }
-    const mix = (state.aircraft === 'airliner' ? airlinerSound : jetSound)(state.spool ?? state.throttle, state.speed);
+    const mix = passengerSound(engine, state.spool ?? state.throttle, state.speed);
     for (const { osc, ratio, gain } of this.whines) {
       osc.frequency.setTargetAtTime(mix.whine * ratio, now, 0.25);
       gain.gain.setTargetAtTime(mix.whineGain, now, 0.25);

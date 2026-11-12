@@ -82,3 +82,16 @@
 }
 .landing-result{background:var(--surface)}
 .landing-finished .mission-panel{visibility:hidden}
+
+/* Ten-aircraft roster: preserve Alpine Flight's instruments and give the list its own scroll. */
+.fleet-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.fleet-heading>span{font-size:11px;color:var(--muted);font-weight:400}
+.aircraft-options{max-height:320px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--subtle) var(--surface);padding:2px 5px 2px 2px}
+.aircraft-options .weather-option{flex-shrink:0;min-height:70px;gap:12px}
+.aircraft-options .weather-option>svg,.aircraft-options .weather-option>span{flex-shrink:0}
+.aircraft-options .weather-option>div{min-width:0}
+.aircraft-options strong{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.aircraft-options small{font-size:10px;font-weight:500;color:var(--accent);letter-spacing:.5px}
+.aircraft-options .weather-option>div>span{display:block;line-height:1.5}
+.aircraft-options .weather-option:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+@media(max-width:550px){.aircraft-options{max-height:280px}.explore-hero{height:78px;margin-bottom:14px}.fleet-heading{margin-top:18px}.aircraft-options .weather-option{padding:11px 10px;min-height:77px}.aircraft-options .weather-option>svg{width:18px;height:18px}.aircraft-options .weather-option>span{width:13px;height:13px}.aircraft-options small{font-size:10px}}
