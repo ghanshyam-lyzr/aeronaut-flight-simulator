@@ -46,7 +46,7 @@ Each field also carries a one-line `caution` (elevation, grass, short and narrow
 ## Runtime API
 
 - `createWorld()` still returns `airport` (Alpine Field, now `{ ...ALPINE_FIELD, position, windsock }`) and adds `airports`: every field in registry order as `{ ...field, position: Vector3(x, elevation, z), windsock }`.
-- Until airport selection merges, `main.js` reads `?airport=<id>&runway=<nn>` for the field the Runway start uses (default: Alpine Field 36, unchanged), and `&start=runway` or `&start=approach` begins there. The approach start places the aircraft as the landing mission does (1.1 km final, 3° path, landing configuration) but runs no mission. `window.aeronaut` gains `airports()`, `runwayStart(id?, runway?)` and `approachStart(id?, runway?)`. The selection thread can replace the query handling; `runwayStart(field)` and `approachStart(field)` take any registry field or `runwayDirection` result.
+- (Superseded by docs/airport-selection.md: the Explore picker now owns the selection.) Before airport selection, `main.js` read `?airport=<id>&runway=<nn>` for the field the Runway start uses (default: Alpine Field 36, unchanged), and `&start=runway` or `&start=approach` begins there. The approach start places the aircraft as the landing mission does (1.1 km final, 3° path, landing configuration) but runs no mission. `window.aeronaut` gains `airports()`, `runwayStart(id?, runway?)` and `approachStart(id?, runway?)`. The selection thread can replace the query handling; `runwayStart(field)` and `approachStart(field)` take any registry field or `runwayDirection` result.
 
 ## Terrain
 
