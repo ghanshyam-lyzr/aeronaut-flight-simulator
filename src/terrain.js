@@ -4,6 +4,7 @@
 // every change below has its twin in the template further down.
 import { AIRFIELD } from './airfield.js';
 import { SHAPES, ROUTES, WORLD } from './regions.js';
+import { GRADED_AIRPORTS } from './airports.js';
 
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -108,6 +109,15 @@ export function groundHeight(x, z) {
   // A lake-side apron, wide enough to make an actual flyable runway.
   const airportDistance = Math.sqrt(((x - airportX) / 410) ** 2 + ((z - airportZ) / 840) ** 2);
   h = mix(h, airportY, 1 - smooth(.79, 1.65, airportDistance));
+  // The network's other fields: flat over a rectangle in runway-local
+  // coordinates (airports.js gradingBox), easing back to the natural ground.
+  for (let i = 0; i < GRADED_AIRPORTS.length; i++) {
+    const g = GRADED_AIRPORTS[i], dx = x - g.airport.x, dz = z - g.airport.z;
+    if (dx * dx + dz * dz > g.reach * g.reach) continue;
+    const ea = Math.max(Math.abs(dx * g.sin - dz * g.cos - g.along) - g.halfAlong, 0) / g.blendAlong;
+    const ec = Math.max(Math.abs(dx * g.cos + dz * g.sin - g.cross) - g.halfCross, 0) / g.blendCross;
+    h = mix(h, g.airport.elevation, 1 - smooth(0, 1, Math.sqrt(ea * ea + ec * ec)));
+  }
   return h;
 }
 
@@ -180,6 +190,13 @@ ${B.islands.map(([ix, iz, r, rise]) => `    bed += ${v(rise)} * groundSmooth(${v
     h = mix(h, min(bed, h), (1. - groundSmooth(1.03, 1.7, e)) * basinNorth);
   }
   float airport = length(vec2((x - ${v(airportX)}) / 410., (z - ${v(airportZ)}) / 840.));
-  return mix(h, ${v(airportY)}, 1. - groundSmooth(.79, 1.65, airport));
+  h = mix(h, ${v(airportY)}, 1. - groundSmooth(.79, 1.65, airport));
+${GRADED_AIRPORTS.map(g => `  {
+    float dx = x - ${v(g.airport.x)}, dz = z - ${v(g.airport.z)};
+    float ea = max(abs(dx * ${v(g.sin)} - dz * ${v(g.cos)} - ${v(g.along)}) - ${v(g.halfAlong)}, 0.) / ${v(g.blendAlong)};
+    float ec = max(abs(dx * ${v(g.cos)} + dz * ${v(g.sin)} - ${v(g.cross)}) - ${v(g.halfCross)}, 0.) / ${v(g.blendCross)};
+    h = mix(h, ${v(g.airport.elevation)}, 1. - groundSmooth(0., 1., sqrt(ea * ea + ec * ec)));
+  }`).join('\n')}
+  return h;
 }
 `;

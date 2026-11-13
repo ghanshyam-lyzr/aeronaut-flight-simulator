@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { AIRFIELD } from './airfield.js';
+import { AIRPORTS, ALPINE_FIELD, footprint, localCoordinates, inProtectedArea } from './airports.js';
 import { groundHeight, groundShader, fbm, valleyCurve, westValleyCurve } from './terrain.js';
-import { WORLD, SHAPES, REGIONS, LANDMARKS, VILLAGES, AIRFIELD_SITES, WATER_LEVEL, regionAt } from './regions.js';
+import { WORLD, SHAPES, REGIONS, LANDMARKS, VILLAGES, WATER_LEVEL, regionAt } from './regions.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -263,6 +264,19 @@ function makeLake(sunDirection) {
   return lake;
 }
 
+// The network's fields (Alpine Field keeps its own original clearances). The
+// test runs only for points within a field's reach, so it costs the scatter little.
+const NETWORK = AIRPORTS.filter(a => a !== ALPINE_FIELD).map(a => ({ airport: a, reach: a.runwayLength / 2 + 1900 }));
+function nearAirport(x, z, test) {
+  for (const { airport, reach } of NETWORK) if (Math.abs(x - airport.x) < reach && Math.abs(z - airport.z) < reach && test(airport, x, z)) return true;
+  return false;
+}
+/** On a field's pavement, apron or buildings, with 40 m to spare. */
+function onAirfield(airport, x, z) {
+  const { along, cross } = localCoordinates(airport, x, z), f = footprint(airport);
+  return along > f.along[0] - 40 && along < f.along[1] + 40 && cross > f.cross[0] - 40 && cross < f.cross[1] + 40;
+}
+
 function buildForest(scene) {
   const parts = [];
   for (const [radius, height, y] of [[5.4, 14, 10], [4.2, 12, 17], [2.8, 10, 23]]) {
@@ -288,7 +302,6 @@ function buildForest(scene) {
   // The regions grow their own forest in tile-sized cells, so far cells can be
   // dropped by distance and the forest stays bounded as the world grows.
   const cell = WORLD.tileSize, cells = WORLD.size / cell, regional = Array.from({ length: cells * cells }, () => []);
-  const keepClear = AIRFIELD_SITES.map(site => ({ ...site, sin: Math.sin(site.heading), cos: Math.cos(site.heading) }));
   for (let attempts = 0, planted = 0; attempts < 420000 && planted < 52000; attempts++) {
     const x = WORLD.minX + regionRandom() * WORLD.size, z = WORLD.minZ + regionRandom() * WORLD.size, chance = regionRandom(), tone = regionRandom(), size = regionRandom();
     if (Math.abs(x) < 9800 && Math.abs(z) < 13100) continue;
@@ -297,7 +310,7 @@ function buildForest(scene) {
     if (fbm(x * .0011 + 3, z * .0011 + 7) < open || chance > .9) continue;
     const h = groundHeight(x, z);
     if (h < 30 || h > 1480 || (h > 1180 && chance < smooth(1180, 1500, h))) continue;
-    if (keepClear.some(c => { const dx = x - c.x, dz = z - c.z; return Math.abs(dx * c.sin - dz * c.cos) < c.length / 2 + 700 && Math.abs(dx * c.cos + dz * c.sin) < 260; })) continue;
+    if (nearAirport(x, z, inProtectedArea)) continue;
     const slope = Math.abs(groundHeight(x + 16, z) - h) / 16 + Math.abs(groundHeight(x, z + 16) - h) / 16;
     if (slope > 1.32) continue;
     const ix = Math.min(cells - 1, Math.floor((x - WORLD.minX) / cell)), iz = Math.min(cells - 1, Math.floor((z - WORLD.minZ) / cell));
@@ -348,52 +361,29 @@ function buildClouds(scene) {
   return clouds;
 }
 
-function airport(scene) {
-  const group = new THREE.Group(); group.position.set(airportX, airportY + .7, airportZ); scene.add(group);
-  const materials = {
+// Every field shares one set of materials, sized and placed in runway-local
+// coordinates: x is right of the primary runway's centreline, -z points down it.
+function airportMaterials() {
+  return {
     runway: new THREE.MeshStandardMaterial({ color: 0x343b3d, roughness: .94 }),
     concrete: new THREE.MeshStandardMaterial({ color: 0x8b938d, roughness: .96 }),
     stripe: new THREE.MeshStandardMaterial({ color: 0xe3e4d9, roughness: .9 }),
     wall: new THREE.MeshStandardMaterial({ color: 0xd5c9af, roughness: .85 }),
     roof: new THREE.MeshStandardMaterial({ color: 0x45545a, roughness: .75 }),
-    glass: new THREE.MeshStandardMaterial({ color: 0x41626d, roughness: .2, metalness: .3 })
+    glass: new THREE.MeshStandardMaterial({ color: 0x41626d, roughness: .2, metalness: .3 }),
+    // Mown strip and gravel stay in the valley's olive and stone, never lawn green.
+    grass: new THREE.MeshStandardMaterial({ color: 0x5b6334, roughness: 1 }),
+    mown: new THREE.MeshStandardMaterial({ color: 0x6c7440, roughness: 1 }),
+    gravel: new THREE.MeshStandardMaterial({ color: 0x777264, roughness: 1 }),
+    timber: new THREE.MeshStandardMaterial({ color: 0x6b4e36, roughness: .9 }),
+    stone: new THREE.MeshStandardMaterial({ color: 0x9a978c, roughness: .95 }),
+    light: new THREE.MeshBasicMaterial({ color: 0xffe1a7 }),
   };
-  function box(w, h, d, x, y, z, mat) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); group.add(m); return m; }
-  box(AIRFIELD.runwayWidth, .45, AIRFIELD.runwayLength, 0, 0, 0, materials.runway);
-  box(125, .30, 275, 110, 0, -220, materials.concrete);
-  box(90, .30, 15, 65, 0, -115, materials.runway);
-  box(90, .30, 15, 65, 0, -330, materials.runway);
-  for (let z = -475; z <= 475; z += 65) box(1.25, .1, 31, 0, .36, z, materials.stripe);
-  for (const x of [-23, 23]) box(.8, .1, 1075, x, .36, 0, materials.stripe);
-  for (const end of [-1, 1]) for (const x of [-18, -12, -6, 6, 12, 18]) box(3.1, .1, 42, x, .37, end * 502, materials.stripe);
-  const runwayLightMaterial = new THREE.MeshBasicMaterial({ color: 0xffe1a7 });
-  for (let z = -525; z < 550; z += 55) for (const x of [-28, 28]) {
-    const light = new THREE.Mesh(new THREE.SphereGeometry(.7, 5, 4), runwayLightMaterial); light.position.set(x, .9, z); group.add(light);
-  }
-  for (let i = 0; i < 3; i++) {
-    box(48, 16, 43, 142, 8, -310 + i * 58, materials.wall);
-    const roof = new THREE.Mesh(new THREE.CylinderGeometry(25, 25, 45, 16, 1, false, 0, Math.PI), materials.roof); roof.rotation.x = Math.PI / 2; roof.rotation.z = Math.PI / 2; roof.scale.set(1, .30, 1); roof.position.set(142, 16, -310 + i * 58); group.add(roof);
-    box(34, 12, .4, 142, 6.5, -288 + i * 58, materials.roof);
-  }
-  box(30, 13, 54, 110, 6.5, -65, materials.wall);
-  box(32, 1.3, 56, 110, 13.5, -65, materials.roof);
-  box(9, 24, 9, 145, 12, -65, materials.wall);
-  box(14, 6, 14, 145, 25, -65, materials.glass);
-  box(16, 1.2, 16, 145, 28.6, -65, materials.roof);
-  // A fully procedural windsock, readable during a low approach.
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(.18, .22, 13, 6), materials.stripe); pole.position.set(-60, 6.5, 335); group.add(pole);
-  const sock = new THREE.Group(); sock.position.set(-60, 13, 335); sock.rotation.z = -.14; group.add(sock);
-  for (let i = 0; i < 5; i++) {
-    const part = new THREE.Mesh(new THREE.CylinderGeometry(.9 - i * .1, .8 - i * .1, 1.15, 10, 1, true), new THREE.MeshStandardMaterial({ color: i % 2 ? 0xf4eee3 : 0xed6d40, side: THREE.DoubleSide }));
-    part.rotation.z = Math.PI / 2; part.position.x = i * 1.15; sock.add(part);
-  }
-  // Painted identifiers are generated locally and do not need a font asset.
-  const canvas = document.createElement('canvas'); canvas.width = 128; canvas.height = 128;
-  const context = canvas.getContext('2d'); context.fillStyle = '#f2f2df'; context.font = 'bold 90px Arial'; context.textAlign = 'center'; context.fillText('36', 64, 100);
-  const tex = new THREE.CanvasTexture(canvas); tex.colorSpace = THREE.SRGBColorSpace;
-  const number = new THREE.Mesh(new THREE.PlaneGeometry(18, 22), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false })); number.rotation.x = -Math.PI / 2; number.position.set(0, .6, 435); group.add(number);
-  // Batch the static airport by material: paint marks and runway lights cost
-  // one draw each instead of a draw for every small stripe and lamp.
+}
+
+// Batch a field's static parts by material: paint marks and runway lights cost
+// one draw each instead of a draw for every small stripe and lamp.
+function batchStatic(group) {
   const batches = new Map();
   for (const child of [...group.children]) {
     if (!child.isMesh) continue;
@@ -407,7 +397,145 @@ function airport(scene) {
     geometries.forEach(geometry => geometry.dispose());
     group.add(new THREE.Mesh(combined, material));
   }
-  return { ...AIRFIELD, position: new THREE.Vector3(airportX, airportY, airportZ), windsock: sock };
+}
+
+// A fully procedural windsock, readable during a low approach.
+function windsock(group, x, z, materials) {
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(.18, .22, 13, 6), materials.stripe); pole.position.set(x, 6.5, z); group.add(pole);
+  const sock = new THREE.Group(); sock.position.set(x, 13, z); sock.rotation.z = -.14; group.add(sock);
+  for (let i = 0; i < 5; i++) {
+    const part = new THREE.Mesh(new THREE.CylinderGeometry(.9 - i * .1, .8 - i * .1, 1.15, 10, 1, true), new THREE.MeshStandardMaterial({ color: i % 2 ? 0xf4eee3 : 0xed6d40, side: THREE.DoubleSide }));
+    part.rotation.z = Math.PI / 2; part.position.x = i * 1.15; sock.add(part);
+  }
+  return sock;
+}
+
+// Painted identifiers are generated locally and do not need a font asset.
+function numberMaterial(text) {
+  const canvas = document.createElement('canvas'); canvas.width = 128; canvas.height = 128;
+  const context = canvas.getContext('2d'); context.fillStyle = '#f2f2df'; context.font = 'bold 90px Arial'; context.textAlign = 'center'; context.fillText(text, 64, 100);
+  const tex = new THREE.CanvasTexture(canvas); tex.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
+}
+
+function alpineField(scene, materials) {
+  const group = new THREE.Group(); group.position.set(airportX, airportY + .7, airportZ); scene.add(group);
+  function box(w, h, d, x, y, z, mat) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); group.add(m); return m; }
+  box(AIRFIELD.runwayWidth, .45, AIRFIELD.runwayLength, 0, 0, 0, materials.runway);
+  box(125, .30, 275, 110, 0, -220, materials.concrete);
+  box(90, .30, 15, 65, 0, -115, materials.runway);
+  box(90, .30, 15, 65, 0, -330, materials.runway);
+  for (let z = -475; z <= 475; z += 65) box(1.25, .1, 31, 0, .36, z, materials.stripe);
+  for (const x of [-23, 23]) box(.8, .1, 1075, x, .36, 0, materials.stripe);
+  for (const end of [-1, 1]) for (const x of [-18, -12, -6, 6, 12, 18]) box(3.1, .1, 42, x, .37, end * 502, materials.stripe);
+  for (let z = -525; z < 550; z += 55) for (const x of [-28, 28]) {
+    const light = new THREE.Mesh(new THREE.SphereGeometry(.7, 5, 4), materials.light); light.position.set(x, .9, z); group.add(light);
+  }
+  for (let i = 0; i < 3; i++) {
+    box(48, 16, 43, 142, 8, -310 + i * 58, materials.wall);
+    const roof = new THREE.Mesh(new THREE.CylinderGeometry(25, 25, 45, 16, 1, false, 0, Math.PI), materials.roof); roof.rotation.x = Math.PI / 2; roof.rotation.z = Math.PI / 2; roof.scale.set(1, .30, 1); roof.position.set(142, 16, -310 + i * 58); group.add(roof);
+    box(34, 12, .4, 142, 6.5, -288 + i * 58, materials.roof);
+  }
+  box(30, 13, 54, 110, 6.5, -65, materials.wall);
+  box(32, 1.3, 56, 110, 13.5, -65, materials.roof);
+  box(9, 24, 9, 145, 12, -65, materials.wall);
+  box(14, 6, 14, 145, 25, -65, materials.glass);
+  box(16, 1.2, 16, 145, 28.6, -65, materials.roof);
+  const sock = windsock(group, -60, 335, materials);
+  const number = new THREE.Mesh(new THREE.PlaneGeometry(18, 22), numberMaterial('36')); number.rotation.x = -Math.PI / 2; number.position.set(0, .6, 435); group.add(number);
+  batchStatic(group);
+  return { ...ALPINE_FIELD, position: new THREE.Vector3(airportX, airportY, airportZ), windsock: sock };
+}
+
+// Threshold bars by runway width, as painted on real runways.
+const THRESHOLD_BARS = [[45, 12], [30, 8], [23, 6], [0, 4]];
+
+/** One of the network's fields: runway, markings, apron, windsock and a few buildings in its own character. */
+function networkField(scene, airport, materials) {
+  const { runwayLength: L, runwayWidth: W, surface, kind } = airport, half = L / 2;
+  const group = new THREE.Group(); group.position.set(airport.x, airport.elevation + .7, airport.z); group.rotation.y = -airport.heading; scene.add(group);
+  // Runway-local placement: `along` from the primary threshold, `cross` to its right.
+  const at = along => half - along;
+  function box(w, h, d, x, y, z, mat) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); group.add(m); return m; }
+  // A gabled roof: a triangular prism along local z, its ridge `rise` above the eaves.
+  function gable(w, rise, d, x, y, z, mat) {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, d, 3).rotateX(-Math.PI / 2).translate(0, .5, 0), mat);
+    m.scale.set(w / Math.sqrt(3), rise / 1.5, 1); m.position.set(x, y, z); group.add(m); return m;
+  }
+  function arch(w, d, x, y, z) {
+    const roof = new THREE.Mesh(new THREE.CylinderGeometry(w / 2, w / 2, d, 14, 1, false, 0, Math.PI), materials.roof);
+    roof.rotation.x = Math.PI / 2; roof.rotation.z = Math.PI / 2; roof.scale.set(1, .3, 1); roof.position.set(x, y, z); group.add(roof);
+  }
+  const paved = surface === 'asphalt';
+  box(W, .45, L, 0, 0, 0, paved ? materials.runway : materials.grass);
+  // Apron and its taxiway, toward the buildings' side.
+  const apron = airport.apron, side = Math.sign(apron.cross[0] + apron.cross[1]), mid = (apron.along[0] + apron.along[1]) / 2;
+  const near = side > 0 ? apron.cross[0] : apron.cross[1], far = side > 0 ? apron.cross[1] : apron.cross[0];
+  const apronDepth = Math.abs(far - near), apronLength = apron.along[1] - apron.along[0];
+  const deck = kind === 'regional' || kind === 'lakeside' ? materials.concrete : materials.gravel;
+  box(apronDepth, .3, apronLength, (near + far) / 2, 0, at(mid), deck);
+  const taxi = Math.abs(near) - W / 2;
+  for (const t of kind === 'regional' ? [apron.along[0] + 60, apron.along[1] - 60] : [mid]) box(taxi + 2, .3, kind === 'regional' ? 23 : 15, side * (W / 2 + taxi / 2), 0, at(t), paved ? materials.runway : materials.gravel);
+  if (paved) {
+    // Designators, threshold bars, centreline and edge lines, read from each approach.
+    const bars = THRESHOLD_BARS.find(([width]) => W >= width)[1], pitch = (W - 6) / bars;
+    for (const [end, text] of [[0, airport.runway], [L, airport.reciprocal]]) {
+      const inward = end ? -1 : 1, z = along => at(end + inward * along);
+      for (let i = 0; i < bars; i++) { const x = -W / 2 + 3 + pitch * (i + .5); if (Math.abs(x) > 1.5) box(Math.min(1.8, pitch * .6), .1, 30, x, .36, z(21), materials.stripe); }
+      const number = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(18, W * .5), Math.min(22, W * .62)), numberMaterial(text));
+      number.rotation.set(-Math.PI / 2, 0, end ? Math.PI : 0); number.position.set(0, .6, z(56 + Math.min(11, W * .31))); group.add(number);
+      // Aiming point, and touchdown zone pairs on the long runway.
+      if (L >= 1200) for (const x of [-1, 1]) box(W >= 45 ? 9 : 5, .1, 45, x * W * (W >= 45 ? .26 : .25), .37, z(L >= 2400 ? 400 : 300), materials.stripe);
+      if (L >= 2400) for (const d of [150, 550, 700]) for (const x of [-1, 1]) for (const k of [-1, 1]) box(1.8, .1, 22, x * (W * .26 + k * 2.4), .37, z(d), materials.stripe);
+    }
+    for (let d = 90; d < L - 90; d += 50) box(W >= 30 ? .9 : .6, .1, 30, 0, .36, at(d), materials.stripe);
+    for (const x of [-1, 1]) box(.8, .1, L - 6, x * (W / 2 - 1.2), .36, 0, materials.stripe);
+  } else {
+    // Grass strip: mown lanes, white boards along the edges and across each threshold.
+    for (const x of [-W / 3, W / 3]) box(W / 3, .1, L - 4, x, .2, 0, materials.mown);
+    for (let d = 0; d <= L; d += 75) for (const x of [-1, 1]) box(2.6, .7, .9, x * (W / 2 + 1.5), .4, at(d), materials.stripe);
+    for (const end of [0, L]) for (let x = -W / 2 + 3; x <= W / 2 - 3; x += 6) box(3, .5, 1.1, x, .4, at(end), materials.stripe);
+  }
+  if (airport.lit) for (let d = 0; d <= L; d += 60) for (const x of [-1, 1]) {
+    const light = new THREE.Mesh(new THREE.SphereGeometry(.6, 5, 4), materials.light); light.position.set(x * (W / 2 + 2.5), .9, at(d)); group.add(light);
+  }
+  // Buildings stand along the apron's far edge, facing the runway.
+  const row = far - side * 22, along = t => at(apron.along[0] + apronLength * t);
+  if (kind === 'regional') {
+    box(28, 11, 150, row, 5.5, along(.42), materials.wall);
+    box(1, 5, 140, row - side * 14.2, 6.5, along(.42), materials.glass);
+    box(30, 1.2, 152, row, 11.6, along(.42), materials.roof);
+    box(10, 30, 10, row, 15, along(.12), materials.concrete);
+    box(15, 6, 15, row, 33, along(.12), materials.glass);
+    box(17, 1.2, 17, row, 36.6, along(.12), materials.roof);
+    for (const t of [.74, .9]) { box(42, 15, 54, row, 7.5, along(t), materials.wall); arch(44, 56, row, 15, along(t)); box(.4, 11, 40, row - side * 21.2, 6, along(t), materials.roof); }
+  } else if (kind === 'grass') {
+    box(12, 4.5, 16, row, 2.25, along(.3), materials.timber); gable(13.5, 4, 17, row, 4.5, along(.3), materials.roof);
+    box(20, 6, 24, row, 3, along(.72), materials.timber); gable(22, 5, 25, row, 6, along(.72), materials.roof);
+    box(.4, 5, 18, row - side * 10.2, 2.6, along(.72), materials.roof);
+  } else if (kind === 'lakeside') {
+    box(18, 7, 46, row, 3.5, along(.3), materials.wall);
+    box(.6, 3.5, 40, row - side * 9.1, 4, along(.3), materials.glass);
+    box(20, 1, 48, row, 7.5, along(.3), materials.roof);
+    box(7, 18, 7, row + side * 4, 9, along(.08), materials.wall); box(10, 4.5, 10, row + side * 4, 20.2, along(.08), materials.glass); box(11, 1, 11, row + side * 4, 23, along(.08), materials.roof);
+    box(32, 11, 36, row, 5.5, along(.78), materials.wall); arch(34, 38, row, 11, along(.78)); box(.4, 8, 28, row - side * 16.2, 4.5, along(.78), materials.roof);
+  } else {
+    // Mountain: a stone hut and a small hangar under steep roofs that shed snow.
+    box(9, 4, 12, row + side * 4, 2, along(.28), materials.stone); gable(10.5, 5.5, 13, row + side * 4, 4, along(.28), materials.roof);
+    box(18, 6.5, 22, row, 3.25, along(.72), materials.stone); gable(19.5, 6, 23, row, 6.5, along(.72), materials.roof);
+    box(.4, 5.5, 16, row - side * 9.2, 2.9, along(.72), materials.timber);
+  }
+  // The windsock stands opposite the apron, by the primary threshold.
+  const sock = windsock(group, -side * (W / 2 + 25), at(160), materials);
+  // Every sock shows the same wind as Alpine Field's.
+  sock.rotation.y = airport.heading;
+  batchStatic(group);
+  return { ...airport, position: new THREE.Vector3(airport.x, airport.elevation, airport.z), windsock: sock };
+}
+
+function airports(scene) {
+  const materials = airportMaterials();
+  return AIRPORTS.map(a => a === ALPINE_FIELD ? alpineField(scene, materials) : networkField(scene, a, materials));
 }
 
 function buildVillages(scene) {
@@ -427,18 +555,23 @@ function buildVillages(scene) {
     for (let i = 0; i < houses; i++) {
       const x = cx + (rand() - .5) * spread, z = cz + (rand() - .5) * spread, y = groundHeight(x, z);
       if (y < 28 || y > ceiling || Math.abs(groundHeight(x + 12, z) - y) > 10) continue;
-      spots.push({ x, y, z, w: 13 + rand() * 12, h: 9 + rand() * 9, d: 17 + rand() * 18, rot: rand() * .45 });
+      spots.push({ x, y, z, w: 13 + rand() * 12, h: 9 + rand() * 9, d: 17 + rand() * 18, rot: rand() * .45, clear: !nearAirport(x, z, onAirfield) });
     }
   });
-  const bodies = new THREE.InstancedMesh(bodyGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .94 }), spots.length);
-  const roofs = new THREE.InstancedMesh(roofGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .9, side: THREE.DoubleSide }), spots.length);
-  const dummy = new THREE.Object3D(), color = new THREE.Color();
-  spots.forEach((s, i) => {
-    dummy.position.set(s.x, s.y + s.h / 2 - 1, s.z); dummy.rotation.y = s.rot; dummy.scale.set(s.w, s.h, s.d); dummy.updateMatrix(); bodies.setMatrixAt(i, dummy.matrix);
-    color.setHSL(.10 + random() * .04, .10 + random() * .10, .53 + random() * .25); bodies.setColorAt(i, color);
-    dummy.position.y = s.y + s.h - 1; dummy.scale.set(s.w, s.w * .6, s.d); dummy.updateMatrix(); roofs.setMatrixAt(i, dummy.matrix);
-    color.setHSL(.025 + random() * .035, .15 + random() * .13, .20 + random() * .12); roofs.setColorAt(i, color);
-  });
+  // A house on an airfield is left out after its colours are drawn, so every other house keeps its own.
+  const built = spots.filter(s => s.clear).length;
+  const bodies = new THREE.InstancedMesh(bodyGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .94 }), built);
+  const roofs = new THREE.InstancedMesh(roofGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .9, side: THREE.DoubleSide }), built);
+  const dummy = new THREE.Object3D(), color = new THREE.Color(), roofColor = new THREE.Color();
+  let i = 0;
+  for (const s of spots) {
+    color.setHSL(.10 + random() * .04, .10 + random() * .10, .53 + random() * .25);
+    roofColor.setHSL(.025 + random() * .035, .15 + random() * .13, .20 + random() * .12);
+    if (!s.clear) continue;
+    dummy.position.set(s.x, s.y + s.h / 2 - 1, s.z); dummy.rotation.y = s.rot; dummy.scale.set(s.w, s.h, s.d); dummy.updateMatrix(); bodies.setMatrixAt(i, dummy.matrix); bodies.setColorAt(i, color);
+    dummy.position.y = s.y + s.h - 1; dummy.scale.set(s.w, s.w * .6, s.d); dummy.updateMatrix(); roofs.setMatrixAt(i, dummy.matrix); roofs.setColorAt(i, roofColor);
+    i++;
+  }
   scene.add(bodies, roofs);
   // Quiet roads: ribbons follow the actual terrain rather than floating.
   const roads = [];
@@ -463,7 +596,8 @@ function buildVillages(scene) {
     const length = Math.hypot(nx - px, nz - pz) || 1, ox = (nz - pz) / length * 3.8, oz = -(nx - px) / length * 3.8;
     const base = positions.length / 3;
     for (const sign of [-1, 1]) positions.push(x + ox * sign, Math.max(groundHeight(x + ox * sign, z + oz * sign) + 1.1, 14), z + oz * sign);
-    if (i < line.length - 1 && Math.hypot(nx - x, nz - z) < 400) indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+    // Roads stop short of the airfields rather than crossing a runway.
+    if (i < line.length - 1 && Math.hypot(nx - x, nz - z) < 400 && !nearAirport(x, z, onAirfield) && !nearAirport(nx, nz, onAirfield)) indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
   }
   const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3)); geo.setIndex(indices); geo.computeVertexNormals();
   scene.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x73766b, roughness: 1, side: THREE.DoubleSide })));
@@ -521,7 +655,7 @@ export function createWorld(scene, renderer) {
   const terrainMeshes = terrain(scene);
   const lake = makeLake(sunDirection); scene.add(lake);
   const forestMeshes = buildForest(scene);
-  const airfield = airport(scene);
+  const fields = airports(scene), airfield = fields[0];
   buildVillages(scene);
   const clouds = buildClouds(scene), boats = buildBoats(scene);
   const landmarks = LANDMARKS.map(({ name, type, region, x, z, y }) => ({ name, type, region, position: new THREE.Vector3(x, y ?? Math.max(WATER_LEVEL, groundHeight(x, z)), z) }));
@@ -580,10 +714,10 @@ export function createWorld(scene, renderer) {
     }
     clouds.forEach((cloud, i) => { cloud.position.x = cloud.userData.baseX + Math.sin(time * .007 + i) * 85; });
     boats.forEach((boat, i) => { boat.rotation.z = Math.sin(time * .72 + i) * .018; boat.position.y = 11 + Math.sin(time * .9 + i) * .12; });
-    airfield.windsock.rotation.z = -.15 + Math.sin(time * 2.7) * .035;
+    fields.forEach((field, i) => { field.windsock.rotation.z = -.15 + Math.sin(time * 2.7 + i * 1.3) * .035; });
   }
   setWeather('clear');
   updateDetail(new THREE.Vector3(0, 0, 1900));
-  return { heightAt: (x, z) => Math.max(WATER_LEVEL, groundHeight(x, z)), update, setWeather, setQuality, reflectSky, landmarks, airport: airfield,
+  return { heightAt: (x, z) => Math.max(WATER_LEVEL, groundHeight(x, z)), update, setWeather, setQuality, reflectSky, landmarks, airport: airfield, airports: fields,
     bounds: WORLD, regions: REGIONS, regionAt };
 }

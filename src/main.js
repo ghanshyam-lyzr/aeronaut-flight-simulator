@@ -14,6 +14,7 @@ import { FlightInputs } from './controls.js';
 import { disposeObject } from './helicopter.js';
 import { LandingMission, landingProfile } from './landing-mission.js';
 import { runwayPoint } from './airfield.js';
+import { runwayDirection } from './airports.js';
 import { createLandingGuidance } from './landing-guidance.js';
 
 const icons = {Plane,SlidersHorizontal,Maximize,Minimize,VolumeX,Volume2,MapPin,ArrowUpRight,Sun,CloudSun,Cloud,ChevronDown,ChevronsUpDown,Navigation,Video,Camera,Map,Scan,Minus,Plus,CircleDot,RotateCcw,Pause,Play,Keyboard,Move,TriangleAlert,X,Check,Mountain,Compass,Wind,Menu};
@@ -123,7 +124,14 @@ function setAircraft(id){
  camera.remove(cockpit);disposeObject(cockpit);cockpit=createCockpit(type.id);camera.add(cockpit);cockpit.visible=view==='cockpit';
  restart(false);updateAircraftLabels();toast(`${type.name} ready · a fresh start in the air`);return true;
 }
-function runwayStart(){cancelLanding(false);restart(false);const p=runwayPoint(100,0,world.airport);flight.runwayStart(p.x,world.heightAt(p.x,p.z)+(flight.type.groundClearance??2.8),p.z,world.airport.heading);trailOrigin.copy(flight.state.position);updateAssist();initialCamera=true;sceneDirty=true;toast(flight.type.runwayHint);}
+// Until airport selection lands, ?airport=<id>&runway=<nn> picks the field runway starts use,
+// and &start=runway or &start=approach begins there (world.airports lists the ids).
+const query=new URLSearchParams(location.search);
+function fieldFor(id,runway){const field=world.airports.find(f=>f.id===id);if(!field)return world.airport;try{return runwayDirection(field,runway||field.runway);}catch{return field;}}
+const startField=fieldFor(query.get('airport'),query.get('runway'));
+// A free-flight start on a 3° final, placed as the landing mission places it; no mission runs.
+function approachStart(field=startField){cancelLanding(false);saveFlight();const m=new LandingMission(field);m.start(flight);m.cancel();flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);paused=false;lastCrash=false;initialCamera=true;sceneDirty=true;clearControls();$('pause-overlay').hidden=$('crash-overlay').hidden=true;updateAssist();toast(`${field.name} · final for runway ${field.runway}`);}
+function runwayStart(field=startField){cancelLanding(false);restart(false);const p=runwayPoint(100,0,field);flight.runwayStart(p.x,world.heightAt(p.x,p.z)+(flight.type.groundClearance??2.8),p.z,field.heading);trailOrigin.copy(flight.state.position);updateAssist();initialCamera=true;sceneDirty=true;toast(field===world.airport?flight.type.runwayHint:flight.type.runwayHint.replace(/^Runway \d+/,`${field.name} · runway ${field.runway}`));}
 function startLanding(){
  saveFlight();landing.start(flight);flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);trailClock=0;
  paused=false;lastCrash=false;initialCamera=true;sceneDirty=true;missionResultShown=false;clearControls();
@@ -324,4 +332,5 @@ window.addEventListener('beforeunload',saveFlight);
 updateAircraftLabels();updateAssist();updateUI(0);updateCamera(1);renderer.render(scene,camera);tick();
 setTimeout(()=>{$('loading').classList.add('leaving');setTimeout(()=>$('loading').remove(),750);},500);
 // Expose read-only diagnostic snapshots for repeatable rendering and control checks.
-window.aeronaut={getState:()=>({...flight.state,position:flight.state.position.toArray(),quaternion:flight.state.quaternion.toArray(),paused,view,quality:settings.quality,weather:settings.weather}),getMission:()=>landing.snapshot(),startLanding,getRendererInfo:()=>({...renderer.info.render}),reset:restart,setPaused, setQuality,setAircraft,runwayStart,getAircraft:()=>({id:flight.type.id,name:flight.type.name,gearPosition:aircraft.gearPosition,surfaces:aircraft.surfaces,afterburner:aircraft.afterburner})};
+window.aeronaut={getState:()=>({...flight.state,position:flight.state.position.toArray(),quaternion:flight.state.quaternion.toArray(),paused,view,quality:settings.quality,weather:settings.weather}),getMission:()=>landing.snapshot(),startLanding,getRendererInfo:()=>({...renderer.info.render}),reset:restart,setPaused, setQuality,setAircraft,runwayStart:(id,runway)=>runwayStart(id?fieldFor(id,runway):startField),approachStart:(id,runway)=>approachStart(id?fieldFor(id,runway):startField),airports:()=>world.airports.map(({position,windsock,...field})=>field),getAircraft:()=>({id:flight.type.id,name:flight.type.name,gearPosition:aircraft.gearPosition,surfaces:aircraft.surfaces,afterburner:aircraft.afterburner})};
+if(query.get('start')==='runway')runwayStart();else if(query.get('start')==='approach')approachStart();
