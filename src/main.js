@@ -5,7 +5,7 @@ import '@fontsource/dm-sans/600.css';
 import '@fontsource/barlow-condensed/400.css';
 import '@fontsource/barlow-condensed/500.css';
 import * as THREE from 'three';
-import { createIcons, Plane, SlidersHorizontal, Maximize, Minimize, VolumeX, Volume2, MapPin, ArrowUpRight, Sun, CloudSun, Cloud, ChevronDown, ChevronsUpDown, Navigation, Video, Camera, Map, Scan, Minus, Plus, CircleDot, RotateCcw, Pause, Play, Keyboard, Move, TriangleAlert, X, Check, Mountain, Compass, Wind, Menu } from 'lucide';
+import { createIcons, Plane, SlidersHorizontal, Maximize, Minimize, VolumeX, Volume2, MapPin, ArrowUpRight, Sun, CloudSun, Cloud, ChevronDown, ChevronsUpDown, Navigation, Video, Camera, Map, Scan, Minus, Plus, CircleDot, RotateCcw, Pause, Play, Keyboard, Move, TriangleAlert, X, Check, Mountain, Compass, Wind, Menu, Maximize2 } from 'lucide';
 import { createWorld } from './world.js';
 import { createAircraft, createCockpit } from './aircraft.js';
 import { FlightController, FlightAudio, FollowFrame } from './flight.js';
@@ -18,14 +18,17 @@ import { AIRPORTS, suitability } from './airports.js';
 import { AirportSelection, resolveAirport, missionAvailability, describeField, headingDegrees } from './airport-selection.js';
 import { region } from './regions.js';
 import { createLandingGuidance } from './landing-guidance.js';
+import { NavigationMap } from './nav-map.js';
+import { navigationDestination, navigationReadout, bearingDistance, degrees, formatNM, zoomFrom, nearestZoom, FRAMINGS, FRAMING_LABELS, ZOOM_SPANS } from './navigation.js';
 
-const icons = {Plane,SlidersHorizontal,Maximize,Minimize,VolumeX,Volume2,MapPin,ArrowUpRight,Sun,CloudSun,Cloud,ChevronDown,ChevronsUpDown,Navigation,Video,Camera,Map,Scan,Minus,Plus,CircleDot,RotateCcw,Pause,Play,Keyboard,Move,TriangleAlert,X,Check,Mountain,Compass,Wind,Menu};
+const icons = {Plane,SlidersHorizontal,Maximize,Minimize,VolumeX,Volume2,MapPin,ArrowUpRight,Sun,CloudSun,Cloud,ChevronDown,ChevronsUpDown,Navigation,Video,Camera,Map,Scan,Minus,Plus,CircleDot,RotateCcw,Pause,Play,Keyboard,Move,TriangleAlert,X,Check,Mountain,Compass,Wind,Menu,Maximize2};
 const refreshIcons = () => createIcons({icons,attrs:{'stroke-width':1.6}});
 refreshIcons();
 const $ = id => document.getElementById(id);
 const worldContainer = $('world');
-const settings = { quality:'high', invertPitch:false, mouseSteering:false, showMap:true, weather:'clear', aircraft:'jet' };
+const settings = { quality:'high', invertPitch:false, mouseSteering:false, showMap:true, weather:'clear', aircraft:'jet', mapFraming:'route', mapZoom:3 };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('aeronaut-settings') || '{}')); } catch {}
+let miniMap=null,chartMap=null; // Navigation maps, made once the world exists (below).
 settings.aircraft = aircraftType(settings.aircraft).id;
 const saveSettings = () => {try{localStorage.setItem('aeronaut-settings',JSON.stringify(settings));}catch{}};
 // The selected field and runway (src/airport-selection.js), saved as a stable id; old or invalid settings mean Alpine Field 36.
@@ -97,7 +100,7 @@ function setWeather(value,notify=true){
  $('weather-label').textContent=w.label;$('weather-description').innerHTML=w.description;$('world-time').textContent=w.time;
  const b=$('weather-btn');b.querySelector('svg').outerHTML=`<i data-lucide="${w.icon}"></i>`;refreshIcons();saveSettings();if(notify)toast(`${w.label} selected`);
 }
-function setQuality(value){settings.quality=value;renderer.setPixelRatio(Math.min(devicePixelRatio,value==='high'?1.75:value==='medium'?1.2:.85));renderer.shadowMap.enabled=value!=='low';world.setQuality?.(value);sceneDirty=true;$('quality-label').textContent=value.charAt(0).toUpperCase()+value.slice(1);saveSettings();}
+function setQuality(value){settings.quality=value;renderer.setPixelRatio(Math.min(devicePixelRatio,value==='high'?1.75:value==='medium'?1.2:.85));renderer.shadowMap.enabled=value!=='low';world.setQuality?.(value);miniMap?.setQuality(value);chartMap?.setQuality(value);sceneDirty=true;$('quality-label').textContent=value.charAt(0).toUpperCase()+value.slice(1);saveSettings();}
 setWeather(weatherData[settings.weather]?settings.weather:'clear',false);setQuality(settings.quality);
 $('map-panel').hidden=!settings.showMap;
 function toast(message){$('toast').textContent=message;$('toast').classList.add('visible');clearTimeout(toastTimeout);toastTimeout=setTimeout(()=>$('toast').classList.remove('visible'),3000);}
@@ -202,11 +205,11 @@ function updateAssist(){const a=flight.state.autopilot;document.querySelector('.
 function toggleAssist(){if(landing.finished)return;flight.toggleAutopilot();updateAssist();toast(flight.state.autopilot?(flight.type.flight.rotorcraft?'Hover hold · braking to hold position, altitude and heading':'Flight assist on · holding altitude and heading'):(flight.type.flight.rotorcraft?'Manual flight · cyclic to move, collective to climb or descend':'You have control · W/S to pitch, A/D to bank'));}
 function setView(value){sceneDirty=true;view=value;aircraft.setCockpit(view==='cockpit');if(cockpit)cockpit.visible=view==='cockpit';$('camera-label').textContent=({chase:'Chase camera',cockpit:'Cockpit view',orbit:'Orbit camera'})[view];initialCamera=true;toast(`${$('camera-label').textContent}${view==='orbit'?' · drag to look around':''}`);}
 function cycleView(){const views=['chase','cockpit','orbit'];setView(views[(views.indexOf(view)+1)%views.length]);}
-function toggleMap(){settings.showMap=!settings.showMap;$('map-panel').hidden=!settings.showMap;saveSettings();}
+function toggleMap(){settings.showMap=!settings.showMap;$('map-panel').hidden=!settings.showMap;saveSettings();drawMap();}
 function toggleHud(){hudVisible=!hudVisible;$('hud').hidden=!hudVisible;$('restore-hud').hidden=hudVisible;}
 function gear(){if(flight.type.flight.rotorcraft||flight.type.fixedGear){toast(flight.type.fixedGear?'Fixed landing gear · always down':wheeled(flight.type)?'Fixed wheeled landing gear · always down':'Fixed landing skids · always down');return;}sceneDirty=true;flight.toggleGear();toast(`Landing gear ${flight.state.gearDown?'down':'retracted'}`);}
 function flaps(){if(flight.type.flight.rotorcraft||flight.type.noFlaps){toast('No flaps on this aircraft');return;}sceneDirty=true;flight.cycleFlaps();toast(`Flaps set to ${flight.state.flaps*15}°`);}
-$('pause-btn').onclick=()=>setPaused(!paused);$('resume-btn').onclick=()=>setPaused(false);$('reset-btn').onclick=()=>restart();$('crash-reset').onclick=()=>restart();$('take-control').onclick=toggleAssist;$('camera-btn').onclick=cycleView;$('map-toggle').onclick=toggleMap;$('map-close').onclick=toggleMap;$('hud-toggle').onclick=toggleHud;$('restore-hud').onclick=toggleHud;$('gear-btn').onclick=gear;$('flaps-btn').onclick=flaps;
+$('pause-btn').onclick=()=>setPaused(!paused);$('resume-btn').onclick=()=>setPaused(false);$('reset-btn').onclick=()=>restart();$('crash-reset').onclick=()=>restart();$('take-control').onclick=toggleAssist;$('camera-btn').onclick=cycleView;$('map-toggle').onclick=toggleMap;$('map-close').onclick=toggleMap;$('map-framing').onclick=cycleMapFraming;$('map-zoom-in').onclick=()=>zoomMap(1);$('map-zoom-out').onclick=()=>zoomMap(-1);$('map-expand').onclick=()=>showDialog('chart');$('hud-toggle').onclick=toggleHud;$('restore-hud').onclick=toggleHud;$('gear-btn').onclick=gear;$('flaps-btn').onclick=flaps;
 $('landing-entry').onclick=()=>showDialog('landing');
 for(const id of ['landing-retry','landing-result-retry'])$(id).onclick=()=>startLanding();
 for(const id of ['landing-cancel','landing-result-exit'])$(id).onclick=()=>cancelLanding(true);
@@ -231,16 +234,50 @@ function airportDetail(){
  const a=selection.airport,mission=landing.status!=='idle'&&(landing.field.id!==a.id||landing.field.runway!==selection.runway)?`Your landing at ${landing.field.name} ${landing.field.runway} continues. `:'';
  return`<div class="airport-detail"><div class="airport-runways" role="radiogroup" aria-label="Runway at ${a.name}">${a.runways.map(r=>{const on=r.designator===selection.runway;return`<button role="radio" aria-checked="${on}" tabindex="${on?0:-1}" data-runway="${r.designator}">Runway ${r.designator} <small>${headingDegrees(r.heading)}°</small></button>`;}).join('')}</div><p>${a.summary} ${a.runwayLength.toLocaleString('en')} × ${a.runwayWidth} m. ${a.caution}</p><p class="dialog-note">${mission}Choosing a field moves nothing: departures and new landing missions start there.</p></div>`;
 }
+// The navigation chart: a larger map in a dialog (the flight pauses while it is open, as with every dialog).
+function chartAirport(a){const on=a.id===navigationDestination(airportState())?.id,sel=a.id===selection.id,{bearing,distance}=bearingDistance(flight.state.position,a);return`<button class="chart-airport ${on?'selected':''}" role="radio" aria-checked="${sel}" tabindex="${sel?0:-1}" data-airport="${a.id}"><span class="chart-ident">${a.ident}</span><span class="chart-name">${a.name}<small>${region(a.region).name}</small></span><span class="chart-vector">${degrees(bearing)}° <small>${formatNM(distance)}</small></span></button>`;}
+function drawChart(){
+ if(!chartMap||!dialog.open)return;
+ chartMap.draw(navScene(chartFraming,settings.quality==='low'?20:40)); // The flight is paused under a dialog, so the chart may sample more per update.
+ const d=navigationDestination(airportState()),n=navReadout();
+ const mission=d?.mission?`<p class="chart-mission">Landing mission · runway ${d.runway}. ${selection.id!==d.id?`${selection.airport.name} is selected for the next departure or mission.`:''}</p>`:'';
+ const html=d?`<span class="chart-to">${d.mission?'Landing at':'To'} <strong>${d.name}</strong> <small>${d.ident}</small></span><div class="chart-values"><div><span>Bearing</span><strong>${n.bearingText}°</strong></div><div><span>Distance</span><strong>${n.distanceText.replace(' NM','')} <small>NM</small></strong><em>${(n.distance/1000).toFixed(1)} km</em></div><div><span>Time en route</span><strong>${n.ete||'—'}</strong></div></div>${mission}`:'';
+ if($('chart-readout').innerHTML!==html)$('chart-readout').innerHTML=html;
+ dialog.querySelectorAll('[data-framing]').forEach(b=>{const on=b.dataset.framing===chartFraming.framing;b.setAttribute('aria-checked',on);b.tabIndex=on||(chartFraming.framing==='free'&&b.dataset.framing==='route')?0:-1;});
+ $('chart-canvas').setAttribute('aria-label',d?`Navigation chart, ${FRAMING_LABELS[chartFraming.framing].toLowerCase()} view. ${d.name} bears ${n.bearingText} degrees, ${n.distanceText.replace('NM','nautical miles')} from the aircraft.`:'Navigation chart');
+}
+function setupChart(){
+ const canvas=$('chart-canvas');chartMap=new NavigationMap(canvas,{heightAt:world.heightAt,quality:settings.quality});
+ if(chartFraming.framing==='free')Object.assign(chartFraming,{framing:'route'});
+ const pan=(dx,dy)=>{const v=chartMap.view;if(!v)return;Object.assign(chartFraming,{framing:'free',cx:v.cx+dx*v.mpp,cz:v.cz+dy*v.mpp,zoom:nearestZoom(v.mpp*Math.min(v.width,v.height))});drawChart();};
+ const zoom=dir=>{if(chartMap.view){const z=zoomFrom(chartFraming,chartMap.view,dir);Object.assign(chartFraming,z,z.framing==='free'?{}:{cx:undefined,cz:undefined});drawChart();}};
+ const choose=id=>{if(id&&selection.select(id)){rerenderChartList(id);}};
+ dialog.querySelectorAll('[data-framing]').forEach(b=>b.onclick=()=>{Object.assign(chartFraming,{framing:b.dataset.framing});drawChart();});
+ radioKeys('[data-framing]');
+ $('chart-zoom-in').onclick=()=>zoom(1);$('chart-zoom-out').onclick=()=>zoom(-1);
+ dialog.querySelectorAll('.chart-airports [data-airport]').forEach(b=>b.onclick=()=>choose(b.dataset.airport));radioKeys('.chart-airports [data-airport]');
+ let drag=null;
+ canvas.onpointerdown=e=>{drag={x:e.clientX,y:e.clientY,moved:0};canvas.setPointerCapture(e.pointerId);};
+ canvas.onpointermove=e=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.moved+=Math.abs(dx)+Math.abs(dy);drag.x=e.clientX;drag.y=e.clientY;if(drag.moved>4)pan(-dx,-dy);};
+ canvas.onpointerup=e=>{if(drag&&drag.moved<=4){const r=canvas.getBoundingClientRect();choose(chartMap.airportAt(e.clientX-r.left,e.clientY-r.top,e.pointerType==='touch'?26:18));}drag=null;};
+ canvas.onpointercancel=()=>{drag=null;};
+ canvas.onwheel=e=>{e.preventDefault();zoom(e.deltaY<0?1:-1);};
+ canvas.onkeydown=e=>{const v=chartMap.view;if(!v)return;const step=Math.min(v.width,v.height)/5,k={ArrowLeft:[-step,0],ArrowRight:[step,0],ArrowUp:[0,-step],ArrowDown:[0,step]}[e.key];
+  if(k){e.preventDefault();pan(...k);}else if(e.key==='+'||e.key==='='){e.preventDefault();zoom(1);}else if(e.key==='-'||e.key==='_'){e.preventDefault();zoom(-1);}};
+ requestAnimationFrame(drawChart);
+}
+// Re-list the fields after a choice, keeping focus on the chosen one.
+function rerenderChartList(id){const list=dialog.querySelector('.chart-airports');if(!list)return;list.innerHTML=AIRPORTS.map(chartAirport).join('');list.querySelectorAll('[data-airport]').forEach(b=>b.onclick=()=>{if(selection.select(b.dataset.airport))rerenderChartList(b.dataset.airport);});radioKeys('.chart-airports [data-airport]');list.querySelector(`[data-airport="${id}"]`)?.focus({preventScroll:true});drawChart();}
 function showDialog(type){
  clearControls();
  const heli=!!flight.type.flight.rotorcraft;
  let content='';
- if(type==='menu'){content=dialogHead('Flight deck')+`<div class="dialog-body"><button class="menu-link" data-next-dialog="explore">Explore the Alps <i data-lucide="arrow-up-right"></i></button><button class="menu-link" data-next-dialog="logbook">Flight log <i data-lucide="arrow-up-right"></i></button><button class="menu-link" data-next-dialog="controls">Flight controls <i data-lucide="arrow-up-right"></i></button><button class="menu-link" data-next-dialog="environment">Weather <i data-lucide="arrow-up-right"></i></button></div>`;}else if(type==='environment'){
+ if(type==='menu'){content=dialogHead('Flight deck')+`<div class="dialog-body"><button class="menu-link" data-next-dialog="explore">Explore the Alps <i data-lucide="arrow-up-right"></i></button><button class="menu-link" data-next-dialog="chart">Navigation chart <i data-lucide="arrow-up-right"></i></button><button class="menu-link" data-next-dialog="logbook">Flight log <i data-lucide="arrow-up-right"></i></button><button class="menu-link" data-next-dialog="controls">Flight controls <i data-lucide="arrow-up-right"></i></button><button class="menu-link" data-next-dialog="environment">Weather <i data-lucide="arrow-up-right"></i></button></div>`;}else if(type==='environment'){
  content=dialogHead('A change of atmosphere')+`<div class="dialog-body"><p>Find your favorite light. Weather presets change the atmosphere, sunlight, visibility, and water.</p><div class="weather-options">${Object.entries(weatherData).map(([id,w])=>`<button class="weather-option ${settings.weather===id?'selected':''}" data-weather="${id}"><i data-lucide="${w.icon}"></i><div><strong>${w.label}</strong><span>${id==='clear'?'Blue skies. Endless visibility.':id==='golden'?'Warm light across the mountains.':'A moody sky above the valley.'}</span></div><span></span></button>`).join('')}</div><p class="dialog-note">Simulated weather presets. This is a procedural alpine world.</p></div>`;
  }else if(type==='settings'){
  content=dialogHead('Make it your flight')+`<div class="dialog-body"><div class="settings-row"><div><strong>Graphics quality</strong><p>Balance detail with a smooth flight.</p></div><select id="graphics-quality" aria-label="Graphics quality"><option value="high" ${settings.quality==='high'?'selected':''}>High</option><option value="medium" ${settings.quality==='medium'?'selected':''}>Balanced</option><option value="low" ${settings.quality==='low'?'selected':''}>Performance</option></select></div>${toggleMarkup('setting-assist','Flight assist',heli?'Brakes to a hover; holds position, altitude and heading.':'Holds your heading and altitude.',flight.state.autopilot)}${toggleMarkup('setting-invert','Invert pitch','Swap the up and down flight controls.',settings.invertPitch)}${toggleMarkup('setting-mouse','Mouse steering','Drag across the world to pitch and bank.',settings.mouseSteering)}${toggleMarkup('setting-map','Navigation map','Show your position above the valley.',settings.showMap)}<button class="primary-btn" data-close>Back to the skies <i data-lucide="arrow-up-right"></i></button></div>`;
  }else if(type==='controls'){
- const controls=[[heli?'Cyclic forward / backward':'Pitch down / up',['W','S']],[heli?'Cyclic left / right':'Bank left / right',['A','D']],['Alternate flight controls',['←','↑','↓','→']],[heli?'Yaw left / right':'Rudder left / right',['Q','E']],[heli?'Raise / lower collective':'Increase / decrease throttle',['Shift','Ctrl']],['Change camera',['C']],['Pause / resume',['P']],[heli?'Hover hold':'Flight assist',['Space']],...(!heli&&!flight.type.fixedGear?[['Landing gear',['G']]]:[]),...(!heli&&!flight.type.noFlaps?[['Cycle flaps',['F']]]:[]),['Navigation map',['M']],['Hide instruments',['H']],['Restart flight',['R']]];
+ const controls=[[heli?'Cyclic forward / backward':'Pitch down / up',['W','S']],[heli?'Cyclic left / right':'Bank left / right',['A','D']],['Alternate flight controls',['←','↑','↓','→']],[heli?'Yaw left / right':'Rudder left / right',['Q','E']],[heli?'Raise / lower collective':'Increase / decrease throttle',['Shift','Ctrl']],['Change camera',['C']],['Pause / resume',['P']],[heli?'Hover hold':'Flight assist',['Space']],...(!heli&&!flight.type.fixedGear?[['Landing gear',['G']]]:[]),...(!heli&&!flight.type.noFlaps?[['Cycle flaps',['F']]]:[]),['Navigation map',['M']],['Map zoom out / in',['−','+']],['Map framing',['V']],['Navigation chart',['N']],['Hide instruments',['H']],['Restart flight',['R']]];
  content=dialogHead('You have control')+`<div class="dialog-body"><p>${heli?`${hoverPercent(flight.type)}% collective hovers. Tilt forward with W to move; center the cyclic to level. Space brakes into a steady hover.`:'A little input goes a long way. Bank gently into turns and add power to climb.'}</p><div class="controls-list">${controls.map(([label,k])=>`<div class="control-row"><span>${label}</span><span>${k.map(v=>`<kbd>${v}</kbd>`).join('')}</span></div>`).join('')}</div><p class="dialog-note">On a phone, drag the left ${heli?'cyclic':'yoke'} to steer and hold + / − to adjust ${heli?'collective; use the two yaw buttons to turn':'throttle'}. In orbit view, drag to look around and scroll to zoom. ${flight.type.name}: ${flight.type.help}</p></div>`;
  }else if(type==='landing'){
  const f=selection.field,p=landingProfile(flight.type),h=p.helicopter,fit=missionAvailability(selection.airport,flight.type.id),hdg=headingDegrees(f.heading),name=flight.type.name;
@@ -249,12 +286,14 @@ function showDialog(type){
  :`<p class="mission-caution unavailable" role="note"><i data-lucide="triangle-alert"></i><span>No scored landing here: the ${name} ${fit.reason.toLowerCase()}, and ${f.name} has ${f.runwayLength.toLocaleString('en')} × ${f.runwayWidth} m ${surfaceName(f)}.</span></p><p>Fly this mission at a field that suits it, or choose a lighter aircraft in Explore. You can still depart from ${f.name} in free flight.</p>${fit.alternatives.map(id=>{const a=AIRPORTS.find(x=>x.id===id);return`<button class="secondary-btn" data-mission-airport="${id}">Land at ${a.name} instead <i data-lucide="arrow-up-right"></i></button>`;}).join('')}<button class="primary-btn" data-next-dialog="explore">Choose another aircraft or field <i data-lucide="arrow-up-right"></i></button>`)+`</div>`;
  }else if(type==='explore'){
  const sel=selection.airport;
- content=dialogHead('A world above it all')+`<div class="dialog-body"><div class="explore-hero"><svg viewBox="0 0 420 140" aria-label="Alpine mountains"><rect width="420" height="140" fill="hsl(197 30% 66%)"/><path d="M0 98 65 25 92 56 155 9 212 88 270 17 352 102 390 48 420 85v55H0" fill="hsl(205 17% 44%)"/><path d="m65 25-27 30 18-5 11 9 8-18 17 15Zm90-16-39 48 29-14 17 9 14-13 36 49Zm115 8-26 32 17-4 12 13 12-10 25 15Z" fill="hsl(195 20% 91%)"/><path d="M0 109 91 69 177 123 271 72 420 112v28H0" fill="hsl(162 18% 29%)"/><path d="M0 140 168 113 252 117 342 140" fill="hsl(182 42% 42%)"/></svg></div><div class="explore-name"><h3>The Swiss Alps</h3><span>FREE FLIGHT</span></div><p class="explore-description">A winding turquoise lake. Snow-covered ridgelines. Quiet villages tucked into the mountains. Explore our original world inspired by Switzerland's Bernese Oberland.</p><h3 class="dialog-section-title fleet-heading">Aircraft <span>${Object.keys(FLEET).length} to fly · scroll to explore</span></h3><div class="weather-options aircraft-options" role="radiogroup" aria-label="Aircraft">${Object.values(FLEET).map(t=>`<button class="weather-option ${t.id===flight.type.id?'selected':''}" role="radio" tabindex="${t.id===flight.type.id?0:-1}" aria-checked="${t.id===flight.type.id}" data-aircraft="${t.id}"><i data-lucide="plane"></i><div><strong>${t.name} <small>${t.badge}</small></strong><span>${t.choice}</span></div><span></span></button>`).join('')}</div><p class="dialog-note">Changing aircraft saves this flight and starts the new one in the air.</p><h3 class="dialog-section-title fleet-heading" id="airport-heading">Airfield <span>${AIRPORTS.length} fields · fit for the ${flight.type.name}</span></h3><div class="weather-options airport-options" role="radiogroup" aria-labelledby="airport-heading">${AIRPORTS.map(airportOption).join('')}</div>${airportDetail()}<button class="primary-btn" id="explore-landing">Land at ${sel.name} · ${selection.runway} <i data-lucide="arrow-up-right"></i></button><button class="primary-btn" id="explore-start">Start in the air <i data-lucide="arrow-up-right"></i></button><button class="secondary-btn" id="runway-start">${heli?'Lift off from':'Depart'} ${sel.name} · runway ${selection.runway} <i data-lucide="plane"></i></button><p class="dialog-note">Original procedural scenery and aircraft. An accessible flight experience with an arcade flight model.</p></div>`;
+ content=dialogHead('A world above it all')+`<div class="dialog-body"><div class="explore-hero"><svg viewBox="0 0 420 140" aria-label="Alpine mountains"><rect width="420" height="140" fill="hsl(197 30% 66%)"/><path d="M0 98 65 25 92 56 155 9 212 88 270 17 352 102 390 48 420 85v55H0" fill="hsl(205 17% 44%)"/><path d="m65 25-27 30 18-5 11 9 8-18 17 15Zm90-16-39 48 29-14 17 9 14-13 36 49Zm115 8-26 32 17-4 12 13 12-10 25 15Z" fill="hsl(195 20% 91%)"/><path d="M0 109 91 69 177 123 271 72 420 112v28H0" fill="hsl(162 18% 29%)"/><path d="M0 140 168 113 252 117 342 140" fill="hsl(182 42% 42%)"/></svg></div><div class="explore-name"><h3>The Swiss Alps</h3><span>FREE FLIGHT</span></div><p class="explore-description">A winding turquoise lake. Snow-covered ridgelines. Quiet villages tucked into the mountains. Explore our original world inspired by Switzerland's Bernese Oberland.</p><h3 class="dialog-section-title fleet-heading">Aircraft <span>${Object.keys(FLEET).length} to fly · scroll to explore</span></h3><div class="weather-options aircraft-options" role="radiogroup" aria-label="Aircraft">${Object.values(FLEET).map(t=>`<button class="weather-option ${t.id===flight.type.id?'selected':''}" role="radio" tabindex="${t.id===flight.type.id?0:-1}" aria-checked="${t.id===flight.type.id}" data-aircraft="${t.id}"><i data-lucide="plane"></i><div><strong>${t.name} <small>${t.badge}</small></strong><span>${t.choice}</span></div><span></span></button>`).join('')}</div><p class="dialog-note">Changing aircraft saves this flight and starts the new one in the air.</p><h3 class="dialog-section-title fleet-heading" id="airport-heading">Airfield <span>${AIRPORTS.length} fields · fit for the ${flight.type.name}</span></h3><div class="weather-options airport-options" role="radiogroup" aria-labelledby="airport-heading">${AIRPORTS.map(airportOption).join('')}</div>${airportDetail()}<button class="primary-btn" id="explore-landing">Land at ${sel.name} · ${selection.runway} <i data-lucide="arrow-up-right"></i></button><button class="primary-btn" id="explore-start">Start in the air <i data-lucide="arrow-up-right"></i></button><button class="secondary-btn" id="runway-start">${heli?'Lift off from':'Depart'} ${sel.name} · runway ${selection.runway} <i data-lucide="plane"></i></button><button class="secondary-btn" data-next-dialog="chart">See ${sel.name} on the navigation chart <i data-lucide="map"></i></button><p class="dialog-note">Original procedural scenery and aircraft. An accessible flight experience with an arcade flight model.</p></div>`;
+ }else if(type==='chart'){
+ content=dialogHead('Navigation chart')+`<div class="dialog-body chart-body"><div class="chart-map"><canvas id="chart-canvas" tabindex="0" role="img" aria-describedby="chart-help"></canvas><span class="map-north" aria-hidden="true">N <span>↑</span></span></div><div class="chart-side"><div class="chart-readout" id="chart-readout" aria-live="polite"></div><div class="chart-tools"><div class="chart-framing" role="radiogroup" aria-label="Chart framing">${FRAMINGS.map(f=>`<button role="radio" data-framing="${f}">${FRAMING_LABELS[f]}</button>`).join('')}</div><div class="chart-zoom"><button id="chart-zoom-out" aria-label="Zoom chart out"><i data-lucide="minus"></i></button><button id="chart-zoom-in" aria-label="Zoom chart in"><i data-lucide="plus"></i></button></div></div><h3 class="dialog-section-title">Destination</h3><div class="chart-airports" role="radiogroup" aria-label="Destination airfield">${AIRPORTS.map(chartAirport).join('')}</div><p class="dialog-note" id="chart-help">Choose a field here or on the chart to navigate to it; this is the same field Explore departs from and lands at. The bearing points the way and never steers. Drag or use the arrow keys to pan, + and − to zoom.</p><button class="secondary-btn" data-next-dialog="explore">Departures and landing missions <i data-lucide="arrow-up-right"></i></button></div></div>`;
  }else if(type==='logbook'){
  const totalTime=savedFlights.reduce((n,f)=>n+f.time,0)+flight.state.flightTime,totalDistance=savedFlights.reduce((n,f)=>n+f.distance,0)+flight.state.distance;
  content=dialogHead('Every flight is a story')+`<div class="dialog-body"><p>Your time in the skies, saved on this browser.</p><div class="log-stats"><div class="log-stat"><span>Total flight time</span><strong>${formatTime(totalTime)}</strong></div><div class="log-stat"><span>Distance explored</span><strong>${(totalDistance/1852).toFixed(1)} <span>NM</span></strong></div></div><h3 class="dialog-section-title">Current flight</h3><div class="log-row"><span>The Swiss Alps · ${flight.type.name}</span><strong>${formatTime(flight.state.flightTime)}</strong></div><h3 class="dialog-section-title">Previous flights</h3>${savedFlights.length?savedFlights.slice(0,5).map(f=>`<div class="log-row"><span>${new Date(f.date).toLocaleDateString(undefined,{month:'short',day:'numeric'})}${f.aircraft?` · ${aircraftType(f.aircraft).name}`:''} · ${(f.distance/1852).toFixed(1)} NM</span><strong>${formatTime(f.time)}</strong></div>`).join(''):'<div class="empty-log">Your adventure is just beginning. Flights are saved when you restart or leave the simulator.</div>'}</div>`;
  }
- $('dialog-content').innerHTML=content;
+ $('dialog-content').innerHTML=content;dialog.classList.toggle('chart-dialog',type==='chart');if(type!=='chart')chartMap=null;
  refreshIcons();if(!dialog.open)dialog.showModal();
  dialog.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>dialog.close());dialog.querySelectorAll('[data-next-dialog]').forEach(b=>b.onclick=()=>showDialog(b.dataset.nextDialog));
  dialog.querySelectorAll('[data-weather]').forEach(b=>b.onclick=()=>{setWeather(b.dataset.weather);showDialog('environment');});
@@ -264,6 +303,7 @@ function showDialog(type){
  for(const [id,key] of [['setting-invert','invertPitch'],['setting-mouse','mouseSteering']])$(id).onclick=e=>{settings[key]=!settings[key];clearControls();e.currentTarget.setAttribute('aria-checked',settings[key]);saveSettings();};
  $('setting-map').onclick=e=>{toggleMap();e.currentTarget.setAttribute('aria-checked',settings.showMap);};
  }
+ if(type==='chart')setupChart();
  if(type==='landing'){if($('start-landing'))$('start-landing').onclick=()=>{if(startLanding(selection.field))dialog.close();};dialog.querySelectorAll('[data-mission-airport]').forEach(b=>b.onclick=()=>{selection.select(b.dataset.missionAirport);showDialog('landing');$('start-landing')?.focus();});}
  if(type==='explore'){
  $('explore-landing').onclick=()=>showDialog('landing');$('explore-start').onclick=()=>{cancelLanding(false);restart();dialog.close();};$('runway-start').onclick=()=>{runwayStart();dialog.close();};
@@ -277,13 +317,13 @@ function showDialog(type){
 document.querySelectorAll('[data-dialog]').forEach(b=>b.onclick=()=>showDialog(b.dataset.dialog));
 dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});
 function formatTime(t){const h=Math.floor(t/3600);return`${h?String(h).padStart(2,'0')+':':''}${String(Math.floor(t/60)%60).padStart(2,'0')}:${String(Math.floor(t)%60).padStart(2,'0')}`;}
-const handledKeys=['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','ShiftLeft','ShiftRight','ControlLeft','ControlRight','KeyW','KeyS','KeyA','KeyD','KeyQ','KeyE','KeyP','KeyC','KeyG','KeyF','KeyM','KeyH','KeyR'];
+const handledKeys=['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','ShiftLeft','ShiftRight','ControlLeft','ControlRight','KeyW','KeyS','KeyA','KeyD','KeyQ','KeyE','KeyP','KeyC','KeyG','KeyF','KeyM','KeyH','KeyR','KeyN','KeyV','Minus','Equal','NumpadSubtract','NumpadAdd'];
 window.addEventListener('keydown',e=>{
  if(dialog.open||e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement)return;
  if(handledKeys.includes(e.code))e.preventDefault();
  if(e.repeat)return;
  if(!paused&&!flight.state.crashed){keys.add(e.code);queueControls(e.timeStamp/1000);}
- ({KeyP:()=>setPaused(!paused),Space:toggleAssist,KeyC:cycleView,KeyG:gear,KeyF:flaps,KeyM:toggleMap,KeyH:toggleHud,KeyR:()=>restart()})[e.code]?.();
+ ({KeyP:()=>setPaused(!paused),Space:toggleAssist,KeyC:cycleView,KeyG:gear,KeyF:flaps,KeyM:toggleMap,KeyH:toggleHud,KeyR:()=>restart(),KeyN:()=>showDialog('chart'),KeyV:cycleMapFraming,Minus:()=>zoomMap(-1),NumpadSubtract:()=>zoomMap(-1),Equal:()=>zoomMap(1),NumpadAdd:()=>zoomMap(1)})[e.code]?.();
 });
 window.addEventListener('keyup',e=>{keys.delete(e.code);queueControls(e.timeStamp/1000);});window.addEventListener('blur',clearControls);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)clearControls();});
@@ -309,17 +349,30 @@ for(const [id,v] of [['yaw-left',-1],['yaw-right',1]]){
  for(const event of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(event,e=>{yawPointers.delete(e.pointerId);sync(e);});
 }
 
-// The map uses the same height function as the world and flight collisions.
-const mapCanvas=$('mini-map'),mapCtx=mapCanvas.getContext('2d');mapCanvas.width=480;mapCanvas.height=310;
-const mapTexture=document.createElement('canvas');mapTexture.width=240;mapTexture.height=155;const mapTextureCtx=mapTexture.getContext('2d');const mapImage=mapTextureCtx.createImageData(240,155);
-const mapBounds={xmin:-6500,xmax:6500,zmin:-7500,zmax:7500};
-for(let y=0;y<155;y++)for(let x=0;x<240;x++){
- const wx=mapBounds.xmin+(x/240)*(mapBounds.xmax-mapBounds.xmin),wz=mapBounds.zmin+(y/155)*(mapBounds.zmax-mapBounds.zmin),h=world.heightAt(wx,wz),i=(y*240+x)*4;
- let c;if(h<=10.1)c=[39,90,94];else{const shade=THREE.MathUtils.clamp((world.heightAt(wx+35,wz)-h)*.17,-15,15),n=Math.min(h/2500,1),contour=h%180<15?-9:0;c=[40+n*46+shade+contour,59+n*42+shade+contour,46+n*44+shade+contour];}mapImage.data.set([...c,255],i);
-}mapTextureCtx.putImageData(mapImage,0,0);
-function mapPoint(x,z){return[(x-mapBounds.xmin)/(mapBounds.xmax-mapBounds.xmin)*480,(z-mapBounds.zmin)/(mapBounds.zmax-mapBounds.zmin)*310];}
+// The navigation map: the world's own height function (as rendering and collisions use), every airport and named
+// region, and the route to the destination, which is the mission's field during a mission and the selected field
+// otherwise (navigationDestination). It points the way; it never steers or moves the aircraft.
 const flightTrail=[];let trailClock=0;const trailOrigin=flight.state.position.clone();
-function drawMap(){mapCtx.drawImage(mapTexture,0,0,480,310);mapCtx.strokeStyle='rgba(205,245,107,.55)';mapCtx.lineWidth=1.5;mapCtx.setLineDash([5,5]);mapCtx.beginPath();const start=mapPoint(trailOrigin.x,trailOrigin.z);mapCtx.moveTo(...start);for(const p of flightTrail)mapCtx.lineTo(...mapPoint(p.x,p.z));const p=mapPoint(flight.state.position.x,flight.state.position.z);mapCtx.lineTo(...p);mapCtx.stroke();mapCtx.setLineDash([]);mapCtx.save();mapCtx.translate(...p);mapCtx.rotate(flight.state.heading);mapCtx.beginPath();mapCtx.moveTo(0,-11);mapCtx.lineTo(7,9);mapCtx.lineTo(0,5);mapCtx.lineTo(-7,9);mapCtx.closePath();mapCtx.fillStyle='#d0f767';mapCtx.strokeStyle='#1d332a';mapCtx.lineWidth=2;mapCtx.fill();mapCtx.stroke();mapCtx.restore();const ap=mapPoint(world.airport.x,world.airport.z);mapCtx.fillStyle='#c4cbb7';mapCtx.save();mapCtx.translate(...ap);mapCtx.rotate(world.airport.heading);mapCtx.fillRect(-2,-10,4,20);mapCtx.restore();}
+const miniFraming={framing:FRAMINGS.includes(settings.mapFraming)?settings.mapFraming:'route',zoom:THREE.MathUtils.clamp(Number(settings.mapZoom)||3,0,ZOOM_SPANS.length-1)};
+const chartFraming={framing:'route',zoom:ZOOM_SPANS.length-1};
+miniMap=new NavigationMap($('mini-map'),{heightAt:world.heightAt,compact:true,quality:settings.quality});
+let lastNav='',mapDrawMs=0;
+const navScene=(framing,budget)=>{const s=flight.state;return{framing,aircraft:{x:s.position.x,z:s.position.z,heading:s.heading},destination:navigationDestination(airportState()),trail:[trailOrigin,...flightTrail],budget};};
+const navReadout=()=>navigationReadout({position:flight.state.position,heading:flight.state.heading,speed:flight.state.speed},navigationDestination(airportState()));
+function setMapFraming(next){Object.assign(miniFraming,next);if(miniFraming.framing!=='free'){settings.mapFraming=miniFraming.framing;settings.mapZoom=miniFraming.zoom;saveSettings();}drawMap();}
+function cycleMapFraming(){const i=FRAMINGS.indexOf(miniFraming.framing);setMapFraming({framing:FRAMINGS[(i+1)%FRAMINGS.length]});toast(`Map · ${FRAMING_LABELS[miniFraming.framing].toLowerCase()} view`);}
+function zoomMap(direction){if(!settings.showMap)toggleMap();if(miniMap.view)setMapFraming(zoomFrom(miniFraming,miniMap.view,direction));}
+function drawMap(){
+ if(!settings.showMap)return;
+ const t0=performance.now();miniMap.draw(navScene(miniFraming));mapDrawMs=performance.now()-t0;
+ const n=navReadout(),d=navigationDestination(airportState());
+ const text=`${d?.ident}|${n?.bearingText}|${n?.distanceText}|${miniFraming.framing}|${d?.mission}`;
+ $('map-nav-arrow').style.transform=`rotate(${n?n.relative:0}rad)`;
+ if(text!==lastNav){lastNav=text;$('map-nav-ident').textContent=d?d.ident:'—';$('map-nav-bearing').textContent=n?`${n.bearingText}°`:'';$('map-nav-distance').textContent=n?n.distanceText:'';
+  $('map-nav').setAttribute('aria-label',d?`${d.mission?'Landing mission at':'Navigate to'} ${d.name}: bearing ${n.bearingText} degrees, ${n.distanceText.replace('NM','nautical miles')}`:'No destination');
+  $('map-framing-label').textContent=FRAMING_LABELS[miniFraming.framing];$('map-framing').setAttribute('aria-label',`Map framing: ${FRAMING_LABELS[miniFraming.framing]}. Change framing`);
+  $('mini-map').setAttribute('aria-label',d?`Navigation map, ${FRAMING_LABELS[miniFraming.framing].toLowerCase()} view: aircraft and ${d.name}`:'Navigation map');}
+}
 let lastAssist=true,lastUi=0,lastFps=performance.now(),fpsFrames=0;
 function updateUI(time){
  const s=flight.state,h=!!flight.type.flight.rotorcraft;const speed=s.speed*1.94384,alt=s.position.y*3.28084,heading=(s.heading*180/Math.PI+360)%360,vsi=Math.round(s.verticalSpeed*196.85/10)*10;
@@ -333,7 +386,7 @@ function updateUI(time){
  if(notice!==lastNotice){lastNotice=notice;$('flight-notice').textContent=notice;$('flight-notice').classList.toggle('visible',!!notice);$('flight-notice').classList.toggle('warning',stalled||notice.startsWith('TERRAIN'));$('flight-notice').classList.toggle('stall',stalled);}
  updateLandingUI();
  if(s.crashed&&!lastCrash&&landing.status==='idle'){lastCrash=true;$('crash-overlay').hidden=false;$('sim-status').textContent='Flight ended';}
- if(settings.showMap)drawMap();
+ drawMap();drawChart();
 }
 function updateCamera(dt){
  const s=flight.state,scale=flight.type.cameraScale??1;horizontalEuler.set(0,-s.heading,0);horizontalQuat.setFromEuler(horizontalEuler);
@@ -372,5 +425,5 @@ window.addEventListener('beforeunload',saveFlight);
 updateAircraftLabels();updateAirportUI();updateAssist();updateUI(0);updateCamera(1);renderer.render(scene,camera);tick();
 setTimeout(()=>{$('loading').classList.add('leaving');setTimeout(()=>$('loading').remove(),750);},500);
 // Expose read-only diagnostic snapshots for repeatable rendering and control checks.
-window.aeronaut={getState:()=>({...flight.state,position:flight.state.position.toArray(),quaternion:flight.state.quaternion.toArray(),paused,view,quality:settings.quality,weather:settings.weather}),getMission:()=>landing.snapshot(),startLanding:()=>startLanding(selection.field),getRendererInfo:()=>({...renderer.info.render}),reset:restart,setPaused, setQuality,setAircraft,runwayStart:(id,runway)=>runwayStart(id?resolveAirport(id,runway).field:selection.field),approachStart:(id,runway)=>approachStart(id?resolveAirport(id,runway).field:selection.field),airports:()=>world.airports.map(({position,windsock,...field})=>field),getAirport:airportState,selectAirport:(id,runway)=>selection.select(id,runway),getAircraft:()=>({id:flight.type.id,name:flight.type.name,gearPosition:aircraft.gearPosition,surfaces:aircraft.surfaces,afterburner:aircraft.afterburner})};
+window.aeronaut={getState:()=>({...flight.state,position:flight.state.position.toArray(),quaternion:flight.state.quaternion.toArray(),paused,view,quality:settings.quality,weather:settings.weather}),getMission:()=>landing.snapshot(),startLanding:()=>startLanding(selection.field),getRendererInfo:()=>({...renderer.info.render}),reset:restart,setPaused, setQuality,setAircraft,runwayStart:(id,runway)=>runwayStart(id?resolveAirport(id,runway).field:selection.field),approachStart:(id,runway)=>approachStart(id?resolveAirport(id,runway).field:selection.field),airports:()=>world.airports.map(({position,windsock,...field})=>field),getAirport:airportState,getNavigation:()=>{const n=navReadout();return{destination:navigationDestination(airportState()),bearing:n&&Number(n.bearingText),distance:n?.distance,framing:{...miniFraming},scale:miniMap.scale?.label,pendingTiles:miniMap.pending,drawMs:mapDrawMs};},setMapFraming:(framing,zoom)=>setMapFraming({framing,...(zoom===undefined?{}:{zoom})}),selectAirport:(id,runway)=>selection.select(id,runway),getAircraft:()=>({id:flight.type.id,name:flight.type.name,gearPosition:aircraft.gearPosition,surfaces:aircraft.surfaces,afterburner:aircraft.afterburner})};
 if(query.get('start')==='runway')runwayStart();else if(query.get('start')==='approach')approachStart();
