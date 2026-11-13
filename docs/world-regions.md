@@ -30,7 +30,7 @@ Pure data with no three.js import, for the airport, map and mission threads:
 - `LANDMARKS[]` `{ name, type, region, x, z, y? }`: 17 named places (the original five, then 3–4 per new region). `y` is set only for airborne points (passes, the gorge); otherwise use the ground height. `createWorld()` still returns `landmarks` as `{ name, type, region, position: Vector3 }`.
 - `ROUTES[]` `{ id, name, from, to, width, points: [[x, z, floorElevation]…], carve? }`.
 - `VILLAGES[]` `[x, z, spread, houses]` (the first four are the originals).
-- `AIRFIELD_SITES[]` `{ id, region, x, z, heading, length }`: surveyed, **not built and not graded**. Heading is radians clockwise from north (the `AIRFIELD.heading` convention); trees are already kept off a 520 m wide strip extending 700 m past each end.
+- `AIRFIELD_SITES[]` `{ id, region, x, z, heading, length }`: surveyed, **not built and not graded**. Heading is radians clockwise from north (the `AIRFIELD.heading` convention); the built fields are in `src/airports.js` (see `docs/airport-network.md`), which now decides where trees and houses keep clear.
 - `SHAPES`: the numbers the terrain is carved from (west valley curve, plateau ellipse and buttes, basin ellipse and islands, rim).
 
 `createWorld()` additionally returns `bounds` (`WORLD`), `regions` and `regionAt`.
