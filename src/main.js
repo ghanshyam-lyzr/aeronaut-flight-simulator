@@ -14,7 +14,9 @@ import { FlightInputs } from './controls.js';
 import { disposeObject } from './helicopter.js';
 import { LandingMission, landingProfile } from './landing-mission.js';
 import { runwayPoint } from './airfield.js';
-import { runwayDirection } from './airports.js';
+import { AIRPORTS, suitability } from './airports.js';
+import { AirportSelection, resolveAirport, missionAvailability, describeField, headingDegrees } from './airport-selection.js';
+import { region } from './regions.js';
 import { createLandingGuidance } from './landing-guidance.js';
 
 const icons = {Plane,SlidersHorizontal,Maximize,Minimize,VolumeX,Volume2,MapPin,ArrowUpRight,Sun,CloudSun,Cloud,ChevronDown,ChevronsUpDown,Navigation,Video,Camera,Map,Scan,Minus,Plus,CircleDot,RotateCcw,Pause,Play,Keyboard,Move,TriangleAlert,X,Check,Mountain,Compass,Wind,Menu};
@@ -26,6 +28,9 @@ const settings = { quality:'high', invertPitch:false, mouseSteering:false, showM
 try { Object.assign(settings, JSON.parse(localStorage.getItem('aeronaut-settings') || '{}')); } catch {}
 settings.aircraft = aircraftType(settings.aircraft).id;
 const saveSettings = () => {try{localStorage.setItem('aeronaut-settings',JSON.stringify(settings));}catch{}};
+// The selected field and runway (src/airport-selection.js), saved as a stable id; old or invalid settings mean Alpine Field 36.
+const selection = new AirportSelection(settings.airport, settings.runway);
+settings.airport = selection.id; settings.runway = selection.runway;
 let savedFlights = [];
 try { savedFlights = JSON.parse(localStorage.getItem('aeronaut-flights') || '[]'); } catch {}
 let renderer;
@@ -52,9 +57,12 @@ const world = createWorld(scene,renderer);
 let aircraft = createAircraft(settings.aircraft);
 scene.add(aircraft.group);world.reflectSky(aircraft.group);
 const flight = new FlightController(world.heightAt, settings.aircraft);
-const landing = new LandingMission(world.airport);
+const landing = new LandingMission(selection.field);
 const signalProbe=document.createElement('span');signalProbe.style.color='var(--accent)';document.body.appendChild(signalProbe);
-const landingCues = createLandingGuidance(scene,world.airport,getComputedStyle(signalProbe).color);signalProbe.remove();
+const signalColor=getComputedStyle(signalProbe).color;signalProbe.remove();
+let landingCues = createLandingGuidance(scene,landing.field,signalColor);
+// Cues belong to one field and runway: a mission elsewhere frees them and builds fresh ones.
+function setMissionCues(field){if(landingCues.field.id===field.id&&landingCues.field.runway===field.runway)return;landingCues.dispose();landingCues=createLandingGuidance(scene,field,signalColor);}
 let missionResultShown=false;
 flight.toggleAutopilot();
 const audio = new FlightAudio();
@@ -124,45 +132,58 @@ function setAircraft(id){
  camera.remove(cockpit);disposeObject(cockpit);cockpit=createCockpit(type.id);camera.add(cockpit);cockpit.visible=view==='cockpit';
  restart(false);updateAircraftLabels();toast(`${type.name} ready · a fresh start in the air`);return true;
 }
-// Until airport selection lands, ?airport=<id>&runway=<nn> picks the field runway starts use,
-// and &start=runway or &start=approach begins there (world.airports lists the ids).
+// ?airport=<id>&runway=<nn> selects a field as the picker does; &start=runway or &start=approach begins there.
+// Selected airport and mission field for other views (the navigation map): airportState() here, window.aeronaut.getAirport(),
+// and an 'aeronaut:airport' window event with the same detail whenever the selection or the mission field changes.
+// `selected` is the field departures and new missions use; `mission` is the field of the mission underway (null in free flight).
+const airportState=()=>({selected:selection.snapshot(),mission:landing.status==='idle'?null:{...describeField(landing.field),status:landing.status,phase:landing.phase}});
+function announceAirport(){window.dispatchEvent(new CustomEvent('aeronaut:airport',{detail:airportState()}));}
+function updateAirportUI(){$('landing-entry').innerHTML=`Land at ${selection.airport.name} <i data-lucide="arrow-up-right"></i>`;refreshIcons();}
+selection.addEventListener('change',()=>{settings.airport=selection.id;settings.runway=selection.runway;saveSettings();updateAirportUI();announceAirport();});
 const query=new URLSearchParams(location.search);
-function fieldFor(id,runway){const field=world.airports.find(f=>f.id===id);if(!field)return world.airport;try{return runwayDirection(field,runway||field.runway);}catch{return field;}}
-const startField=fieldFor(query.get('airport'),query.get('runway'));
+if(query.has('airport'))selection.select(query.get('airport'),query.get('runway')||undefined);
+const surfaceName=f=>f.surface==='grass'?'grass':'paved';
 // A free-flight start on a 3° final, placed as the landing mission places it; no mission runs.
-function approachStart(field=startField){cancelLanding(false);saveFlight();const m=new LandingMission(field);m.start(flight);m.cancel();flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);paused=false;lastCrash=false;initialCamera=true;sceneDirty=true;clearControls();$('pause-overlay').hidden=$('crash-overlay').hidden=true;updateAssist();toast(`${field.name} · final for runway ${field.runway}`);}
-function runwayStart(field=startField){cancelLanding(false);restart(false);const p=runwayPoint(100,0,field);flight.runwayStart(p.x,world.heightAt(p.x,p.z)+(flight.type.groundClearance??2.8),p.z,field.heading);trailOrigin.copy(flight.state.position);updateAssist();initialCamera=true;sceneDirty=true;toast(field===world.airport?flight.type.runwayHint:flight.type.runwayHint.replace(/^Runway \d+/,`${field.name} · runway ${field.runway}`));}
-function startLanding(){
- saveFlight();landing.start(flight);flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);trailClock=0;
+function approachStart(field=selection.field){cancelLanding(false);saveFlight();const m=new LandingMission(field);m.start(flight);m.cancel();flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);paused=false;lastCrash=false;initialCamera=true;sceneDirty=true;clearControls();$('pause-overlay').hidden=$('crash-overlay').hidden=true;updateAssist();toast(`${field.name} · final for runway ${field.runway}`);}
+// A fresh departure: any aircraft may try any field in free flight; a poor fit is named, not refused.
+function runwayStart(field=selection.field){
+ cancelLanding(false);restart(false);const p=runwayPoint(100,0,field);flight.runwayStart(p.x,world.heightAt(p.x,p.z)+(flight.type.groundClearance??2.8),p.z,field.heading);trailOrigin.copy(flight.state.position);updateAssist();initialCamera=true;sceneDirty=true;
+ const fit=suitability(field,flight.type.id),hint=flight.type.runwayHint;
+ toast(fit.rating==='unsuitable'?`${flight.type.name}: ${fit.reason.toLowerCase()} · ${field.name} has ${field.runwayLength.toLocaleString('en')} m ${surfaceName(field)}`:/^Runway \d+/.test(hint)?hint.replace(/^Runway \d+/,`${field.name} · runway ${field.runway}`):`${field.name} · ${hint}`);
+}
+// Starts a scored mission at a field (default: retry the current mission's field). Unsuited aircraft get the brief instead.
+function startLanding(field=landing.field){
+ if(!missionAvailability(field,flight.type.id).available){cancelLanding(false);showDialog('landing');return false;}
+ saveFlight();landing.start(flight,field);setMissionCues(field);flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);trailClock=0;
  paused=false;lastCrash=false;initialCamera=true;sceneDirty=true;missionResultShown=false;clearControls();
  $('pause-overlay').hidden=$('crash-overlay').hidden=$('landing-result').hidden=true;
  $('pause-btn').setAttribute('aria-label','Pause flight');iconButton('pause-btn','pause');
  hudVisible=true;$('hud').hidden=false;$('restore-hud').hidden=true;
  document.querySelector('.mission-panel').classList.remove('collapsed');
- updateAssist();updateLandingUI();toast(landing.profile.helicopter?'You have control · gently lower collective to settle in the box':'You have control · follow runway 36, then flare and idle power');
+ updateAssist();updateLandingUI();announceAirport();toast(landing.profile.helicopter?'You have control · gently lower collective to settle in the box':`You have control · follow runway ${field.runway}, then flare and idle power`);return true;
 }
 function cancelLanding(fresh=false){
  landing.cancel();missionResultShown=false;$('landing-result').hidden=true;landingCues.show(false);
- updateLandingUI();if(fresh){restart(false);toast('Free flight · a fresh start in the air');}
+ updateLandingUI();announceAirport();if(fresh){restart(false);toast('Free flight · a fresh start in the air');}
 }
 function updateLandingUI(){
- const underway=landing.status!=='idle',s=flight.state;
+ const underway=landing.status!=='idle',s=flight.state,f=landing.field;
  document.body.classList.toggle('landing-mode',underway);
  document.body.classList.toggle('landing-finished',landing.finished);
  $('flight-mode').textContent=underway?'Landing mission':'Free flight';
- document.querySelector('.map-explore').textContent=underway?'Landing · runway 36':'Free exploration';
- $('mission-title').textContent=underway?'Alpine Field · 36':'The Swiss Alps';
+ document.querySelector('.map-explore').textContent=underway?`Landing · runway ${f.runway}`:'Free exploration';
+ $('mission-title').textContent=underway?`${f.name} · ${f.runway}`:'The Swiss Alps';
  $('landing-guidance').hidden=!underway;$('landing-entry').hidden=underway;
  landingCues.show(landing.active,landing.profile?.helicopter,landing.profile?.clearance);
  if(!underway)return;
  const p=landing.profile,g=landing.guidance(s),h=p.helicopter,rollout=landing.phase==='rollout';
- $('landing-phase').textContent=rollout?'Touchdown · controlled rollout':h?`Precision landing · fixed ${p.contact}`:`Final approach · ${g.distance>0?(g.distance/1000).toFixed(2)+' km to threshold':'over runway'}`;
+ $('landing-phase').textContent=rollout?'Touchdown · controlled rollout':h?`Precision landing · fixed ${p.contact}`:`Final runway ${f.runway} · ${g.distance>0?(g.distance/1000).toFixed(2)+' km to threshold':'over runway'}`;
  $('landing-speed').textContent=rollout?'Below 6 kt':h?`Below ${Math.round(p.maxSpeed*1.94384)} kt`:`${Math.round(p.speed*1.94384)} kt`;
  $('landing-path-label').textContent=rollout?'Runway left':h?'Height above runway':'Glide path';
  $('landing-path').textContent=rollout?`${Math.round(g.remaining)} m`:h?`${Math.max(0,Math.round(g.height*3.28084))} ft`:Math.abs(g.pathError)<4?'On path':`${Math.round(Math.abs(g.pathError)*3.28084)} ft ${g.pathError>0?'high':'low'}`;
  let cue=rollout?(h?'Lower collective · stay settled':'Idle power · keep straight with Q / E'):h?`Ease down with collective; ${Math.round(p.throttle*100)}% holds a hover.`:g.height<8?'Flare gently with S · reduce power with Ctrl':'Follow the chartreuse cues · small pitch corrections.';
  if(!rollout&&Math.abs(g.cross)>8)cue=`${Math.round(Math.abs(g.cross))} m ${g.cross>0?'right':'left'} of centre · correct gently`;
- else if(!rollout&&g.alignment>12)cue='Align north · heading 000°';
+ else if(!rollout&&g.alignment>12)cue=`Align with runway ${f.runway} · heading ${headingDegrees(f.heading)}°`;
  else if(!rollout&&!h&&(s.speed<p.speedMin||s.speed>p.speedMax))cue=s.speed>p.speedMax?'Too fast · ease power down with Ctrl':'Too slow · add power with Shift';
  $('landing-cue').textContent=cue;
  $('landing-objective').textContent=rollout?`Stay on runway · ${h?`collective <${Math.round(p.settlePower*100)}%`:'power <20%'} · settle 2 sec (${Math.min(2,landing.stableTime).toFixed(1)}/2)`:`${h?`${capital(p.contact)} fixed`:`${flight.type.fixedGear?'Gear fixed':`Gear ${s.gearDown?'down':'UP'}`} · ${flight.type.noFlaps?'no flaps':`flaps ${s.flaps*15}°`}`} · sink <${Math.round(p.maxSink*196.85)} fpm · alignment ≤12°`;
@@ -171,10 +192,10 @@ function updateLandingUI(){
   const success=landing.status==='success',t=landing.touchdown;
   $('sim-status').textContent=success?'Landing complete':'Mission ended';
   $('landing-result-status').textContent=success?'Mission complete':'Try the approach again';
-  $('landing-result-title').textContent=success?'Welcome to Alpine Field.':'Landing not completed.';
-  $('landing-result-reason').textContent=success?(h?`${capital(p.contact)} settled safely in the target box.`:'Safe touchdown and controlled rollout on runway 36.'):landing.reason;
+  $('landing-result-title').textContent=success?`Welcome to ${f.name}.`:'Landing not completed.';
+  $('landing-result-reason').textContent=success?(h?`${capital(p.contact)} settled safely in the target box.`:`Safe touchdown and controlled rollout on runway ${f.runway}.`):landing.reason;
   $('landing-result-metrics').innerHTML=t?`<div><dt>Touchdown sink</dt><dd>${Math.round(t.sink*196.85)} <small>fpm</small></dd></div><div><dt>Alignment</dt><dd>${t.alignment.toFixed(1)}<small>°</small></dd></div><div><dt>Touchdown speed</dt><dd>${Math.round(t.speed*1.94384)} <small>kt</small></dd></div><div><dt>Centreline offset</dt><dd>${Math.abs(t.cross).toFixed(1)} <small>m</small></dd></div>`:'<p>No runway touchdown recorded.</p>';
-  $('landing-result').hidden=false;$('landing-result-retry').focus();sceneDirty=true;
+  $('landing-result').hidden=false;$('landing-result-retry').focus();sceneDirty=true;announceAirport();
  }else if(!landing.finished)$('sim-status').textContent=paused?'Simulation paused':'Landing mission · live';
 }
 function updateAssist(){const a=flight.state.autopilot;document.querySelector('.mission-action').classList.toggle('manual',!a);document.querySelector('.mission-action').classList.toggle('rotorcraft',!!flight.type.flight.rotorcraft);$('assist-status').textContent=a?(flight.type.flight.rotorcraft?'Hover hold':'Flight assist enabled'):'Manual flight';$('take-control').innerHTML=`${a?'Take control':'Enable assist'} <i data-lucide="arrow-up-right"></i>`;refreshIcons();}
@@ -187,7 +208,7 @@ function gear(){if(flight.type.flight.rotorcraft||flight.type.fixedGear){toast(f
 function flaps(){if(flight.type.flight.rotorcraft||flight.type.noFlaps){toast('No flaps on this aircraft');return;}sceneDirty=true;flight.cycleFlaps();toast(`Flaps set to ${flight.state.flaps*15}°`);}
 $('pause-btn').onclick=()=>setPaused(!paused);$('resume-btn').onclick=()=>setPaused(false);$('reset-btn').onclick=()=>restart();$('crash-reset').onclick=()=>restart();$('take-control').onclick=toggleAssist;$('camera-btn').onclick=cycleView;$('map-toggle').onclick=toggleMap;$('map-close').onclick=toggleMap;$('hud-toggle').onclick=toggleHud;$('restore-hud').onclick=toggleHud;$('gear-btn').onclick=gear;$('flaps-btn').onclick=flaps;
 $('landing-entry').onclick=()=>showDialog('landing');
-for(const id of ['landing-retry','landing-result-retry'])$(id).onclick=startLanding;
+for(const id of ['landing-retry','landing-result-retry'])$(id).onclick=()=>startLanding();
 for(const id of ['landing-cancel','landing-result-exit'])$(id).onclick=()=>cancelLanding(true);
 $('collapse-mission').onclick=()=>{const c=document.querySelector('.mission-panel');c.classList.toggle('collapsed');iconButton('collapse-mission',c.classList.contains('collapsed')?'plus':'minus');};
 $('throttle-slider').addEventListener('input',e=>{flight.state.throttle=Number(e.target.value)/100;if(flight.type.flight.rotorcraft)flight.state.autopilot=false;});
@@ -200,6 +221,16 @@ $('nav-flight').onclick=()=>{if($('main-dialog').open)$('main-dialog').close();}
 const dialog=$('main-dialog');
 const dialogHead=title=>`<div class="dialog-head"><h2>${title}</h2><button class="icon-btn" data-close aria-label="Close dialog"><i data-lucide="x"></i></button></div>`;
 const toggleMarkup=(id,label,desc,value)=>`<div class="settings-row"><div><strong>${label}</strong><p>${desc}</p></div><button class="toggle" id="${id}" role="switch" aria-label="${label}" aria-checked="${value}"></button></div>`;
+// Arrow keys, Home and End move through a radio group by clicking the next choice, as the aircraft roster does.
+function radioKeys(selector){dialog.querySelectorAll(selector).forEach(b=>b.onkeydown=e=>{const items=[...dialog.querySelectorAll(selector)],i=items.indexOf(b),next={ArrowDown:(i+1)%items.length,ArrowRight:(i+1)%items.length,ArrowUp:(i+items.length-1)%items.length,ArrowLeft:(i+items.length-1)%items.length,Home:0,End:items.length-1}[e.key];if(next===undefined)return;e.preventDefault();const key=Object.keys(items[next].dataset)[0],value=items[next].dataset[key];items[next].click();const target=dialog.querySelector(`[data-${key}="${value}"]`);target?.focus({preventScroll:true});target?.scrollIntoView({block:'nearest'});});}
+// Re-render Explore after a choice, keeping the roster scroll, dialog scroll and focus.
+function rerenderExplore(focus){const scroll=dialog.querySelector('.aircraft-options')?.scrollTop??0,top=dialog.scrollTop;showDialog('explore');dialog.querySelector('.aircraft-options').scrollTop=scroll;dialog.scrollTop=top;dialog.querySelector(focus)?.focus({preventScroll:true});}
+const fitText=fit=>fit.rating==='recommended'?fit.reason:fit.rating==='suitable'?'Tight fit · little runway margin':`Not suited · ${fit.reason.toLowerCase()}`;
+function airportOption(a){const fit=suitability(a,flight.type.id),on=a.id===selection.id;return`<button class="weather-option airport-option ${on?'selected':''}" role="radio" tabindex="${on?0:-1}" aria-checked="${on}" data-airport="${a.id}"><i data-lucide="map-pin"></i><div><strong>${a.name} <small>${a.ident}</small></strong><span>${region(a.region).name} · ${a.runwayLength.toLocaleString('en')} m ${surfaceName(a)} · ${a.elevation.toLocaleString('en')} m elev.</span><span class="airport-fit ${fit.rating}">${fitText(fit)}</span></div><span></span></button>`;}
+function airportDetail(){
+ const a=selection.airport,mission=landing.status!=='idle'&&(landing.field.id!==a.id||landing.field.runway!==selection.runway)?`Your landing at ${landing.field.name} ${landing.field.runway} continues. `:'';
+ return`<div class="airport-detail"><div class="airport-runways" role="radiogroup" aria-label="Runway at ${a.name}">${a.runways.map(r=>{const on=r.designator===selection.runway;return`<button role="radio" aria-checked="${on}" tabindex="${on?0:-1}" data-runway="${r.designator}">Runway ${r.designator} <small>${headingDegrees(r.heading)}°</small></button>`;}).join('')}</div><p>${a.summary} ${a.runwayLength.toLocaleString('en')} × ${a.runwayWidth} m. ${a.caution}</p><p class="dialog-note">${mission}Choosing a field moves nothing: departures and new landing missions start there.</p></div>`;
+}
 function showDialog(type){
  clearControls();
  const heli=!!flight.type.flight.rotorcraft;
@@ -212,10 +243,13 @@ function showDialog(type){
  const controls=[[heli?'Cyclic forward / backward':'Pitch down / up',['W','S']],[heli?'Cyclic left / right':'Bank left / right',['A','D']],['Alternate flight controls',['←','↑','↓','→']],[heli?'Yaw left / right':'Rudder left / right',['Q','E']],[heli?'Raise / lower collective':'Increase / decrease throttle',['Shift','Ctrl']],['Change camera',['C']],['Pause / resume',['P']],[heli?'Hover hold':'Flight assist',['Space']],...(!heli&&!flight.type.fixedGear?[['Landing gear',['G']]]:[]),...(!heli&&!flight.type.noFlaps?[['Cycle flaps',['F']]]:[]),['Navigation map',['M']],['Hide instruments',['H']],['Restart flight',['R']]];
  content=dialogHead('You have control')+`<div class="dialog-body"><p>${heli?`${hoverPercent(flight.type)}% collective hovers. Tilt forward with W to move; center the cyclic to level. Space brakes into a steady hover.`:'A little input goes a long way. Bank gently into turns and add power to climb.'}</p><div class="controls-list">${controls.map(([label,k])=>`<div class="control-row"><span>${label}</span><span>${k.map(v=>`<kbd>${v}</kbd>`).join('')}</span></div>`).join('')}</div><p class="dialog-note">On a phone, drag the left ${heli?'cyclic':'yoke'} to steer and hold + / − to adjust ${heli?'collective; use the two yaw buttons to turn':'throttle'}. In orbit view, drag to look around and scroll to zoom. ${flight.type.name}: ${flight.type.help}</p></div>`;
  }else if(type==='landing'){
- const p=landingProfile(flight.type),h=p.helicopter;
- content=dialogHead('Land at Alpine Field')+`<div class="dialog-body landing-brief"><span class="landing-eyebrow">Landing mission · runway 36</span><h3>${flight.type.name}</h3><p>${h?`Begin in a hover 46 ft above the marked ${p.contact==='wheels'?'landing':'skid'} box. Ease down with collective; keep the cyclic centred and use Q / E to align north.`:`Begin on a short final, aligned north with ${flight.type.fixedGear?'fixed gear': 'gear down'} and ${flight.type.noFlaps?'no flaps':'full flaps'}. Follow the three chartreuse approach cues to the outlined touchdown zone.`}</p><ol><li>${h?`Land inside the small chartreuse box, level and below ${Math.round(p.maxSpeed*1.94384)} kt.`:`Hold ${Math.round(p.speed*1.94384)} kt on approach. W / S adjusts pitch; Shift / Ctrl adjusts power.`}</li><li>${h?`Start at ${Math.round(p.throttle*100)}% collective in a hover. Lower toward ${Math.round(p.throttle*100)-3}% with short taps to descend.`:'Near 25 ft above the runway, gently raise the nose with S to soften the descent. Reduce power with Ctrl.'}</li><li>Touch down below ${Math.round(p.maxSink*196.85)} ft/min, aligned within 12°. ${h?`Keep collective below ${Math.round(p.settlePower*100)}% and settle for 2 seconds.`:'Keep straight with Q / E, set power below 20% and slow below 6 kt for 2 seconds.'}</li></ol><p class="dialog-note">Manual control from the start. Assist remains available. ${h?(p.contact==='wheels'?'Wheeled landing gear is fixed; nothing to lower and no flaps.':'Skids are fixed; no gear or flaps required.'):'Use the first chartreuse zone; leaving the runway or overrunning ends the attempt.'} R retries this mission. Weather is visual; aircraft and runway performance use the existing arcade model.</p><button class="primary-btn" id="start-landing">${h?'Start precision landing':'Start final approach'} <i data-lucide="arrow-up-right"></i></button></div>`;
+ const f=selection.field,p=landingProfile(flight.type),h=p.helicopter,fit=missionAvailability(selection.airport,flight.type.id),hdg=headingDegrees(f.heading),name=flight.type.name;
+ const caution=[fit.rating==='suitable'?`Tight fit for the ${name}: little runway to spare after the touchdown zone.`:'',f.caution].filter(Boolean).join(' ');
+ content=dialogHead(`Land at ${f.name}`)+`<div class="dialog-body landing-brief"><span class="landing-eyebrow">Landing mission · runway ${f.runway} · heading ${hdg}° · ${f.elevation.toLocaleString('en')} m</span><h3>${name}</h3>`+(fit.available?`<p>${h?`Begin in a hover 46 ft above the marked ${p.contact==='wheels'?'landing':'skid'} box. Ease down with collective; keep the cyclic centred and use Q / E to face ${hdg}°.`:`Begin on a short final for runway ${f.runway}, heading ${hdg}°, with ${flight.type.fixedGear?'fixed gear': 'gear down'} and ${flight.type.noFlaps?'no flaps':'full flaps'}. Follow the three chartreuse approach cues to the outlined touchdown zone.`}</p>${caution?`<p class="mission-caution"><i data-lucide="triangle-alert"></i><span>${caution}</span></p>`:''}<ol><li>${h?`Land inside the small chartreuse box, level and below ${Math.round(p.maxSpeed*1.94384)} kt.`:`Hold ${Math.round(p.speed*1.94384)} kt on approach. W / S adjusts pitch; Shift / Ctrl adjusts power.`}</li><li>${h?`Start at ${Math.round(p.throttle*100)}% collective in a hover. Lower toward ${Math.round(p.throttle*100)-3}% with short taps to descend.`:'Near 25 ft above the runway, gently raise the nose with S to soften the descent. Reduce power with Ctrl.'}</li><li>Touch down below ${Math.round(p.maxSink*196.85)} ft/min, aligned within 12°. ${h?`Keep collective below ${Math.round(p.settlePower*100)}% and settle for 2 seconds.`:'Keep straight with Q / E, set power below 20% and slow below 6 kt for 2 seconds.'}</li></ol><p class="dialog-note">Manual control from the start. Assist remains available. ${h?(p.contact==='wheels'?'Wheeled landing gear is fixed; nothing to lower and no flaps.':'Skids are fixed; no gear or flaps required.'):'Use the first chartreuse zone; leaving the runway or overrunning ends the attempt.'} R retries this mission. Weather is visual; aircraft and runway performance use the existing arcade model.</p><button class="primary-btn" id="start-landing">${h?'Start precision landing':'Start final approach'} <i data-lucide="arrow-up-right"></i></button>`
+ :`<p class="mission-caution unavailable" role="note"><i data-lucide="triangle-alert"></i><span>No scored landing here: the ${name} ${fit.reason.toLowerCase()}, and ${f.name} has ${f.runwayLength.toLocaleString('en')} × ${f.runwayWidth} m ${surfaceName(f)}.</span></p><p>Fly this mission at a field that suits it, or choose a lighter aircraft in Explore. You can still depart from ${f.name} in free flight.</p>${fit.alternatives.map(id=>{const a=AIRPORTS.find(x=>x.id===id);return`<button class="secondary-btn" data-mission-airport="${id}">Land at ${a.name} instead <i data-lucide="arrow-up-right"></i></button>`;}).join('')}<button class="primary-btn" data-next-dialog="explore">Choose another aircraft or field <i data-lucide="arrow-up-right"></i></button>`)+`</div>`;
  }else if(type==='explore'){
- content=dialogHead('A world above it all')+`<div class="dialog-body"><div class="explore-hero"><svg viewBox="0 0 420 140" aria-label="Alpine mountains"><rect width="420" height="140" fill="hsl(197 30% 66%)"/><path d="M0 98 65 25 92 56 155 9 212 88 270 17 352 102 390 48 420 85v55H0" fill="hsl(205 17% 44%)"/><path d="m65 25-27 30 18-5 11 9 8-18 17 15Zm90-16-39 48 29-14 17 9 14-13 36 49Zm115 8-26 32 17-4 12 13 12-10 25 15Z" fill="hsl(195 20% 91%)"/><path d="M0 109 91 69 177 123 271 72 420 112v28H0" fill="hsl(162 18% 29%)"/><path d="M0 140 168 113 252 117 342 140" fill="hsl(182 42% 42%)"/></svg></div><div class="explore-name"><h3>The Swiss Alps</h3><span>FREE FLIGHT</span></div><p class="explore-description">A winding turquoise lake. Snow-covered ridgelines. Quiet villages tucked into the mountains. Explore our original world inspired by Switzerland's Bernese Oberland.</p><h3 class="dialog-section-title fleet-heading">Aircraft <span>${Object.keys(FLEET).length} to fly · scroll to explore</span></h3><div class="weather-options aircraft-options" role="radiogroup" aria-label="Aircraft">${Object.values(FLEET).map(t=>`<button class="weather-option ${t.id===flight.type.id?'selected':''}" role="radio" tabindex="${t.id===flight.type.id?0:-1}" aria-checked="${t.id===flight.type.id}" data-aircraft="${t.id}"><i data-lucide="plane"></i><div><strong>${t.name} <small>${t.badge}</small></strong><span>${t.choice}</span></div><span></span></button>`).join('')}</div><p class="dialog-note">Changing aircraft saves this flight and starts the new one in the air.</p><div class="log-row"><span>Airfield</span><strong>Alpine Valley · runway 36</strong></div><div class="log-row"><span>Experience</span><strong>Free flight or landing mission</strong></div><button class="primary-btn" id="explore-landing">Landing mission <i data-lucide="arrow-up-right"></i></button><button class="primary-btn" id="explore-start">Start in the air <i data-lucide="arrow-up-right"></i></button><button class="secondary-btn" id="runway-start">${heli?'Start on the ground':'Start on the runway'} <i data-lucide="plane"></i></button><p class="dialog-note">Original procedural scenery and aircraft. An accessible flight experience with an arcade flight model.</p></div>`;
+ const sel=selection.airport;
+ content=dialogHead('A world above it all')+`<div class="dialog-body"><div class="explore-hero"><svg viewBox="0 0 420 140" aria-label="Alpine mountains"><rect width="420" height="140" fill="hsl(197 30% 66%)"/><path d="M0 98 65 25 92 56 155 9 212 88 270 17 352 102 390 48 420 85v55H0" fill="hsl(205 17% 44%)"/><path d="m65 25-27 30 18-5 11 9 8-18 17 15Zm90-16-39 48 29-14 17 9 14-13 36 49Zm115 8-26 32 17-4 12 13 12-10 25 15Z" fill="hsl(195 20% 91%)"/><path d="M0 109 91 69 177 123 271 72 420 112v28H0" fill="hsl(162 18% 29%)"/><path d="M0 140 168 113 252 117 342 140" fill="hsl(182 42% 42%)"/></svg></div><div class="explore-name"><h3>The Swiss Alps</h3><span>FREE FLIGHT</span></div><p class="explore-description">A winding turquoise lake. Snow-covered ridgelines. Quiet villages tucked into the mountains. Explore our original world inspired by Switzerland's Bernese Oberland.</p><h3 class="dialog-section-title fleet-heading">Aircraft <span>${Object.keys(FLEET).length} to fly · scroll to explore</span></h3><div class="weather-options aircraft-options" role="radiogroup" aria-label="Aircraft">${Object.values(FLEET).map(t=>`<button class="weather-option ${t.id===flight.type.id?'selected':''}" role="radio" tabindex="${t.id===flight.type.id?0:-1}" aria-checked="${t.id===flight.type.id}" data-aircraft="${t.id}"><i data-lucide="plane"></i><div><strong>${t.name} <small>${t.badge}</small></strong><span>${t.choice}</span></div><span></span></button>`).join('')}</div><p class="dialog-note">Changing aircraft saves this flight and starts the new one in the air.</p><h3 class="dialog-section-title fleet-heading" id="airport-heading">Airfield <span>${AIRPORTS.length} fields · fit for the ${flight.type.name}</span></h3><div class="weather-options airport-options" role="radiogroup" aria-labelledby="airport-heading">${AIRPORTS.map(airportOption).join('')}</div>${airportDetail()}<button class="primary-btn" id="explore-landing">Land at ${sel.name} · ${selection.runway} <i data-lucide="arrow-up-right"></i></button><button class="primary-btn" id="explore-start">Start in the air <i data-lucide="arrow-up-right"></i></button><button class="secondary-btn" id="runway-start">${heli?'Lift off from':'Depart'} ${sel.name} · runway ${selection.runway} <i data-lucide="plane"></i></button><p class="dialog-note">Original procedural scenery and aircraft. An accessible flight experience with an arcade flight model.</p></div>`;
  }else if(type==='logbook'){
  const totalTime=savedFlights.reduce((n,f)=>n+f.time,0)+flight.state.flightTime,totalDistance=savedFlights.reduce((n,f)=>n+f.distance,0)+flight.state.distance;
  content=dialogHead('Every flight is a story')+`<div class="dialog-body"><p>Your time in the skies, saved on this browser.</p><div class="log-stats"><div class="log-stat"><span>Total flight time</span><strong>${formatTime(totalTime)}</strong></div><div class="log-stat"><span>Distance explored</span><strong>${(totalDistance/1852).toFixed(1)} <span>NM</span></strong></div></div><h3 class="dialog-section-title">Current flight</h3><div class="log-row"><span>The Swiss Alps · ${flight.type.name}</span><strong>${formatTime(flight.state.flightTime)}</strong></div><h3 class="dialog-section-title">Previous flights</h3>${savedFlights.length?savedFlights.slice(0,5).map(f=>`<div class="log-row"><span>${new Date(f.date).toLocaleDateString(undefined,{month:'short',day:'numeric'})}${f.aircraft?` · ${aircraftType(f.aircraft).name}`:''} · ${(f.distance/1852).toFixed(1)} NM</span><strong>${formatTime(f.time)}</strong></div>`).join(''):'<div class="empty-log">Your adventure is just beginning. Flights are saved when you restart or leave the simulator.</div>'}</div>`;
@@ -230,8 +264,15 @@ function showDialog(type){
  for(const [id,key] of [['setting-invert','invertPitch'],['setting-mouse','mouseSteering']])$(id).onclick=e=>{settings[key]=!settings[key];clearControls();e.currentTarget.setAttribute('aria-checked',settings[key]);saveSettings();};
  $('setting-map').onclick=e=>{toggleMap();e.currentTarget.setAttribute('aria-checked',settings.showMap);};
  }
- if(type==='landing')$('start-landing').onclick=()=>{startLanding();dialog.close();};
- if(type==='explore'){$('explore-landing').onclick=()=>showDialog('landing');$('explore-start').onclick=()=>{cancelLanding(false);restart();dialog.close();};$('runway-start').onclick=()=>{runwayStart();dialog.close();};dialog.querySelectorAll('[data-aircraft]').forEach(b=>{b.onkeydown=e=>{const items=[...dialog.querySelectorAll('[data-aircraft]')],i=items.indexOf(b),next={ArrowDown:(i+1)%items.length,ArrowRight:(i+1)%items.length,ArrowUp:(i+items.length-1)%items.length,ArrowLeft:(i+items.length-1)%items.length,Home:0,End:items.length-1}[e.key];if(next===undefined)return;e.preventDefault();items[next].click();dialog.querySelector(`[data-aircraft="${items[next].dataset.aircraft}"]`).scrollIntoView({block:'nearest'});};b.onclick=()=>{const scroll=dialog.querySelector('.aircraft-options').scrollTop,top=dialog.scrollTop;if(setAircraft(b.dataset.aircraft)){showDialog('explore');dialog.querySelector('.aircraft-options').scrollTop=scroll;dialog.scrollTop=top;dialog.querySelector(`[data-aircraft="${b.dataset.aircraft}"]`).focus({preventScroll:true});}};});}
+ if(type==='landing'){if($('start-landing'))$('start-landing').onclick=()=>{if(startLanding(selection.field))dialog.close();};dialog.querySelectorAll('[data-mission-airport]').forEach(b=>b.onclick=()=>{selection.select(b.dataset.missionAirport);showDialog('landing');$('start-landing')?.focus();});}
+ if(type==='explore'){
+ $('explore-landing').onclick=()=>showDialog('landing');$('explore-start').onclick=()=>{cancelLanding(false);restart();dialog.close();};$('runway-start').onclick=()=>{runwayStart();dialog.close();};
+ radioKeys('[data-aircraft]');radioKeys('[data-airport]');radioKeys('[data-runway]');
+ dialog.querySelectorAll('[data-aircraft]').forEach(b=>b.onclick=()=>{if(setAircraft(b.dataset.aircraft))rerenderExplore(`[data-aircraft="${b.dataset.aircraft}"]`);});
+ // Choosing a field or runway only changes the selection; departures and missions start from the buttons.
+ dialog.querySelectorAll('[data-airport]').forEach(b=>b.onclick=()=>{if(selection.select(b.dataset.airport))rerenderExplore(`[data-airport="${b.dataset.airport}"]`);});
+ dialog.querySelectorAll('[data-runway]').forEach(b=>b.onclick=()=>{if(selection.select(selection.id,b.dataset.runway))rerenderExplore(`[data-runway="${b.dataset.runway}"]`);});
+ }
 }
 document.querySelectorAll('[data-dialog]').forEach(b=>b.onclick=()=>showDialog(b.dataset.dialog));
 dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});
@@ -287,8 +328,7 @@ function updateUI(time){
  if(lastAssist!==s.autopilot){lastAssist=s.autopilot;updateAssist();}
  $('gear-warning').hidden=!flight.gearWarning||landing.finished;
  const stalled=s.stalled&&!landing.finished&&!s.grounded&&!s.crashed&&!paused&&!dialog.open;
- const runwayPosition=landing.guidance(s);
- const onFinal=landing.active&&s.gearDown&&Math.abs(runwayPosition.cross)<world.airport.runwayWidth&&runwayPosition.along>=-1500&&runwayPosition.along<=world.airport.runwayLength;
+ const onFinal=landing.onFinal(s);
  let notice='';const agl=s.position.y-world.heightAt(s.position.x,s.position.z);if(stalled)notice='STALL · Add power and regain airspeed';else if(!onFinal&&!landing.finished&&agl<(h?12:100)&&!s.grounded&&!s.crashed&&(!h||s.verticalSpeed < -2))notice=h?'TERRAIN · Raise collective':'TERRAIN · Pull up';else if(s.grounded&&landing.status==='idle')notice=h?'On the ground · Raise collective to lift vertically':'On the ground · Add power and pitch up to take off';
  if(notice!==lastNotice){lastNotice=notice;$('flight-notice').textContent=notice;$('flight-notice').classList.toggle('visible',!!notice);$('flight-notice').classList.toggle('warning',stalled||notice.startsWith('TERRAIN'));$('flight-notice').classList.toggle('stall',stalled);}
  updateLandingUI();
@@ -329,8 +369,8 @@ function tick(){
 function resize(){sceneDirty=true;const w=worldContainer.clientWidth,h=worldContainer.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);initialCamera=true;}
 window.addEventListener('resize',resize);
 window.addEventListener('beforeunload',saveFlight);
-updateAircraftLabels();updateAssist();updateUI(0);updateCamera(1);renderer.render(scene,camera);tick();
+updateAircraftLabels();updateAirportUI();updateAssist();updateUI(0);updateCamera(1);renderer.render(scene,camera);tick();
 setTimeout(()=>{$('loading').classList.add('leaving');setTimeout(()=>$('loading').remove(),750);},500);
 // Expose read-only diagnostic snapshots for repeatable rendering and control checks.
-window.aeronaut={getState:()=>({...flight.state,position:flight.state.position.toArray(),quaternion:flight.state.quaternion.toArray(),paused,view,quality:settings.quality,weather:settings.weather}),getMission:()=>landing.snapshot(),startLanding,getRendererInfo:()=>({...renderer.info.render}),reset:restart,setPaused, setQuality,setAircraft,runwayStart:(id,runway)=>runwayStart(id?fieldFor(id,runway):startField),approachStart:(id,runway)=>approachStart(id?fieldFor(id,runway):startField),airports:()=>world.airports.map(({position,windsock,...field})=>field),getAircraft:()=>({id:flight.type.id,name:flight.type.name,gearPosition:aircraft.gearPosition,surfaces:aircraft.surfaces,afterburner:aircraft.afterburner})};
+window.aeronaut={getState:()=>({...flight.state,position:flight.state.position.toArray(),quaternion:flight.state.quaternion.toArray(),paused,view,quality:settings.quality,weather:settings.weather}),getMission:()=>landing.snapshot(),startLanding:()=>startLanding(selection.field),getRendererInfo:()=>({...renderer.info.render}),reset:restart,setPaused, setQuality,setAircraft,runwayStart:(id,runway)=>runwayStart(id?resolveAirport(id,runway).field:selection.field),approachStart:(id,runway)=>approachStart(id?resolveAirport(id,runway).field:selection.field),airports:()=>world.airports.map(({position,windsock,...field})=>field),getAirport:airportState,selectAirport:(id,runway)=>selection.select(id,runway),getAircraft:()=>({id:flight.type.id,name:flight.type.name,gearPosition:aircraft.gearPosition,surfaces:aircraft.surfaces,afterburner:aircraft.afterburner})};
 if(query.get('start')==='runway')runwayStart();else if(query.get('start')==='approach')approachStart();

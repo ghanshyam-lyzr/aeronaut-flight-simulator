@@ -29,9 +29,11 @@ export class LandingMission {
   get active() { return this.status === 'flying'; }
   get finished() { return this.status === 'success' || this.status === 'failed'; }
 
-  start(flight) {
+  /** Begin (or retry) an attempt; a field argument moves the mission there first. */
+  start(flight, field = this.field) {
     this.cancel();
-    const s = flight.reset(), p = this.profile = landingProfile(flight.type), field = this.field;
+    this.field = field;
+    const s = flight.reset(), p = this.profile = landingProfile(flight.type);
     this.aircraft = flight.type.id;
     const along = p.helicopter ? TOUCHDOWN_ZONE.aim : -1100;
     const point = runwayPoint(along, 0, field);
@@ -64,7 +66,7 @@ export class LandingMission {
       if (p.helicopter && (Math.abs(t.along - TOUCHDOWN_ZONE.aim) > 18 || Math.abs(t.cross) > 10)) return this.fail(`Land the ${p.contact} inside the target box`);
       if (!t.gearDown) return this.fail('Landing gear was retracted');
       if (t.sink >= p.maxSink || t.speed >= p.maxSpeed || t.stalled) return this.fail('Unsafe touchdown speed or sink rate');
-      if (t.alignment > 12 || Math.abs(t.bank) > 0.18 || Math.abs(t.pitch) > 0.22) return this.fail('Touch down level and aligned with runway 36');
+      if (t.alignment > 12 || Math.abs(t.bank) > 0.18 || Math.abs(t.pitch) > 0.22) return this.fail(`Touch down level and aligned with runway ${field.runway}`);
       if (!p.helicopter && t.flaps !== p.flaps) return this.fail(p.flaps ? 'Use full flaps for landing' : 'This aircraft has no flaps');
       this.phase = 'rollout';
     }
@@ -91,7 +93,14 @@ export class LandingMission {
       remaining: Math.max(0, this.field.runwayLength - at.along) };
   }
 
-  snapshot() { return { status: this.status, phase: this.phase, reason: this.reason,
+  /** On this mission's final or runway with the gear down: terrain warnings stay quiet here. */
+  onFinal(state) {
+    if (!this.active || !state.gearDown) return false;
+    const at = runwayCoordinates(state.position, this.field);
+    return Math.abs(at.cross) < this.field.runwayWidth && at.along >= -1500 && at.along <= this.field.runwayLength;
+  }
+
+  snapshot() { return { status: this.status, phase: this.phase, reason: this.reason, field: this.field.id ?? null, runway: this.field.runway,
     touchdown: this.touchdown ? { ...this.touchdown, position: { ...this.touchdown.position } } : null,
     stableTime: this.stableTime, aircraft: this.aircraft }; }
 }
