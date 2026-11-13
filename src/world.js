@@ -1,54 +1,19 @@
 import * as THREE from 'three';
 import { AIRFIELD } from './airfield.js';
+import { groundHeight, groundShader, fbm, valleyCurve, westValleyCurve } from './terrain.js';
+import { WORLD, SHAPES, REGIONS, LANDMARKS, VILLAGES, AIRFIELD_SITES, WATER_LEVEL, regionAt } from './regions.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const smooth = (a, b, x) => { const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
-const mix = (a, b, t) => a + (b - a) * t;
-function hash(x, z) { let h = Math.imul(x | 0, 374761393) + Math.imul(z | 0, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967295; }
-function noise(x, z) { const ix = Math.floor(x), iz = Math.floor(z), fx = x - ix, fz = z - iz, sx = fx * fx * (3 - 2 * fx), sz = fz * fz * (3 - 2 * fz); return mix(mix(hash(ix, iz), hash(ix + 1, iz), sx), mix(hash(ix, iz + 1), hash(ix + 1, iz + 1), sx), sz); }
-function fbm(x, z) { return noise(x, z) * .55 + noise(x * 2.03 + 17, z * 2.03 + 31) * .27 + noise(x * 4.13 + 51, z * 4.13 + 11) * .12 + noise(x * 8.17, z * 8.17) * .06; }
-function ridge(x, z) { return 1 - Math.abs(noise(x, z) * 2 - 1); }
 let randomSeed = 784391;
 function random() { randomSeed = (Math.imul(randomSeed, 1664525) + 1013904223) | 0; return (randomSeed >>> 0) / 4294967296; }
+// The regions' scenery draws from its own sequence, so the original valley's
+// forest, villages and clouds stay exactly where they were.
+let regionSeed = 1928371;
+function regionRandom() { regionSeed = (Math.imul(regionSeed, 1664525) + 1013904223) | 0; return (regionSeed >>> 0) / 4294967296; }
 const { x: airportX, z: airportZ, elevation: airportY } = AIRFIELD;
-export function groundHeight(x, z) {
-  const curve = Math.sin(z * .00028) * 480 + Math.sin(z * .00074) * 170;
-  const dist = Math.abs(x - curve + (noise(x * .00055, z * .00055) - .5) * 230);
-  const foot = smooth(1000, 4900, dist);
-  const ridges = ridge(x * .00049 + 14, z * .00049 + 8) * .58 + ridge(x * .00118 + 4, z * .00118 + 11) * .28 + ridge(x * .0027, z * .0027) * .14;
-  let h = -48 + Math.pow(dist * .008, 2) * .13 + foot * (720 + ridges * 1850);
-  h += foot * (noise(x * .0073, z * .0073) - .5) * 165;
-  h += foot * (noise(x * .017, z * .017) - .5) * 43;
-  h += smooth(-6500, -14500, z) * (700 + ridges * 1800) * (1 - foot * .45);
-  h += (fbm(x * .0015, z * .0015) - .45) * (28 + foot * 90);
-  // A lake-side apron, wide enough to make an actual flyable runway.
-  const airportDistance = Math.sqrt(((x - airportX) / 410) ** 2 + ((z - airportZ) / 840) ** 2);
-  h = mix(h, airportY, 1 - smooth(.79, 1.65, airportDistance));
-  return h;
-}
-
-// groundHeight, bit for bit, so the lake knows its own depth along every shore.
-const groundShader = /* glsl */`
-float groundHash(float x, float z) { uint h = uint(int(x)) * 374761393u + uint(int(z)) * 668265263u; h = (h ^ (h >> 13u)) * 1274126177u; h ^= h >> 16u; return float(h) / 4294967295.; }
-float groundNoise(float x, float z) { float ix = floor(x), iz = floor(z), fx = x - ix, fz = z - iz, sx = fx * fx * (3. - 2. * fx), sz = fz * fz * (3. - 2. * fz); return mix(mix(groundHash(ix, iz), groundHash(ix + 1., iz), sx), mix(groundHash(ix, iz + 1.), groundHash(ix + 1., iz + 1.), sx), sz); }
-float groundRidge(float x, float z) { return 1. - abs(groundNoise(x, z) * 2. - 1.); }
-float groundFbm(float x, float z) { return groundNoise(x, z) * .55 + groundNoise(x * 2.03 + 17., z * 2.03 + 31.) * .27 + groundNoise(x * 4.13 + 51., z * 4.13 + 11.) * .12 + groundNoise(x * 8.17, z * 8.17) * .06; }
-float groundSmooth(float a, float b, float x) { float t = clamp((x - a) / (b - a), 0., 1.); return t * t * (3. - 2. * t); }
-float groundHeight(float x, float z) {
-  float curve = sin(z * .00028) * 480. + sin(z * .00074) * 170.;
-  float dist = abs(x - curve + (groundNoise(x * .00055, z * .00055) - .5) * 230.);
-  float foot = groundSmooth(1000., 4900., dist);
-  float ridges = groundRidge(x * .00049 + 14., z * .00049 + 8.) * .58 + groundRidge(x * .00118 + 4., z * .00118 + 11.) * .28 + groundRidge(x * .0027, z * .0027) * .14;
-  float h = -48. + pow(dist * .008, 2.) * .13 + foot * (720. + ridges * 1850.);
-  h += foot * (groundNoise(x * .0073, z * .0073) - .5) * 165.;
-  h += foot * (groundNoise(x * .017, z * .017) - .5) * 43.;
-  h += groundSmooth(-6500., -14500., z) * (700. + ridges * 1800.) * (1. - foot * .45);
-  h += (groundFbm(x * .0015, z * .0015) - .45) * (28. + foot * 90.);
-  float airport = length(vec2((x - ${airportX}.) / 410., (z - (${airportZ}.)) / 840.));
-  return mix(h, ${airportY}., 1. - groundSmooth(.79, 1.65, airport));
-}
-`;
+export { groundHeight };
 
 // Alpine air: the haze pools in the valley and thins with height, so peaks stand
 // clear above a hazy lake, and it warms slightly on the side the sun is on.
@@ -138,9 +103,14 @@ function makeTerrainMaterial() {
   return mat;
 }
 
+// Detail by distance from the camera to a tile's nearest edge: [distance, index step].
+const FOREST_RANGE = { high: 16000, medium: 12500, low: 8500 };
+const TERRAIN_LOD = { high: [[9000, 1], [22000, 2], [Infinity, 4]], medium: [[16000, 2], [Infinity, 4]], low: [[7500, 2], [Infinity, 4]] };
+
 function terrain(scene) {
   const material = makeTerrainMaterial();
-  const tiles = 5, size = 8800, segments = 104, meshes = [];
+  const { tiles, tileSize: size } = WORLD, segments = 104, row = segments + 1, spacing = size / segments, skirtDepth = 160;
+  const edge = [i => i, i => segments * row + i, i => i * row, i => i * row + segments];
   const lodIndices = {};
   for (const step of [1, 2, 4]) {
     const indices = [];
@@ -148,15 +118,39 @@ function terrain(scene) {
       const a = z * (segments + 1) + x, b = a + step, c = a + step * (segments + 1), d = c + step;
       indices.push(a, c, b, b, c, d);
     }
+    // A curtain hangs from just under every tile edge (a metre down, so it never
+    // fights the surface for the same pixels), and a coarser neighbour never opens
+    // a crack to the sky. Both windings: it is seen from either side.
+    for (let k = 0; k < 4; k++) for (let i = 0; i < segments; i += step) {
+      const a = row * row + k * row + i, b = a + step, sa = a + 4 * row, sb = sa + step;
+      indices.push(a, sa, b, b, sa, sb, a, b, sa, b, sb, sa);
+    }
     lodIndices[step] = new THREE.Uint16BufferAttribute(indices, 1);
   }
+  const meshes = [], heights = new Float32Array((row + 2) * (row + 2));
   for (let tz = 0; tz < tiles; tz++) for (let tx = 0; tx < tiles; tx++) {
-    const ox = (tx - 2) * size, oz = (tz - 2) * size;
-    const geom = new THREE.PlaneGeometry(size, size, segments, segments);
-    geom.rotateX(-Math.PI / 2);
-    const pos = geom.attributes.position;
-    for (let i = 0; i < pos.count; i++) { const x = pos.getX(i) + ox, z = pos.getZ(i) + oz; pos.setXYZ(i, x, groundHeight(x, z), z); }
-    geom.computeVertexNormals();
+    const ox = WORLD.minX + (tx + .5) * size, oz = WORLD.minZ + (tz + .5) * size;
+    // One extra ring of heights gives every edge vertex the same normal as its
+    // neighbour tile's, so light is continuous across the seams.
+    // Vertices sit on one world grid, so tiles compute their shared edges bit for bit alike.
+    const gx = i => WORLD.minX + (tx * segments + i) * spacing, gz = j => WORLD.minZ + (tz * segments + j) * spacing;
+    for (let j = -1; j <= row; j++) for (let i = -1; i <= row; i++) heights[(j + 1) * (row + 2) + i + 1] = groundHeight(gx(i), gz(j));
+    const vertices = row * row + 8 * row, position = new Float32Array(vertices * 3), normal = new Float32Array(vertices * 3);
+    const at = (i, j) => heights[(j + 1) * (row + 2) + i + 1];
+    for (let j = 0; j < row; j++) for (let i = 0; i < row; i++) {
+      const v = (j * row + i) * 3, nx = at(i - 1, j) - at(i + 1, j), nz = at(i, j - 1) - at(i, j + 1), ny = 2 * spacing, length = Math.hypot(nx, ny, nz);
+      position[v] = gx(i); position[v + 1] = at(i, j); position[v + 2] = gz(j);
+      normal[v] = nx / length; normal[v + 1] = ny / length; normal[v + 2] = nz / length;
+    }
+    for (const [layer, drop] of [[0, 1], [4, skirtDepth]]) for (let k = 0; k < 4; k++) for (let i = 0; i < row; i++) {
+      const from = edge[k](i) * 3, to = (row * row + (layer + k) * row + i) * 3;
+      position[to] = position[from]; position[to + 1] = position[from + 1] - drop; position[to + 2] = position[from + 2];
+      normal[to] = normal[from]; normal[to + 1] = normal[from + 1]; normal[to + 2] = normal[from + 2];
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(position, 3));
+    geom.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
+    geom.setIndex(lodIndices[1]);
     geom.computeBoundingSphere();
     const mesh = new THREE.Mesh(geom, material);
     mesh.receiveShadow = true;
@@ -166,6 +160,19 @@ function terrain(scene) {
     scene.add(mesh);
   }
   return meshes;
+}
+
+// Water the lake shader may treat as deep without sampling the terrain. Both
+// claims are checked against groundHeight by tests/world-regions.test.js.
+export const DEEP_CHANNEL_SOUTH = 28000;
+export function deepBasin(x, z) {
+  const { basin } = SHAPES;
+  return Math.hypot((x - basin.x) / basin.rx, (z - basin.z) / basin.rz) < .38 && basin.islands.every(([ix, iz, r]) => Math.hypot(x - ix, z - iz) > r * 1.3);
+}
+function deepBasinGlsl(p) {
+  const { basin } = SHAPES, n = v => (Number.isInteger(v) ? `${v}.` : `${v}`);
+  return [`length(vec2((${p}.x-(${n(basin.x)}))/${n(basin.rx)},(${p}.y-(${n(basin.z)}))/${n(basin.rz)})) < .38`,
+    ...basin.islands.map(([ix, iz, r]) => `length(${p}-vec2(${n(ix)},${n(iz)})) > ${n(r * 1.3)}`)].join(' && ');
 }
 
 function makeLake(sunDirection) {
@@ -218,8 +225,11 @@ function makeLake(sunDirection) {
         #ifdef ALPINE_SHORE
           // The basin centre is always deep and the far shores are sub-pixel,
           // so only water near a shore pays for the terrain height.
+          // The central channel and the basin's heart are both over 26 m deep,
+          // which the flat 40 m depth already draws exactly (tests/world-regions).
           float valleyOffset = abs(p.x-sin(p.y*.00028)*480.-sin(p.y*.00074)*170.);
-          bool shoreline = valleyOffset > 860. || p.y < -5600. || (abs(p.x-${airportX}.) < 680. && abs(p.y-(${airportZ}.)) < 1390.);
+          bool shoreline = valleyOffset > 860. || p.y < -5600. || p.y > ${DEEP_CHANNEL_SOUTH}. || (abs(p.x-${airportX}.) < 680. && abs(p.y-(${airportZ}.)) < 1390.);
+          if (${deepBasinGlsl('p')}) shoreline = false;
           if (shoreline && range < 11000.) depth = 10.-groundHeight(p.x,p.y);
         #endif
         // Glacial water: pale turquoise over the shelves, deep teal-blue in the basin.
@@ -248,8 +258,8 @@ function makeLake(sunDirection) {
       }
     `,
   });
-  const lake = new THREE.Mesh(new THREE.PlaneGeometry(52000,52000),material);
-  lake.rotation.x = -Math.PI/2; lake.position.y = 10;
+  const lake = new THREE.Mesh(new THREE.PlaneGeometry(WORLD.size,WORLD.size),material);
+  lake.rotation.x = -Math.PI/2; lake.position.set((WORLD.minX+WORLD.maxX)/2, WATER_LEVEL, (WORLD.minZ+WORLD.maxZ)/2);
   return lake;
 }
 
@@ -275,8 +285,26 @@ function buildForest(scene) {
     const ix = Math.min(5, Math.max(0, Math.floor((x + 9800) / 3267))), iz = Math.min(5, Math.max(0, Math.floor((z + 13100) / 4367)));
     buckets[iz * 6 + ix].push([x, h - 2, z, .6 + random() * 1.0, random()]); count++;
   }
+  // The regions grow their own forest in tile-sized cells, so far cells can be
+  // dropped by distance and the forest stays bounded as the world grows.
+  const cell = WORLD.tileSize, cells = WORLD.size / cell, regional = Array.from({ length: cells * cells }, () => []);
+  const keepClear = AIRFIELD_SITES.map(site => ({ ...site, sin: Math.sin(site.heading), cos: Math.cos(site.heading) }));
+  for (let attempts = 0, planted = 0; attempts < 420000 && planted < 52000; attempts++) {
+    const x = WORLD.minX + regionRandom() * WORLD.size, z = WORLD.minZ + regionRandom() * WORLD.size, chance = regionRandom(), tone = regionRandom(), size = regionRandom();
+    if (Math.abs(x) < 9800 && Math.abs(z) < 13100) continue;
+    // Woods gather in stands with open meadow between; the plateau keeps to groves.
+    const open = regionAt(x, z)?.id === 'eastern-plateau' ? .6 : .5;
+    if (fbm(x * .0011 + 3, z * .0011 + 7) < open || chance > .9) continue;
+    const h = groundHeight(x, z);
+    if (h < 30 || h > 1480 || (h > 1180 && chance < smooth(1180, 1500, h))) continue;
+    if (keepClear.some(c => { const dx = x - c.x, dz = z - c.z; return Math.abs(dx * c.sin - dz * c.cos) < c.length / 2 + 700 && Math.abs(dx * c.cos + dz * c.sin) < 260; })) continue;
+    const slope = Math.abs(groundHeight(x + 16, z) - h) / 16 + Math.abs(groundHeight(x, z + 16) - h) / 16;
+    if (slope > 1.32) continue;
+    const ix = Math.min(cells - 1, Math.floor((x - WORLD.minX) / cell)), iz = Math.min(cells - 1, Math.floor((z - WORLD.minZ) / cell));
+    regional[iz * cells + ix].push([x, h - 2, z, .6 + size, tone]); planted++;
+  }
   const dummy = new THREE.Object3D(), color = new THREE.Color(), forestMeshes = [];
-  for (const trees of buckets) {
+  for (const trees of [...buckets, ...regional]) {
     if (!trees.length) continue;
     const mesh = new THREE.InstancedMesh(geometry, mat, trees.length);
     trees.forEach(([x, y, z, size, tone], i) => {
@@ -303,14 +331,17 @@ function cloudTexture() {
   const tex = new THREE.CanvasTexture(canvas); tex.colorSpace = THREE.SRGBColorSpace; return tex;
 }
 
+const CLOUDS = 70, CLOUD_COUNT = { low: [22, 8], medium: [34, 14], high: [46, 24] };
 function buildClouds(scene) {
   const texture = cloudTexture(), clouds = [];
-  for (let i = 0; i < 46; i++) {
+  // The original 46 clouds over the valley, then a sparser field over the regions.
+  for (let i = 0; i < CLOUDS; i++) {
     const mat = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: .86, depthWrite: false, fog: true, color: 0xffffff });
     const sprite = new THREE.Sprite(mat);
-    const x = (random() - .5) * 37000, z = (random() - .5) * 43000;
-    sprite.position.set(x, 2850 + random() * 950, z);
-    const size = 3000 + random() * 2700; sprite.scale.set(size, size * .40, 1);
+    let x, z, y, size;
+    if (i < 46) { x = (random() - .5) * 37000; z = (random() - .5) * 43000; y = 2850 + random() * 950; size = 3000 + random() * 2700; }
+    else { do { x = (regionRandom() - .5) * WORLD.size; z = (regionRandom() - .5) * WORLD.size; } while (Math.abs(x) < 18500 && Math.abs(z) < 21500); y = 3000 + regionRandom() * 1100; size = 3200 + regionRandom() * 3000; }
+    sprite.position.set(x, y, z); sprite.scale.set(size, size * .40, 1);
     sprite.userData.baseX = x;
     scene.add(sprite); clouds.push(sprite);
   }
@@ -390,13 +421,15 @@ function buildVillages(scene) {
   ]);
   roofGeo.setAttribute('position', new THREE.BufferAttribute(roofVertices, 3)); roofGeo.computeVertexNormals();
   const spots = [];
-  for (const [cx, cz, spread] of [[1650, -1500, 510], [-1800, -3100, 700], [1750, 1900, 590], [-1700, 5500, 700]]) {
-    for (let i = 0; i < 37; i++) {
-      const x = cx + (random() - .5) * spread, z = cz + (random() - .5) * spread, y = groundHeight(x, z);
-      if (y < 28 || y > 700 || Math.abs(groundHeight(x + 12, z) - y) > 10) continue;
-      spots.push({ x, y, z, w: 13 + random() * 12, h: 9 + random() * 9, d: 17 + random() * 18, rot: random() * .45 });
+  // The original four villages keep their sequence; the regions' draw their own.
+  VILLAGES.forEach(([cx, cz, spread, houses], v) => {
+    const rand = v < 4 ? random : regionRandom, ceiling = v < 4 ? 700 : 1400;
+    for (let i = 0; i < houses; i++) {
+      const x = cx + (rand() - .5) * spread, z = cz + (rand() - .5) * spread, y = groundHeight(x, z);
+      if (y < 28 || y > ceiling || Math.abs(groundHeight(x + 12, z) - y) > 10) continue;
+      spots.push({ x, y, z, w: 13 + rand() * 12, h: 9 + rand() * 9, d: 17 + rand() * 18, rot: rand() * .45 });
     }
-  }
+  });
   const bodies = new THREE.InstancedMesh(bodyGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .94 }), spots.length);
   const roofs = new THREE.InstancedMesh(roofGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .9, side: THREE.DoubleSide }), spots.length);
   const dummy = new THREE.Object3D(), color = new THREE.Color();
@@ -407,23 +440,38 @@ function buildVillages(scene) {
     color.setHSL(.025 + random() * .035, .15 + random() * .13, .20 + random() * .12); roofs.setColorAt(i, color);
   });
   scene.add(bodies, roofs);
-  // Quiet lakeside roads: ribbons follow the actual terrain rather than floating.
+  // Quiet roads: ribbons follow the actual terrain rather than floating.
+  const roads = [];
   for (const side of [-1, 1]) {
-    const positions = [], indices = [], n = 210;
-    for (let i = 0; i <= n; i++) {
-      const z = -6800 + i * 70, curve = Math.sin(z * .00028) * 480 + Math.sin(z * .00074) * 170;
-      const x = curve + side * (1580 + Math.sin(z * .0016) * 90);
-      for (const dx of [-3.8, 3.8]) positions.push(x + dx, Math.max(groundHeight(x + dx, z) + 1.1, 14), z);
-      if (i < n) { const a = i * 2; indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
-    }
-    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3)); geo.setIndex(indices); geo.computeVertexNormals();
-    scene.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x73766b, roughness: 1, side: THREE.DoubleSide })));
+    const line = [];
+    for (let i = 0; i <= 210; i++) { const z = -6800 + i * 70; line.push([valleyCurve(z) + side * (1580 + Math.sin(z * .0016) * 90), z]); }
+    roads.push(line);
   }
+  // Val Verdance's valley road, the shore road around Lac Serein and the plateau track.
+  const westRoad = [];
+  for (let z = -19000; z <= 17000; z += 80) westRoad.push([westValleyCurve(z) + 520 + Math.sin(z * .0011) * 160, z]);
+  const shoreRoad = [], { basin } = SHAPES;
+  for (let a = 3.55; a <= 6.35; a += .012) shoreRoad.push([basin.x + Math.cos(a) * basin.rx * 1.14, basin.z - Math.sin(a) * basin.rz * 1.14]);
+  const plateauRoad = [];
+  for (const [ax, az, bx, bz] of [[15800, 6200, 23800, 3800], [23800, 3800, 25400, -5200], [25400, -5200, 27800, -9000]]) {
+    for (let t = 0; t < 1; t += .01) plateauRoad.push([ax + (bx - ax) * t + Math.sin(t * Math.PI) * 300, az + (bz - az) * t]);
+  }
+  roads.push(westRoad, shoreRoad.filter(([x, z]) => groundHeight(x, z) > 14), plateauRoad);
+  const positions = [], indices = [];
+  for (const line of roads) for (let i = 0; i < line.length; i++) {
+    const [x, z] = line[i], [nx, nz] = line[Math.min(i + 1, line.length - 1)], [px, pz] = line[Math.max(i - 1, 0)];
+    const length = Math.hypot(nx - px, nz - pz) || 1, ox = (nz - pz) / length * 3.8, oz = -(nx - px) / length * 3.8;
+    const base = positions.length / 3;
+    for (const sign of [-1, 1]) positions.push(x + ox * sign, Math.max(groundHeight(x + ox * sign, z + oz * sign) + 1.1, 14), z + oz * sign);
+    if (i < line.length - 1 && Math.hypot(nx - x, nz - z) < 400) indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+  }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3)); geo.setIndex(indices); geo.computeVertexNormals();
+  scene.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x73766b, roughness: 1, side: THREE.DoubleSide })));
 }
 
 function buildBoats(scene) {
   const boats = [];
-  for (const [x, z, angle] of [[-390, 50, .5], [240, -3200, -.6], [-400, 2900, 1.3], [250, 1300, -.3]]) {
+  for (const [x, z, angle] of [[-390, 50, .5], [240, -3200, -.6], [-400, 2900, 1.3], [250, 1300, -.3], [-5200, 21800, .9], [3600, 25600, -1.1], [9000, 26400, 2.2], [-400, 29600, .2], [-6800, 27400, -.5]]) {
     if (groundHeight(x, z) > 9) continue;
     const boat = new THREE.Group(); boat.position.set(x, 11, z); boat.rotation.y = angle;
     const hull = new THREE.Mesh(new THREE.SphereGeometry(5, 12, 7), new THREE.MeshStandardMaterial({ color: 0xe7e5db, roughness: .55 })); hull.scale.set(.72, .35, 1.9); boat.add(hull);
@@ -476,13 +524,7 @@ export function createWorld(scene, renderer) {
   const airfield = airport(scene);
   buildVillages(scene);
   const clouds = buildClouds(scene), boats = buildBoats(scene);
-  const landmarks = [
-    { name: 'Alpine Field', position: new THREE.Vector3(900, 78, -1800), type: 'airport' },
-    { name: 'Lake Azure', position: new THREE.Vector3(-100, 10, -2400), type: 'lake' },
-    { name: 'Mont Argent', position: new THREE.Vector3(-4500, groundHeight(-4500, -6300), -6300), type: 'peak' },
-    { name: 'The Three Sisters', position: new THREE.Vector3(5200, groundHeight(5200, -4100), -4100), type: 'peak' },
-    { name: 'Northern Pass', position: new THREE.Vector3(-300, 2200, -12600), type: 'pass' },
-  ];
+  const landmarks = LANDMARKS.map(({ name, type, region, x, z, y }) => ({ name, type, region, position: new THREE.Vector3(x, y ?? Math.max(WATER_LEVEL, groundHeight(x, z)), z) }));
   let weather = 'clear', quality = 'high';
   let lastLodX = Infinity, lastLodZ = Infinity;
   function setWeather(preset = 'clear') {
@@ -507,30 +549,41 @@ export function createWorld(scene, renderer) {
     quality = value;
     const density = value === 'low' ? .30 : value === 'medium' ? .50 : 1;
     forestMeshes.forEach(mesh => { mesh.count = Math.max(1,Math.floor(mesh.userData.fullCount * density)); });
-    clouds.forEach((cloud,i) => { cloud.visible = i < (value === 'low' ? 22 : value === 'medium' ? 34 : 46); });
+    const [valleyClouds, regionClouds] = CLOUD_COUNT[value] ?? CLOUD_COUNT.high;
+    clouds.forEach((cloud,i) => { cloud.visible = i < 46 ? i < valleyClouds : i - 46 < regionClouds; });
     sun.castShadow = value === 'high';
     // The shoreline depth costs a few dozen ALU ops per water pixel; low quality keeps a flat depth.
     const shore = value !== 'low';
     if (Boolean(lake.material.defines.ALPINE_SHORE) !== shore) { if (shore) lake.material.defines.ALPINE_SHORE = 1; else delete lake.material.defines.ALPINE_SHORE; lake.material.needsUpdate = true; }
-    for(const mesh of terrainMeshes) mesh.geometry.setIndex(mesh.userData.lodIndices[value === 'high' ? 1 : 2]);
     lastLodX = Infinity; lastLodZ = Infinity;
+  }
+  // Terrain detail and forest cells follow the camera; both are re-chosen only
+  // after it has moved 500 m, so a frame pays nothing for them otherwise.
+  function updateDetail(position) {
+    const lod = TERRAIN_LOD[quality] ?? TERRAIN_LOD.high, half = WORLD.tileSize / 2, forestRange = FOREST_RANGE[quality] ?? FOREST_RANGE.high;
+    for (const mesh of terrainMeshes) {
+      const c = mesh.userData.center, distance = Math.hypot(Math.max(0, Math.abs(position.x - c.x) - half), Math.max(0, Math.abs(position.z - c.y) - half));
+      const step = lod.find(([range]) => distance < range)[1];
+      if (mesh.geometry.index !== mesh.userData.lodIndices[step]) mesh.geometry.setIndex(mesh.userData.lodIndices[step]);
+    }
+    for (const mesh of forestMeshes) {
+      const sphere = mesh.boundingSphere;
+      mesh.visible = Math.hypot(position.x - sphere.center.x, position.z - sphere.center.z) - sphere.radius < forestRange;
+    }
+    lastLodX = position.x; lastLodZ = position.z;
   }
   function update(dt, time, position) {
     lake.material.uniforms.time.value = time * .48;
     if (position) {
       sun.target.position.copy(position); sun.position.copy(position).addScaledVector(sunDirection, 7000);
-      if(quality === 'low' && Math.hypot(position.x-lastLodX,position.z-lastLodZ)>1200) {
-        for(const mesh of terrainMeshes) {
-          const c=mesh.userData.center, distance=Math.hypot(position.x-c.x,position.z-c.y);
-          mesh.geometry.setIndex(mesh.userData.lodIndices[distance<7500?2:4]);
-        }
-        lastLodX=position.x; lastLodZ=position.z;
-      }
+      if (Math.hypot(position.x - lastLodX, position.z - lastLodZ) > 500) updateDetail(position);
     }
     clouds.forEach((cloud, i) => { cloud.position.x = cloud.userData.baseX + Math.sin(time * .007 + i) * 85; });
     boats.forEach((boat, i) => { boat.rotation.z = Math.sin(time * .72 + i) * .018; boat.position.y = 11 + Math.sin(time * .9 + i) * .12; });
     airfield.windsock.rotation.z = -.15 + Math.sin(time * 2.7) * .035;
   }
   setWeather('clear');
-  return { heightAt: (x, z) => Math.max(10, groundHeight(x, z)), update, setWeather, setQuality, reflectSky, landmarks, airport: airfield };
+  updateDetail(new THREE.Vector3(0, 0, 1900));
+  return { heightAt: (x, z) => Math.max(WATER_LEVEL, groundHeight(x, z)), update, setWeather, setQuality, reflectSky, landmarks, airport: airfield,
+    bounds: WORLD, regions: REGIONS, regionAt };
 }
