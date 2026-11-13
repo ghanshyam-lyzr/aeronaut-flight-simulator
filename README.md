@@ -26,6 +26,9 @@ The Arolla F7 and Silex A3 have no pitch or bank limits: hold the stick for cont
 - **P**: pause. **R**: restart.
 - **G**: retractable landing gear. **F**: cycle 0°, 15°, and 30° flaps where fitted. Fixed gear stays down; the Silex A3, Neris P2 and Alba B2 have no flaps.
 - **M**: map. **H**: instruments.
+- **− / +**: zoom the map out / in. **V**: map framing (route, aircraft, world). **N**: the navigation chart.
+
+The navigation map covers the whole 70 km world: terrain from the same height function the scenery and collisions use, the five airports with their runways to scale, the named regions and landmarks, your flight trail and a quiet route line to the destination. The destination is the field chosen in Explore (or on the chart), or the mission's own field while a landing mission flies; the readout under the map gives its true bearing and distance in nautical miles, separate from the distance flown. *Route* framing keeps the aircraft and the destination in view, *Aircraft* follows the aircraft at the zoom you pick, and *World* shows everything; a chartreuse pointer marks a destination beyond the map's edge. The chart (N, or the expand button) pauses the flight under a larger map with bearing, distance and time en route, a destination list, panning and zoom. Navigation only points the way: it never steers or moves the aircraft.
 
 On a phone, steer with the touch yoke and hold the + / − buttons to adjust power. In settings, mouse steering and inverted pitch are optional. Flight audio starts when the sound button is selected.
 
