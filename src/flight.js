@@ -522,6 +522,14 @@ export class FlightAudio {
     this.context = null;
     this.stallActive = false;
     this.stallHorn = null;
+    this.volume = 1;
+  }
+
+  /** Master volume (0–1) after every engine, wind and warning voice; 1 is the original mix. */
+  setVolume(volume) {
+    this.volume = Number.isFinite(volume) ? Math.max(0, Math.min(1, volume)) : 1;
+    // A gentle curve, so the lower half of the slider stays usable.
+    this.output?.gain.setTargetAtTime(this.volume ** 2, this.context.currentTime, 0.05);
   }
 
   async start() {
@@ -532,7 +540,9 @@ export class FlightAudio {
       this.context = ctx;
       this.master = ctx.createGain();
       this.master.gain.value = 0;
-      this.master.connect(ctx.destination);
+      this.output = ctx.createGain();
+      this.output.gain.value = this.volume ** 2;
+      this.master.connect(this.output).connect(ctx.destination);
       this.gearHorn = ctx.createGain();
       this.gearHorn.gain.value = 0;
       this.gearHorn.connect(this.master);
