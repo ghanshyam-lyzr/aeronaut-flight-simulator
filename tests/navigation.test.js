@@ -9,7 +9,7 @@ import { groundHeight } from '../src/terrain.js';
 import {
   METRES_PER_NM, navigationDestination, bearingDistance, relativeBearing, degrees, formatNM, formatEte, navigationReadout,
   ZOOM_SPANS, createView, clampCentre, routeZoom, frameView, zoomFrom, inView, edgePointer, scaleBar,
-  TILE_PIXELS, tileLevel, tilesFor, tile, parentTile, tileMetres, rasterTile, terrainColour, mapPlaces, mapAirports, placeLabels,
+  TILE_PIXELS, MAX_TILE_LEVEL, tileLevel, tilesFor, tile, parentTile, tileMetres, rasterTile, terrainColour, mapPlaces, mapAirports, placeLabels,
 } from '../src/navigation.js';
 
 const close = (a, b, tolerance = 1e-9) => Math.abs(a - b) < tolerance;
@@ -154,7 +154,8 @@ test('terrain tiles cover a view, nest in their parents and sample the world hei
   assert.equal(tileLevel(WORLD.size / TILE_PIXELS), 0);
   assert.ok(tileLevel(30) > tileLevel(300));
   assert.equal(tileLevel(100, 2), tileLevel(100) - 1, 'low quality draws a level coarser');
-  assert.equal(tileLevel(.5), 6, 'capped');
+  assert.equal(tileLevel(.5), MAX_TILE_LEVEL, 'capped');
+  assert.ok(tileMetres(MAX_TILE_LEVEL) / TILE_PIXELS < 35, 'the closest chart keeps its 34 m pixels on the larger world');
   const v = createView(900, -1800, 40, 240, 155), level = tileLevel(v.mpp), tiles = tilesFor(v, level);
   const minX = Math.min(...tiles.map(t => t.minX)), maxX = Math.max(...tiles.map(t => t.minX + t.size));
   const minZ = Math.min(...tiles.map(t => t.minZ)), maxZ = Math.max(...tiles.map(t => t.minZ + t.size));

@@ -64,7 +64,7 @@ export function navigationReadout(aircraft, destination) {
  * Map spans (metres across the map's shorter side) the zoom controls step
  * through, from a close look at a field to the whole world.
  */
-export const ZOOM_SPANS = Object.freeze([2500, 4000, 6000, 9000, 13000, 19000, 28000, 42000, 60000, 80000]);
+export const ZOOM_SPANS = Object.freeze([2500, 4000, 6000, 9000, 13000, 19000, 28000, 42000, 60000, 80000, 115000, 160000]);
 export const FRAMINGS = Object.freeze(['route', 'follow', 'world']);
 export const FRAMING_LABELS = Object.freeze({ route: 'Route', follow: 'Aircraft', world: 'World', free: 'Panned' });
 
@@ -168,9 +168,10 @@ export function scaleBar(mpp, maxPx = 70) {
 // ---- Terrain tiles ------------------------------------------------------------
 
 // The world as a quadtree of square tiles, TILE_PIXELS across at every level:
-// level 0 is the whole world at 2.2 km a pixel, each level halves that.
+// level 0 is the whole world at 4.4 km a pixel, each level halves that, down to
+// 34 m a pixel at level 7.
 export const TILE_PIXELS = 32;
-export const MAX_TILE_LEVEL = 6;
+export const MAX_TILE_LEVEL = 7;
 export const tileMetres = level => WORLD.size / 2 ** level;
 
 /**
@@ -252,10 +253,11 @@ export function mapPlaces() {
   const add = p => { if (!seen.has(p.name)) { seen.add(p.name); places.push(p); } };
   for (const r of REGIONS) if (r.id !== 'outer-ranges') {
     const [x0, z0, x1, z1] = r.bounds;
-    const at = { 'central-valley': [-1500, 6800], 'southern-basin': [1200, 31500], 'northern-range': [1500, -22000] }[r.id] ?? [(x0 + x1) / 2, (z0 + z1) / 2];
+    const at = { 'central-valley': [-1500, 6800], 'southern-basin': [1200, 31500], 'northern-range': [1500, -22000], 'southern-coast': [3000, 51000],
+      'northern-glaciers': [-8000, -53500], 'eastern-lowlands': [57000, -8000], 'western-highlands': [-52000, 14000] }[r.id] ?? [(x0 + x1) / 2, (z0 + z1) / 2];
     add({ name: r.name, kind: 'region', x: at[0], z: at[1], priority: 3, minSpan: 13000, maxSpan: Infinity });
   }
-  const rank = { lake: 4, peak: 5, pass: 5, plateau: 4, valley: 4, island: 6, gorge: 5, butte: 6, village: 7 };
+  const rank = { lake: 4, sea: 4, peak: 5, pass: 5, plateau: 4, valley: 4, glacier: 4, caldera: 4, fjord: 5, river: 5, escarpment: 5, island: 6, gorge: 5, butte: 6, cone: 6, village: 7, town: 6 };
   for (const l of LANDMARKS) if (l.type !== 'airport') add({ name: l.name, kind: l.type, x: l.x, z: l.z, priority: rank[l.type] ?? 6, minSpan: 0, maxSpan: l.type === 'village' ? 20000 : 45000 });
   return places;
 }

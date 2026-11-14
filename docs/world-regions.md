@@ -1,5 +1,7 @@
 # World regions: a 70 km alpine world
 
+> The world has since grown to 140.8 km: this 70.4 km world is its unchanged core (`CORE`), ringed by the Divide. See [world-scale.md](world-scale.md).
+
 Expands the playable scenery from a 44 km square to **70.4 km square** (`WORLD`, ±35.2 km) with three new regions, linked to the original valley by low routes. No dependencies, downloads, external data or real geography; aircraft handling, the 17-aircraft fleet, UI, camera near plane (1 m), water depth/ripples and the weather and quality settings are unchanged.
 
 ## Regions

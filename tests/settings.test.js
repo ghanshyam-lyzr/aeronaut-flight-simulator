@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SETTINGS_KEY, SETTINGS_VERSION, CUSTOMIZATION_KEYS, defaultSettings, normalizeSettings, resetSettings, loadSettings, saveSettings, bounded, RESPONSE, DISPLAY, anyDisplayHidden, toggleDisplay } from '../src/settings.js';
+import { ZOOM_SPANS } from '../src/navigation.js';
 
 class MemoryStorage {
   constructor(entries = {}) { this.data = new Map(Object.entries(entries)); }
@@ -37,7 +38,7 @@ test('invalid values fall back per field; numbers are clamped and snapped to the
     showHud: null, showInstruments: false, airport: 42, runway: {},
   });
   assert.equal(s.quality, 'high'); assert.equal(s.invertPitch, false); assert.equal(s.mouseSteering, false);
-  assert.equal(s.weather, 'clear'); assert.equal(s.aircraft, 'jet'); assert.equal(s.mapFraming, 'route'); assert.equal(s.mapZoom, 9);
+  assert.equal(s.weather, 'clear'); assert.equal(s.aircraft, 'jet'); assert.equal(s.mapFraming, 'route'); assert.equal(s.mapZoom, ZOOM_SPANS.length - 1, 'clamped to the widest zoom step');
   assert.deepEqual(s.response, { pitch: 2, roll: 0.5, yaw: 1, throttle: 1.25 });
   assert.equal(s.camera, 'chase'); assert.equal(s.chaseDistance, 1); assert.equal(s.volume, 1); assert.equal(s.muted, true);
   assert.equal(s.showHud, true); assert.equal(s.showInstruments, false);
