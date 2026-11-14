@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { AIRFIELD } from './airfield.js';
 import { AIRPORTS, ALPINE_FIELD, footprint, localCoordinates, inProtectedArea } from './airports.js';
-import { groundHeight, groundShader, fbm, valleyCurve, westValleyCurve } from './terrain.js';
-import { WORLD, SHAPES, REGIONS, LANDMARKS, VILLAGES, WATER_LEVEL, regionAt } from './regions.js';
+import { groundHeight, groundShader, fbm, valleyCurve, westValleyCurve, calmeCurve } from './terrain.js';
+import { WORLD, CORE, SHAPES, REGIONS, ROUTES, LANDMARKS, VILLAGES, AIRPORT_SITES, WATER_LEVEL, regionAt } from './regions.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -13,6 +13,9 @@ function random() { randomSeed = (Math.imul(randomSeed, 1664525) + 1013904223) |
 // forest, villages and clouds stay exactly where they were.
 let regionSeed = 1928371;
 function regionRandom() { regionSeed = (Math.imul(regionSeed, 1664525) + 1013904223) | 0; return (regionSeed >>> 0) / 4294967296; }
+// And the outer regions beyond the Divide draw from a third, so neither moves.
+let outerSeed = 5550113;
+function outerRandom() { outerSeed = (Math.imul(outerSeed, 1664525) + 1013904223) | 0; return (outerSeed >>> 0) / 4294967296; }
 const { x: airportX, z: airportZ, elevation: airportY } = AIRFIELD;
 export { groundHeight };
 
@@ -108,59 +111,112 @@ function makeTerrainMaterial() {
 const FOREST_RANGE = { high: 16000, medium: 12500, low: 8500 };
 const TERRAIN_LOD = { high: [[9000, 1], [22000, 2], [Infinity, 4]], medium: [[16000, 2], [Infinity, 4]], low: [[7500, 2], [Infinity, 4]] };
 
-function terrain(scene) {
-  const material = makeTerrainMaterial();
-  const { tiles, tileSize: size } = WORLD, segments = 104, row = segments + 1, spacing = size / segments, skirtDepth = 160;
-  const edge = [i => i, i => segments * row + i, i => i * row, i => i * row + segments];
-  const lodIndices = {};
-  for (const step of [1, 2, 4]) {
-    const indices = [];
-    for (let z = 0; z < segments; z += step) for (let x = 0; x < segments; x += step) {
-      const a = z * (segments + 1) + x, b = a + step, c = a + step * (segments + 1), d = c + step;
-      indices.push(a, c, b, b, c, d);
-    }
-    // A curtain hangs from just under every tile edge (a metre down, so it never
-    // fights the surface for the same pixels), and a coarser neighbour never opens
-    // a crack to the sky. Both windings: it is seen from either side.
-    for (let k = 0; k < 4; k++) for (let i = 0; i < segments; i += step) {
-      const a = row * row + k * row + i, b = a + step, sa = a + 4 * row, sb = sa + step;
-      indices.push(a, sa, b, b, sa, sb, a, b, sa, b, sb, sa);
-    }
-    lodIndices[step] = new THREE.Uint16BufferAttribute(indices, 1);
+// Tiles keep full detail (104 segments, 84.6 m) only within reach of the step-1
+// and step-2 meshes; everywhere else a tile is its 26-segment mesh, the very
+// vertices of its step-4 mesh. So the resident terrain stays bounded however
+// large the world grows: full tiles are built as the camera comes within
+// FULL_RANGE (plus a lead) and dropped again past it (plus a lag).
+export const SEGMENTS = 104, COARSE_STEP = 4;
+const SKIRT_DEPTH = 160;
+export const FULL_RANGE = Object.fromEntries(Object.entries(TERRAIN_LOD).map(([quality, lod]) => [quality, lod.filter(([, step]) => step < COARSE_STEP).at(-1)[0]]));
+export const FULL_LEAD = 2500, FULL_LAG = 8000;
+const URGENT = 4000;
+
+function tileIndices(segments, step) {
+  const row = segments + 1, indices = [];
+  for (let z = 0; z < segments; z += step) for (let x = 0; x < segments; x += step) {
+    const a = z * row + x, b = a + step, c = a + step * row, d = c + step;
+    indices.push(a, c, b, b, c, d);
   }
-  const meshes = [], heights = new Float32Array((row + 2) * (row + 2));
+  // A curtain hangs from just under every tile edge (a metre down, so it never
+  // fights the surface for the same pixels), and a coarser neighbour never opens
+  // a crack to the sky. Both windings: it is seen from either side.
+  for (let k = 0; k < 4; k++) for (let i = 0; i < segments; i += step) {
+    const a = row * row + k * row + i, b = a + step, sa = a + 4 * row, sb = sa + step;
+    indices.push(a, sa, b, b, sa, sb, a, b, sa, b, sb, sa);
+  }
+  return new THREE.Uint16BufferAttribute(indices, 1);
+}
+const FULL_INDICES = { 1: tileIndices(SEGMENTS, 1), 2: tileIndices(SEGMENTS, 2), 4: tileIndices(SEGMENTS, 4) };
+const COARSE_INDICES = tileIndices(SEGMENTS / COARSE_STEP, 1);
+
+/** Tile (tx, tz) sampled every `step` vertices of the one world grid. */
+export function tileGeometry(tx, tz, step) {
+  const building = buildTile(tx, tz, step);
+  let next;
+  while (!(next = building.next()).done);
+  return next.value;
+}
+// Sampling yields every few rows, so a frame can stop part way through a tile.
+function* buildTile(tx, tz, step) {
+  const spacing = WORLD.tileSize / SEGMENTS, segments = SEGMENTS / step, row = segments + 1, heights = new Float32Array((row + 2) * (row + 2));
+  const edge = [i => i, i => segments * row + i, i => i * row, i => i * row + segments];
+  // One extra ring of heights gives every edge vertex the same normal as its
+  // neighbour tile's, so light is continuous across the seams.
+  // Vertices sit on one world grid, so tiles compute their shared edges bit for bit alike.
+  const gx = i => WORLD.minX + (tx * SEGMENTS + i * step) * spacing, gz = j => WORLD.minZ + (tz * SEGMENTS + j * step) * spacing;
+  for (let j = -1; j <= row; j++) {
+    for (let i = -1; i <= row; i++) heights[(j + 1) * (row + 2) + i + 1] = groundHeight(gx(i), gz(j));
+    if (j % 8 === 7) yield;
+  }
+  const vertices = row * row + 8 * row, position = new Float32Array(vertices * 3), normal = new Float32Array(vertices * 3);
+  const at = (i, j) => heights[(j + 1) * (row + 2) + i + 1];
+  for (let j = 0; j < row; j++) for (let i = 0; i < row; i++) {
+    const v = (j * row + i) * 3, nx = at(i - 1, j) - at(i + 1, j), nz = at(i, j - 1) - at(i, j + 1), ny = 2 * spacing * step, length = Math.hypot(nx, ny, nz);
+    position[v] = gx(i); position[v + 1] = at(i, j); position[v + 2] = gz(j);
+    normal[v] = nx / length; normal[v + 1] = ny / length; normal[v + 2] = nz / length;
+  }
+  for (const [layer, drop] of [[0, 1], [4, SKIRT_DEPTH]]) for (let k = 0; k < 4; k++) for (let i = 0; i < row; i++) {
+    const from = edge[k](i) * 3, to = (row * row + (layer + k) * row + i) * 3;
+    position[to] = position[from]; position[to + 1] = position[from + 1] - drop; position[to + 2] = position[from + 2];
+    normal[to] = normal[from]; normal[to + 1] = normal[from + 1]; normal[to + 2] = normal[from + 2];
+  }
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.BufferAttribute(position, 3));
+  geom.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
+  geom.setIndex(step === 1 ? FULL_INDICES[1] : COARSE_INDICES);
+  geom.computeBoundingSphere();
+  return geom;
+}
+
+// Coarse tiles are drawn in blocks of BLOCK x BLOCK, one draw each; a block with
+// any full tile in it draws its tiles one by one instead.
+const BLOCK = 2;
+function terrain(scene) {
+  const material = makeTerrainMaterial(), { tiles, tileSize: size } = WORLD, meshes = [], blocks = [];
   for (let tz = 0; tz < tiles; tz++) for (let tx = 0; tx < tiles; tx++) {
-    const ox = WORLD.minX + (tx + .5) * size, oz = WORLD.minZ + (tz + .5) * size;
-    // One extra ring of heights gives every edge vertex the same normal as its
-    // neighbour tile's, so light is continuous across the seams.
-    // Vertices sit on one world grid, so tiles compute their shared edges bit for bit alike.
-    const gx = i => WORLD.minX + (tx * segments + i) * spacing, gz = j => WORLD.minZ + (tz * segments + j) * spacing;
-    for (let j = -1; j <= row; j++) for (let i = -1; i <= row; i++) heights[(j + 1) * (row + 2) + i + 1] = groundHeight(gx(i), gz(j));
-    const vertices = row * row + 8 * row, position = new Float32Array(vertices * 3), normal = new Float32Array(vertices * 3);
-    const at = (i, j) => heights[(j + 1) * (row + 2) + i + 1];
-    for (let j = 0; j < row; j++) for (let i = 0; i < row; i++) {
-      const v = (j * row + i) * 3, nx = at(i - 1, j) - at(i + 1, j), nz = at(i, j - 1) - at(i, j + 1), ny = 2 * spacing, length = Math.hypot(nx, ny, nz);
-      position[v] = gx(i); position[v + 1] = at(i, j); position[v + 2] = gz(j);
-      normal[v] = nx / length; normal[v + 1] = ny / length; normal[v + 2] = nz / length;
-    }
-    for (const [layer, drop] of [[0, 1], [4, skirtDepth]]) for (let k = 0; k < 4; k++) for (let i = 0; i < row; i++) {
-      const from = edge[k](i) * 3, to = (row * row + (layer + k) * row + i) * 3;
-      position[to] = position[from]; position[to + 1] = position[from + 1] - drop; position[to + 2] = position[from + 2];
-      normal[to] = normal[from]; normal[to + 1] = normal[from + 1]; normal[to + 2] = normal[from + 2];
-    }
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.BufferAttribute(position, 3));
-    geom.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
-    geom.setIndex(lodIndices[1]);
-    geom.computeBoundingSphere();
-    const mesh = new THREE.Mesh(geom, material);
-    mesh.receiveShadow = true;
-    mesh.userData.center = new THREE.Vector2(ox, oz);
-    mesh.userData.lodIndices = lodIndices;
+    const coarse = tileGeometry(tx, tz, COARSE_STEP), mesh = new THREE.Mesh(coarse, material);
+    mesh.receiveShadow = true; mesh.visible = false;
+    mesh.userData = { tx, tz, coarse, full: null, center: new THREE.Vector2(WORLD.minX + (tx + .5) * size, WORLD.minZ + (tz + .5) * size) };
     meshes.push(mesh);
     scene.add(mesh);
   }
-  return meshes;
+  for (let bz = 0; bz < tiles; bz += BLOCK) for (let bx = 0; bx < tiles; bx += BLOCK) {
+    const members = meshes.filter(m => m.userData.tx >= bx && m.userData.tx < bx + BLOCK && m.userData.tz >= bz && m.userData.tz < bz + BLOCK);
+    const block = new THREE.Mesh(mergeGeometries(members.map(m => m.userData.coarse)), material);
+    block.receiveShadow = true; block.userData.members = members;
+    blocks.push(block);
+    scene.add(block);
+  }
+  return { meshes, blocks };
+}
+
+/** Build a tile's full mesh until done (true) or out of time (false). */
+function sharpenTile(mesh, until = Infinity) {
+  if (mesh.userData.full) return true;
+  const data = mesh.userData;
+  data.building ??= buildTile(data.tx, data.tz, 1);
+  let next;
+  while (!(next = data.building.next()).done) if (performance.now() > until) return false;
+  data.full = next.value; data.building = null;
+  mesh.geometry = data.full;
+  return true;
+}
+function softenTile(mesh) {
+  if (!mesh.userData.full) return;
+  mesh.geometry = mesh.userData.coarse;
+  // The index buffers are shared by every tile: let go of one before disposing.
+  mesh.userData.full.setIndex(null); mesh.userData.full.dispose(); mesh.userData.full = null;
 }
 
 // Water the lake shader may treat as deep without sampling the terrain. Both
@@ -174,6 +230,17 @@ function deepBasinGlsl(p) {
   const { basin } = SHAPES, n = v => (Number.isInteger(v) ? `${v}.` : `${v}`);
   return [`length(vec2((${p}.x-(${n(basin.x)}))/${n(basin.rx)},(${p}.y-(${n(basin.z)}))/${n(basin.rz)})) < .38`,
     ...basin.islands.map(([ix, iz, r]) => `length(${p}-vec2(${n(ix)},${n(iz)})) > ${n(r * 1.3)}`)].join(' && ');
+}
+
+// The heart of the Mer d'Aurin, away from its islands, is deep as well.
+export function deepSea(x, z) {
+  const { sea } = SHAPES;
+  return Math.hypot((x - sea.x) / sea.rx, (z - sea.z) / sea.rz) < .6 && sea.islands.every(([ix, iz, r]) => Math.hypot(x - ix, z - iz) > r * 1.3);
+}
+function deepSeaGlsl(p) {
+  const { sea } = SHAPES, n = v => (Number.isInteger(v) ? `${v}.` : `${v}`);
+  return [`length(vec2((${p}.x-(${n(sea.x)}))/${n(sea.rx)},(${p}.y-(${n(sea.z)}))/${n(sea.rz)})) < .6`,
+    ...sea.islands.map(([ix, iz, r]) => `length(${p}-vec2(${n(ix)},${n(iz)})) > ${n(r * 1.3)}`)].join(' && ');
 }
 
 function makeLake(sunDirection) {
@@ -231,6 +298,7 @@ function makeLake(sunDirection) {
           float valleyOffset = abs(p.x-sin(p.y*.00028)*480.-sin(p.y*.00074)*170.);
           bool shoreline = valleyOffset > 860. || p.y < -5600. || p.y > ${DEEP_CHANNEL_SOUTH}. || (abs(p.x-${airportX}.) < 680. && abs(p.y-(${airportZ}.)) < 1390.);
           if (${deepBasinGlsl('p')}) shoreline = false;
+          if (${deepSeaGlsl('p')}) shoreline = false;
           if (shoreline && range < 11000.) depth = 10.-groundHeight(p.x,p.y);
         #endif
         // Glacial water: pale turquoise over the shelves, deep teal-blue in the basin.
@@ -271,6 +339,12 @@ function nearAirport(x, z, test) {
   for (const { airport, reach } of NETWORK) if (Math.abs(x - airport.x) < reach && Math.abs(z - airport.z) < reach && test(airport, x, z)) return true;
   return false;
 }
+// The surveyed sites for future fields are kept clear the same way.
+const SITES = AIRPORT_SITES.map(a => ({ airport: a, reach: a.runwayLength / 2 + 1900 }));
+function nearSite(x, z, test) {
+  for (const { airport, reach } of SITES) if (Math.abs(x - airport.x) < reach && Math.abs(z - airport.z) < reach && test(airport, x, z)) return true;
+  return false;
+}
 /** On a field's pavement, apron or buildings, with 40 m to spare. */
 function onAirfield(airport, x, z) {
   const { along, cross } = localCoordinates(airport, x, z), f = footprint(airport);
@@ -301,9 +375,9 @@ function buildForest(scene) {
   }
   // The regions grow their own forest in tile-sized cells, so far cells can be
   // dropped by distance and the forest stays bounded as the world grows.
-  const cell = WORLD.tileSize, cells = WORLD.size / cell, regional = Array.from({ length: cells * cells }, () => []);
+  const cell = WORLD.tileSize, cells = CORE.size / cell, regional = Array.from({ length: cells * cells }, () => []);
   for (let attempts = 0, planted = 0; attempts < 420000 && planted < 52000; attempts++) {
-    const x = WORLD.minX + regionRandom() * WORLD.size, z = WORLD.minZ + regionRandom() * WORLD.size, chance = regionRandom(), tone = regionRandom(), size = regionRandom();
+    const x = CORE.minX + regionRandom() * CORE.size, z = CORE.minZ + regionRandom() * CORE.size, chance = regionRandom(), tone = regionRandom(), size = regionRandom();
     if (Math.abs(x) < 9800 && Math.abs(z) < 13100) continue;
     // Woods gather in stands with open meadow between; the plateau keeps to groves.
     const open = regionAt(x, z)?.id === 'eastern-plateau' ? .6 : .5;
@@ -313,24 +387,69 @@ function buildForest(scene) {
     if (nearAirport(x, z, inProtectedArea)) continue;
     const slope = Math.abs(groundHeight(x + 16, z) - h) / 16 + Math.abs(groundHeight(x, z + 16) - h) / 16;
     if (slope > 1.32) continue;
-    const ix = Math.min(cells - 1, Math.floor((x - WORLD.minX) / cell)), iz = Math.min(cells - 1, Math.floor((z - WORLD.minZ) / cell));
+    const ix = Math.min(cells - 1, Math.floor((x - CORE.minX) / cell)), iz = Math.min(cells - 1, Math.floor((z - CORE.minZ) / cell));
     regional[iz * cells + ix].push([x, h - 2, z, .6 + size, tone]); planted++;
   }
-  const dummy = new THREE.Object3D(), color = new THREE.Color(), forestMeshes = [];
+  const forestMeshes = [];
   for (const trees of [...buckets, ...regional]) {
     if (!trees.length) continue;
-    const mesh = new THREE.InstancedMesh(geometry, mat, trees.length);
-    trees.forEach(([x, y, z, size, tone], i) => {
-      dummy.position.set(x, y, z); dummy.scale.set(size, size * (1.0 + tone * .3), size); dummy.rotation.y = tone * 8; dummy.updateMatrix(); mesh.setMatrixAt(i, dummy.matrix);
-      color.setHSL(.265 + tone * .047, .27 + tone * .16, .13 + tone * .075); mesh.setColorAt(i, color);
-    });
-    mesh.computeBoundingSphere();
-    mesh.userData.fullCount = trees.length;
+    const mesh = stand(geometry, mat, trees);
     forestMeshes.push(mesh);
     scene.add(mesh);
   }
-  return forestMeshes;
+  return { meshes: forestMeshes, geometry, material: mat };
 }
+
+/** One instanced draw of trees ([x, y, z, size, tone] each). */
+function stand(geometry, material, trees) {
+  const dummy = new THREE.Object3D(), color = new THREE.Color(), mesh = new THREE.InstancedMesh(geometry, material, trees.length);
+  trees.forEach(([x, y, z, size, tone], i) => {
+    dummy.position.set(x, y, z); dummy.scale.set(size, size * (1.0 + tone * .3), size); dummy.rotation.y = tone * 8; dummy.updateMatrix(); mesh.setMatrixAt(i, dummy.matrix);
+    color.setHSL(.265 + tone * .047, .27 + tone * .16, .13 + tone * .075); mesh.setColorAt(i, color);
+  });
+  mesh.computeBoundingSphere();
+  mesh.userData.fullCount = trees.length;
+  return mesh;
+}
+
+// Beyond the Divide the forest is planted a cell (one terrain tile) at a time as
+// the camera comes within range, each cell from its own seed, and dropped again
+// once far behind: the same trees on every visit, and only the cells around the
+// camera resident. Woods gather in stands; the lava tableland keeps to groves and
+// the lowland farms to hedgerow woods.
+const OUTER_OPEN = { 'western-highlands': .6, 'eastern-lowlands': .6, 'southern-coast': .57 };
+export const OUTER_CELL = { attempts: 16000, trees: 2600 };
+/** True for the tiles beyond CORE, which plant their forest as the camera nears. */
+export const outerCell = (i, j) => {
+  const x = WORLD.minX + (i + .5) * WORLD.tileSize, z = WORLD.minZ + (j + .5) * WORLD.tileSize;
+  return Math.max(Math.abs(x), Math.abs(z)) > CORE.maxX;
+};
+/** The trees of one outer cell, the same every time it is planted. */
+export function outerTrees(i, j) {
+  const planting = plantCell(i, j);
+  let step;
+  while (!(step = planting.next()).done);
+  return step.value;
+}
+// Planting yields every few hundred attempts, so a frame can stop part way.
+function* plantCell(i, j) {
+  let seed = (Math.imul(i + 1, 73856093) ^ Math.imul(j + 1, 19349663)) | 0;
+  const rand = () => { seed = (Math.imul(seed, 1664525) + 1013904223) | 0; return (seed >>> 0) / 4294967296; };
+  const x0 = WORLD.minX + i * WORLD.tileSize, z0 = WORLD.minZ + j * WORLD.tileSize, trees = [];
+  for (let attempts = 0; attempts < OUTER_CELL.attempts && trees.length < OUTER_CELL.trees; attempts++) {
+    if (attempts % 500 === 499) yield;
+    const x = x0 + rand() * WORLD.tileSize, z = z0 + rand() * WORLD.tileSize, chance = rand(), tone = rand(), size = rand();
+    if (fbm(x * .0011 + 3, z * .0011 + 7) < (OUTER_OPEN[regionAt(x, z)?.id] ?? .55) || chance > .9) continue;
+    const h = groundHeight(x, z);
+    if (h < 30 || h > 1480 || (h > 1180 && chance < smooth(1180, 1500, h))) continue;
+    if (nearAirport(x, z, inProtectedArea) || nearSite(x, z, inProtectedArea)) continue;
+    const slope = Math.abs(groundHeight(x + 16, z) - h) / 16 + Math.abs(groundHeight(x, z + 16) - h) / 16;
+    if (slope > 1.32) continue;
+    trees.push([x, h - 2, z, .6 + size, tone]);
+  }
+  return trees;
+}
+
 
 function cloudTexture() {
   const canvas = document.createElement('canvas'); canvas.width = 1024; canvas.height = 512;
@@ -344,18 +463,23 @@ function cloudTexture() {
   const tex = new THREE.CanvasTexture(canvas); tex.colorSpace = THREE.SRGBColorSpace; return tex;
 }
 
-const CLOUDS = 70, CLOUD_COUNT = { low: [22, 8], medium: [34, 14], high: [46, 24] };
+// The original 46 clouds over the valley, 24 over the first regions, then a
+// sparser field over the outer regions. Counts per quality: [valley, regions, outer].
+const CLOUDS = 110, CLOUD_COUNT = { low: [22, 8, 10], medium: [34, 14, 20], high: [46, 24, 40] };
+// Clouds further than this from the camera are left undrawn: past the far plane
+// and the haze they show nothing, and the draw calls stay bounded.
+const CLOUD_RANGE = 48000;
 function buildClouds(scene) {
   const texture = cloudTexture(), clouds = [];
-  // The original 46 clouds over the valley, then a sparser field over the regions.
   for (let i = 0; i < CLOUDS; i++) {
     const mat = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: .86, depthWrite: false, fog: true, color: 0xffffff });
     const sprite = new THREE.Sprite(mat);
-    let x, z, y, size;
-    if (i < 46) { x = (random() - .5) * 37000; z = (random() - .5) * 43000; y = 2850 + random() * 950; size = 3000 + random() * 2700; }
-    else { do { x = (regionRandom() - .5) * WORLD.size; z = (regionRandom() - .5) * WORLD.size; } while (Math.abs(x) < 18500 && Math.abs(z) < 21500); y = 3000 + regionRandom() * 1100; size = 3200 + regionRandom() * 3000; }
+    let x, z, y, size, tier;
+    if (i < 46) { x = (random() - .5) * 37000; z = (random() - .5) * 43000; y = 2850 + random() * 950; size = 3000 + random() * 2700; tier = 0; }
+    else if (i < 70) { do { x = (regionRandom() - .5) * CORE.size; z = (regionRandom() - .5) * CORE.size; } while (Math.abs(x) < 18500 && Math.abs(z) < 21500); y = 3000 + regionRandom() * 1100; size = 3200 + regionRandom() * 3000; tier = 1; }
+    else { do { x = (outerRandom() - .5) * WORLD.size; z = (outerRandom() - .5) * WORLD.size; } while (Math.abs(x) < CORE.maxX && Math.abs(z) < CORE.maxZ); y = 3100 + outerRandom() * 1300; size = 3400 + outerRandom() * 3400; tier = 2; }
     sprite.position.set(x, y, z); sprite.scale.set(size, size * .40, 1);
-    sprite.userData.baseX = x;
+    sprite.userData.baseX = x; sprite.userData.tier = tier; sprite.userData.rank = i - [0, 46, 70][tier];
     scene.add(sprite); clouds.push(sprite);
   }
   return clouds;
@@ -551,11 +675,12 @@ function buildVillages(scene) {
   const spots = [];
   // The original four villages keep their sequence; the regions' draw their own.
   VILLAGES.forEach(([cx, cz, spread, houses], v) => {
-    const rand = v < 4 ? random : regionRandom, ceiling = v < 4 ? 700 : 1400;
+    const outer = Math.max(Math.abs(cx), Math.abs(cz)) > CORE.maxX, rand = v < 4 ? random : outer ? outerRandom : regionRandom, ceiling = v < 4 ? 700 : 1400;
     for (let i = 0; i < houses; i++) {
       const x = cx + (rand() - .5) * spread, z = cz + (rand() - .5) * spread, y = groundHeight(x, z);
       if (y < 28 || y > ceiling || Math.abs(groundHeight(x + 12, z) - y) > 10) continue;
-      spots.push({ x, y, z, w: 13 + rand() * 12, h: 9 + rand() * 9, d: 17 + rand() * 18, rot: rand() * .45, clear: !nearAirport(x, z, onAirfield) });
+      spots.push({ x, y, z, w: 13 + rand() * 12, h: 9 + rand() * 9, d: 17 + rand() * 18, rot: rand() * .45, outer,
+        clear: !nearAirport(x, z, onAirfield) && !nearSite(x, z, onAirfield) });
     }
   });
   // A house on an airfield is left out after its colours are drawn, so every other house keeps its own.
@@ -565,8 +690,9 @@ function buildVillages(scene) {
   const dummy = new THREE.Object3D(), color = new THREE.Color(), roofColor = new THREE.Color();
   let i = 0;
   for (const s of spots) {
-    color.setHSL(.10 + random() * .04, .10 + random() * .10, .53 + random() * .25);
-    roofColor.setHSL(.025 + random() * .035, .15 + random() * .13, .20 + random() * .12);
+    const rand = s.outer ? outerRandom : random;
+    color.setHSL(.10 + rand() * .04, .10 + rand() * .10, .53 + rand() * .25);
+    roofColor.setHSL(.025 + rand() * .035, .15 + rand() * .13, .20 + rand() * .12);
     if (!s.clear) continue;
     dummy.position.set(s.x, s.y + s.h / 2 - 1, s.z); dummy.rotation.y = s.rot; dummy.scale.set(s.w, s.h, s.d); dummy.updateMatrix(); bodies.setMatrixAt(i, dummy.matrix); bodies.setColorAt(i, color);
     dummy.position.y = s.y + s.h - 1; dummy.scale.set(s.w, s.w * .6, s.d); dummy.updateMatrix(); roofs.setMatrixAt(i, dummy.matrix); roofs.setColorAt(i, roofColor);
@@ -590,6 +716,26 @@ function buildVillages(scene) {
     for (let t = 0; t < 1; t += .01) plateauRoad.push([ax + (bx - ax) * t + Math.sin(t * Math.PI) * 300, az + (bz - az) * t]);
   }
   roads.push(westRoad, shoreRoad.filter(([x, z]) => groundHeight(x, z) > 14), plateauRoad);
+  // Beyond the Divide: down the Rampe d'Orvane and along Calmeterre's east
+  // terrace, up Val Vauclair, along the Aurin shore and across the Cendre tableland.
+  const polyline = (points, step = 80) => {
+    const line = [];
+    for (let k = 0; k < points.length - 1; k++) {
+      const [ax, az] = points[k], [bx, bz] = points[k + 1], n = Math.ceil(Math.hypot(bx - ax, bz - az) / step);
+      for (let i = 0; i < n; i++) line.push([ax + (bx - ax) * i / n, az + (bz - az) * i / n]);
+    }
+    line.push(points.at(-1));
+    return line;
+  };
+  const calmeRoad = [];
+  for (let z = -38000; z <= 46000; z += 90) calmeRoad.push([calmeCurve(z) + 3200 + Math.sin(z * .0013) * 200, z]);
+  const { sea } = SHAPES, coastRoad = [];
+  for (let x = sea.x - sea.rx * .72; x <= sea.x + sea.rx * .74; x += 90) coastRoad.push([x, sea.z - Math.sqrt(1.2 ** 2 - ((x - sea.x) / sea.rx) ** 2) * sea.rz]);
+  roads.push(polyline(ROUTES.find(r => r.id === 'rampe-orvane').points.map(([x, z]) => [x, z])), calmeRoad,
+    polyline([[50500, -37600], [44800, -39400], [44500, -40200]]), polyline(SHAPES.trough.points.slice(1, 8).reverse()),
+    coastRoad.filter(([x, z]) => groundHeight(x, z) > 14),
+    polyline([[-40500, -14500], [-44500, -14200], [-47500, -15500], [-50500, -13800]]), polyline([[-47500, -15500], [-48500, -4000], [-49800, 6000], [-50500, 17000], [-48000, 26000]]));
+  roads.forEach((line, i) => { if (i > 4) roads[i] = line.filter(([x, z]) => groundHeight(x, z) > 12); });
   const positions = [], indices = [];
   for (const line of roads) for (let i = 0; i < line.length; i++) {
     const [x, z] = line[i], [nx, nz] = line[Math.min(i + 1, line.length - 1)], [px, pz] = line[Math.max(i - 1, 0)];
@@ -597,7 +743,8 @@ function buildVillages(scene) {
     const base = positions.length / 3;
     for (const sign of [-1, 1]) positions.push(x + ox * sign, Math.max(groundHeight(x + ox * sign, z + oz * sign) + 1.1, 14), z + oz * sign);
     // Roads stop short of the airfields rather than crossing a runway.
-    if (i < line.length - 1 && Math.hypot(nx - x, nz - z) < 400 && !nearAirport(x, z, onAirfield) && !nearAirport(nx, nz, onAirfield)) indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+    if (i < line.length - 1 && Math.hypot(nx - x, nz - z) < 400 && !nearAirport(x, z, onAirfield) && !nearAirport(nx, nz, onAirfield)
+      && !nearSite(x, z, onAirfield) && !nearSite(nx, nz, onAirfield)) indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
   }
   const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3)); geo.setIndex(indices); geo.computeVertexNormals();
   scene.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x73766b, roughness: 1, side: THREE.DoubleSide })));
@@ -605,7 +752,8 @@ function buildVillages(scene) {
 
 function buildBoats(scene) {
   const boats = [];
-  for (const [x, z, angle] of [[-390, 50, .5], [240, -3200, -.6], [-400, 2900, 1.3], [250, 1300, -.3], [-5200, 21800, .9], [3600, 25600, -1.1], [9000, 26400, 2.2], [-400, 29600, .2], [-6800, 27400, -.5]]) {
+  for (const [x, z, angle] of [[-390, 50, .5], [240, -3200, -.6], [-400, 2900, 1.3], [250, 1300, -.3], [-5200, 21800, .9], [3600, 25600, -1.1], [9000, 26400, 2.2], [-400, 29600, .2], [-6800, 27400, -.5],
+    [-2500, 51500, .4], [9500, 50000, -1], [-16000, 53800, 2], [39500, -41300, 1.2], [-55600, -10200, .8]]) {
     if (groundHeight(x, z) > 9) continue;
     const boat = new THREE.Group(); boat.position.set(x, 11, z); boat.rotation.y = angle;
     const hull = new THREE.Mesh(new THREE.SphereGeometry(5, 12, 7), new THREE.MeshStandardMaterial({ color: 0xe7e5db, roughness: .55 })); hull.scale.set(.72, .35, 1.9); boat.add(hull);
@@ -652,9 +800,9 @@ export function createWorld(scene, renderer) {
   const sun = new THREE.DirectionalLight(0xfff0da, 3.25); sun.position.copy(sunDirection).multiplyScalar(7000); sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048); sun.shadow.camera.left = -900; sun.shadow.camera.right = 900; sun.shadow.camera.top = 900; sun.shadow.camera.bottom = -900; sun.shadow.camera.near = 10; sun.shadow.camera.far = 17000; sun.shadow.normalBias = 1.5; sun.shadow.bias = -.00015;
   scene.add(sun, sun.target);
-  const terrainMeshes = terrain(scene);
+  const { meshes: terrainMeshes, blocks: terrainBlocks } = terrain(scene);
   const lake = makeLake(sunDirection); scene.add(lake);
-  const forestMeshes = buildForest(scene);
+  const forest = buildForest(scene), forestMeshes = forest.meshes, outerStands = new Map();
   const fields = airports(scene), airfield = fields[0];
   buildVillages(scene);
   const clouds = buildClouds(scene), boats = buildBoats(scene);
@@ -679,45 +827,111 @@ export function createWorld(scene, renderer) {
     lake.material.uniforms.skyColor.value.set(golden ? 0xd3bba6 : overcast ? 0xaebdc2 : 0xa8cddd);
     for (const cloud of clouds) { cloud.material.color.set(overcast ? 0xabb7bc : golden ? 0xffe1bd : 0xffffff); cloud.material.opacity = overcast ? 1 : .86; }
   }
+  const density = () => quality === 'low' ? .30 : quality === 'medium' ? .50 : 1;
   function setQuality(value = 'high') {
     quality = value;
-    const density = value === 'low' ? .30 : value === 'medium' ? .50 : 1;
-    forestMeshes.forEach(mesh => { mesh.count = Math.max(1,Math.floor(mesh.userData.fullCount * density)); });
-    const [valleyClouds, regionClouds] = CLOUD_COUNT[value] ?? CLOUD_COUNT.high;
-    clouds.forEach((cloud,i) => { cloud.visible = i < 46 ? i < valleyClouds : i - 46 < regionClouds; });
+    forestMeshes.forEach(mesh => { mesh.count = Math.max(1,Math.floor(mesh.userData.fullCount * density())); });
+    outerStands.forEach(mesh => { if (mesh) mesh.count = Math.max(1, Math.floor(mesh.userData.fullCount * density())); });
+    const counts = CLOUD_COUNT[value] ?? CLOUD_COUNT.high;
+    clouds.forEach(cloud => { cloud.userData.enabled = cloud.userData.rank < counts[cloud.userData.tier]; });
     sun.castShadow = value === 'high';
     // The shoreline depth costs a few dozen ALU ops per water pixel; low quality keeps a flat depth.
     const shore = value !== 'low';
     if (Boolean(lake.material.defines.ALPINE_SHORE) !== shore) { if (shore) lake.material.defines.ALPINE_SHORE = 1; else delete lake.material.defines.ALPINE_SHORE; lake.material.needsUpdate = true; }
     lastLodX = Infinity; lastLodZ = Infinity;
   }
-  // Terrain detail and forest cells follow the camera; both are re-chosen only
-  // after it has moved 500 m, so a frame pays nothing for them otherwise.
-  function updateDetail(position) {
-    const lod = TERRAIN_LOD[quality] ?? TERRAIN_LOD.high, half = WORLD.tileSize / 2, forestRange = FOREST_RANGE[quality] ?? FOREST_RANGE.high;
-    for (const mesh of terrainMeshes) {
-      const c = mesh.userData.center, distance = Math.hypot(Math.max(0, Math.abs(position.x - c.x) - half), Math.max(0, Math.abs(position.z - c.y) - half));
-      const step = lod.find(([range]) => distance < range)[1];
-      if (mesh.geometry.index !== mesh.userData.lodIndices[step]) mesh.geometry.setIndex(mesh.userData.lodIndices[step]);
+  // Terrain detail, forest cells and clouds follow the camera; all are re-chosen
+  // only after it has moved 500 m, so a frame pays nothing for them otherwise.
+  // Full terrain tiles and outer forest cells it newly needs are queued and built
+  // a few milliseconds' worth per frame, nearest first (see grow).
+  const pendingTiles = [], pendingStands = [], plantings = new Map(), half = WORLD.tileSize / 2;
+  const edgeDistance = (position, x, z) => Math.hypot(Math.max(0, Math.abs(position.x - x) - half), Math.max(0, Math.abs(position.z - z) - half));
+  function tileStep(mesh) {
+    const lod = TERRAIN_LOD[quality] ?? TERRAIN_LOD.high, step = lod.find(([range]) => mesh.userData.distance < range)[1];
+    if (mesh.userData.full && mesh.geometry.index !== FULL_INDICES[step]) mesh.geometry.setIndex(FULL_INDICES[step]);
+  }
+  function showBlocks() {
+    for (const block of terrainBlocks) {
+      const split = block.userData.members.some(m => m.userData.full);
+      block.visible = !split;
+      for (const m of block.userData.members) m.visible = split;
     }
+  }
+  function updateDetail(position) {
+    const forestRange = FOREST_RANGE[quality] ?? FOREST_RANGE.high, full = FULL_RANGE[quality] ?? FULL_RANGE.high;
+    pendingTiles.length = 0;
+    for (const mesh of terrainMeshes) {
+      const c = mesh.userData.center, distance = mesh.userData.distance = edgeDistance(position, c.x, c.y);
+      if (distance > full + FULL_LAG) { softenTile(mesh); mesh.userData.building = null; }
+      else if (!mesh.userData.full && distance < full + FULL_LEAD) pendingTiles.push(mesh);
+      tileStep(mesh);
+    }
+    showBlocks();
     for (const mesh of forestMeshes) {
       const sphere = mesh.boundingSphere;
       mesh.visible = Math.hypot(position.x - sphere.center.x, position.z - sphere.center.z) - sphere.radius < forestRange;
     }
+    pendingStands.length = 0;
+    for (let j = 0; j < WORLD.tiles; j++) for (let i = 0; i < WORLD.tiles; i++) {
+      if (!outerCell(i, j)) continue;
+      const key = j * WORLD.tiles + i, mesh = outerStands.get(key);
+      const distance = edgeDistance(position, WORLD.minX + (i + .5) * WORLD.tileSize, WORLD.minZ + (j + .5) * WORLD.tileSize);
+      if (mesh !== undefined && distance > forestRange + FULL_LAG) {
+        if (mesh) { scene.remove(mesh); mesh.dispose(); }
+        outerStands.delete(key);
+      } else if (mesh === undefined && distance < forestRange + FULL_LEAD) pendingStands.push({ i, j, key, distance, planting: plantings.get(key) });
+      else if (mesh) mesh.visible = distance < forestRange;
+    }
+    // A cell half planted and no longer wanted starts again next time.
+    for (const key of plantings.keys()) if (!pendingStands.some(p => p.key === key)) plantings.delete(key);
+    for (const cloud of clouds) cloud.visible = cloud.userData.enabled && Math.hypot(position.x - cloud.position.x, position.z - cloud.position.z) < CLOUD_RANGE;
+    // Nearest last, so they are popped first.
+    pendingTiles.sort((a, b) => b.userData.distance - a.userData.distance);
+    pendingStands.sort((a, b) => b.distance - a.distance);
     lastLodX = position.x; lastLodZ = position.z;
+  }
+  // Build what updateDetail queued: tiles the camera is over (within URGENT) at
+  // once, the rest within `budget` milliseconds a frame.
+  function grow(budget = 4) {
+    const start = performance.now();
+    while (pendingTiles.length) {
+      const mesh = pendingTiles.at(-1);
+      if (!sharpenTile(mesh, mesh.userData.distance < URGENT ? Infinity : start + budget)) break;
+      pendingTiles.pop(); tileStep(mesh);
+      showBlocks();
+    }
+    while (pendingStands.length && performance.now() - start < budget) {
+      const next = pendingStands.at(-1);
+      if (!next.planting) plantings.set(next.key, next.planting = plantCell(next.i, next.j));
+      let step;
+      while (!(step = next.planting.next()).done && performance.now() - start < budget);
+      if (!step.done) break;
+      pendingStands.pop(); plantings.delete(next.key);
+      const { key, distance } = next, trees = step.value;
+      const mesh = trees.length ? stand(forest.geometry, forest.material, trees) : null;
+      if (mesh) {
+        mesh.count = Math.max(1, Math.floor(mesh.userData.fullCount * density()));
+        mesh.visible = distance < (FOREST_RANGE[quality] ?? FOREST_RANGE.high);
+        scene.add(mesh);
+      }
+      outerStands.set(key, mesh);
+    }
   }
   function update(dt, time, position) {
     lake.material.uniforms.time.value = time * .48;
     if (position) {
       sun.target.position.copy(position); sun.position.copy(position).addScaledVector(sunDirection, 7000);
       if (Math.hypot(position.x - lastLodX, position.z - lastLodZ) > 500) updateDetail(position);
+      if (pendingTiles.length || pendingStands.length) grow();
     }
     clouds.forEach((cloud, i) => { cloud.position.x = cloud.userData.baseX + Math.sin(time * .007 + i) * 85; });
     boats.forEach((boat, i) => { boat.rotation.z = Math.sin(time * .72 + i) * .018; boat.position.y = 11 + Math.sin(time * .9 + i) * .12; });
     fields.forEach((field, i) => { field.windsock.rotation.z = -.15 + Math.sin(time * 2.7 + i * 1.3) * .035; });
   }
   setWeather('clear');
+  setQuality('high');
   updateDetail(new THREE.Vector3(0, 0, 1900));
+  grow(Infinity);
   return { heightAt: (x, z) => Math.max(WATER_LEVEL, groundHeight(x, z)), update, setWeather, setQuality, reflectSky, landmarks, airport: airfield, airports: fields,
     bounds: WORLD, regions: REGIONS, regionAt };
 }
