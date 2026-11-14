@@ -178,3 +178,32 @@ dialog.chart-dialog{width:min(1060px,calc(100% - 32px))}
 @media(min-width:801px){.right-tools{top:auto;bottom:432px}}
 @media(min-width:1500px){.right-tools{bottom:450px}}
 @media(min-width:551px) and (max-width:800px){.right-tools{top:auto;bottom:384px}}
+/* Customization settings — Alpine Flight rows, 6px segmented control and labelled ranges; values in Barlow Condensed. */
+.settings-dialog{width:520px}
+.settings-dialog .dialog-head{position:sticky;top:0;z-index:1;background:var(--surface);padding-bottom:12px}
+.settings-body .dialog-section-title{margin:22px 0 0;color:var(--muted)}
+.settings-body .dialog-section-title:first-child{margin-top:0}
+.settings-body .settings-row{padding:11px 0}
+.settings-help{font-size:11px;color:var(--muted);line-height:1.5;margin:6px 0 2px}
+.settings-sliders{display:grid;grid-template-columns:1fr 1fr;gap:0 22px}
+.settings-sliders.single{grid-template-columns:1fr}
+.settings-slider{padding-top:10px}
+.settings-slider label{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:12px;font-weight:500}
+.settings-slider output{font-family:var(--numbers);font-size:15px;color:var(--accent);font-variant-numeric:tabular-nums}
+.settings-slider input[type=range]{height:24px;margin:2px 0 4px;background:linear-gradient(var(--surface-soft),var(--surface-soft)) center/100% 3px no-repeat}
+.settings-slider input[type=range]::-webkit-slider-thumb{width:9px;height:16px}
+.settings-slider input[type=range]::-moz-range-thumb{width:9px;height:16px}
+.settings-slider input[type=range]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.segmented{display:flex;background:var(--surface-raised);border-radius:6px;padding:3px;gap:2px;flex-shrink:0}
+.segmented button{min-height:30px;padding:0 11px;border-radius:4px;font-size:11px;font-weight:500;color:var(--muted);transition:background .16s,color .16s}
+.segmented button[aria-checked=true]{background:var(--surface-soft);color:var(--foreground)}
+.segmented button:focus-visible{outline-offset:-2px}
+.settings-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:18px}
+.settings-actions .primary-btn,.settings-actions .secondary-btn{margin:0}
+.settings-body .dialog-note{margin-top:12px!important}
+/* Display preferences. Hidden flight panels keep the warnings, and a mission card underway. */
+.hide-hud .hud>:not(.flight-notice):not(.gear-warning):not(.mission-panel),.hide-hud:not(.landing-mode) .hud>.mission-panel{display:none}
+.hide-instruments .instruments,.hide-hints .control-strip,.hide-crosshair .center-indicator{display:none}
+.restore-hud.partial{padding:9px 12px}
+@media(max-width:550px){.settings-dialog .segmented button{padding:0 9px}.settings-sliders{gap:0 16px}.landing-mode .restore-hud:not(.partial){top:292px}.restore-hud.partial{padding:7px 10px}}
+@media(prefers-reduced-motion:reduce){.segmented button{transition:none}}

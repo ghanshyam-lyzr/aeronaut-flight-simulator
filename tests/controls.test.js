@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FlightInputs } from '../src/controls.js';
+import { FlightInputs, TRAVEL } from '../src/controls.js';
 import { FlightController } from '../src/flight.js';
 
 const axes = ['pitch', 'roll', 'yaw', 'throttle'];
@@ -164,5 +164,86 @@ test('held shaped controls retain the fighter’s repeated loops and rolls', () 
     });
     assert.ok(turned > Math.PI * 4, `${axis}: ${turned} rad`);
     assert.equal(flight.state.crashed, false);
+  }
+});
+
+// Control response (src/settings.js): travel time divided by 0.5–2; held inputs still reach full deflection.
+const responses = [0.5, 0.75, 1, 1.5, 2];
+
+test('control response scales a sub-frame tap identically at 10–120 Hz', () => {
+  for (const response of responses) for (const rate of rates) for (const axis of axes) {
+    const input = new FlightInputs(0, { [axis]: response });
+    input.set({ [axis]: 1 }, 0.011);
+    input.set({}, 0.041);
+    let impulse = 0, other = 0;
+    for (let t = 1 / rate; t < 0.4; t += 1 / rate) {
+      input.advance(t, (dt, controls) => { impulse += controls[axis] * dt; for (const a of axes) if (a !== axis) other += Math.abs(controls[a]); });
+    }
+    assert.ok(Math.abs(impulse - 0.03 ** 2 * response / (2 * TRAVEL[axis])) < 1e-12, `${axis} ×${response} at ${rate} Hz: ${impulse}`);
+    assert.equal(other, 0, 'one axis response never moves another axis');
+  }
+});
+
+test('every response holds to full deflection, and release and reversal stay immediate', () => {
+  for (const response of responses) for (const rate of rates) for (const axis of axes) {
+    const input = new FlightInputs(0, { [axis]: response });
+    input.set({ [axis]: 1 }, 0);
+    const fullAt = TRAVEL[axis] / response;
+    let last = 0;
+    for (let t = 1 / rate; t <= fullAt + 0.2; t += 1 / rate) input.advance(t, (_dt, c) => { last = c[axis]; });
+    assert.equal(input.value[axis], 1, `${axis} ×${response} at ${rate} Hz reaches full travel`);
+    assert.equal(last, 1, 'held input keeps full authority');
+    const at = input.time;
+    input.set({}, at);
+    input.advance(at + 1 / rate, (_dt, c) => assert.equal(c[axis], 0, 'release is immediate'));
+    input.set({ [axis]: -1 }, at + 1 / rate);
+    input.advance(at + 2 / rate, (_dt, c) => assert.ok(c[axis] < 0, 'reversal acts at once'));
+    assert.ok(Math.abs(input.value[axis] + Math.min(1, 1 / rate / fullAt)) < 1e-9, 'reversal ramps from neutral, not from the old deflection');
+  }
+});
+
+test('default response is the original ramp; out-of-range values are bounded', () => {
+  const ramp = response => {
+    const input = new FlightInputs(0, response);
+    input.set({ pitch: 1, roll: 1, yaw: 1, throttle: 1 }, 0);
+    input.advance(0.1, () => {});
+    return { ...input.value };
+  };
+  const original = ramp();
+  for (const axis of axes) assert.ok(Math.abs(original[axis] - 0.1 / TRAVEL[axis]) < 1e-12);
+  assert.deepEqual(ramp({ pitch: 1, roll: 1, yaw: 1, throttle: 1 }), original);
+  assert.deepEqual(ramp({ pitch: 'x', roll: NaN, yaw: undefined, throttle: null }), original, 'invalid values mean the default');
+  assert.ok(Math.abs(ramp({ pitch: 0 }).pitch - 0.05 / TRAVEL.pitch) < 1e-12, 'zero is clamped to the 50% minimum');
+  const extreme = ramp({ pitch: 50, roll: 0.01, yaw: -3, throttle: Infinity });
+  assert.ok(Math.abs(extreme.pitch - 0.2 / TRAVEL.pitch) < 1e-12, 'capped at 200%');
+  assert.ok(Math.abs(extreme.roll - 0.05 / TRAVEL.roll) < 1e-12, 'floored at 50%');
+  assert.ok(Math.abs(extreme.yaw - 0.05 / TRAVEL.yaw) < 1e-12);
+  assert.ok(Math.abs(extreme.throttle - original.throttle) < 1e-12, 'non-finite means the default');
+});
+
+test('changing response mid-hold continues from the current deflection without a jump', () => {
+  for (const rate of rates) {
+    const input = new FlightInputs(0);
+    input.set({ roll: 1 }, 0);
+    let t = 0;
+    while (t < 0.2) { t += 1 / rate; input.advance(t, () => {}); }
+    const before = input.value.roll;
+    input.setResponse({ roll: 2 });
+    input.advance(t + 1 / rate, (_dt, c) => assert.ok(c.roll >= before && c.roll <= 1));
+    assert.ok(input.value.roll > before);
+  }
+});
+
+test('a faster response still keeps one brief approach tap a small correction', () => {
+  for (const id of ['jet', 'fighter']) for (const rate of rates) {
+    const fast = run(approach(id), [[0.013, { pitch: 1 }], [0.113, {}]], 1.613, rate);
+    const tapped = new FlightInputs(0, { pitch: 2 });
+    tapped.set({ pitch: 1 }, 0.013); tapped.set({}, 0.113);
+    const flight = approach(id), baseline = approach(id);
+    for (let t = 0; t < 1.613 - 1e-9;) { t = Math.min(1.613, t + 1 / rate); tapped.advance(t, (dt, c) => flight.update(dt, c)); }
+    run(baseline, [], 1.613, rate);
+    const correction = degrees(flight.state.pitch - baseline.state.pitch), single = degrees(fast.state.pitch - baseline.state.pitch);
+    assert.ok(correction > single * 1.5 && correction < 1, `${id} at ${rate} Hz: ${correction}° vs ${single}°`);
+    assert.equal(flight.state.stalled, false);
   }
 });

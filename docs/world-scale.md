@@ -42,7 +42,7 @@ The extra cost inside the original world comes from the Divide terms and the out
 
 ## Rendering: bounded resident scenery
 
-Only nearby scenery is held at full detail, and the new regions do not add draw calls at the original start view. This uses current APIs only (see the integration seam below).
+Only nearby scenery is held at full detail, so resident geometry, tree counts and draw calls stay bounded however large the world grows. The larger world still costs a little at the original start view: terrain now continues past the old edge, adding 10 draw calls on high quality (88 → 98) and 4 on low (71 → 75). Looking in from the old world's corner it costs 49 fewer (table below). This uses current APIs only (see the integration seam below).
 
 - **Terrain**: every tile keeps a 26-segment mesh that has exactly the vertices of its step-4 mesh (tested). A tile is given its 104-segment mesh only when the camera comes within the step-1/step-2 range plus 2.5 km (high 22 km, balanced 16 km, low 7.5 km), and loses it again 8 km past that. Full meshes are built a few rows at a time within a 4 ms per-frame budget. Tiles within 4 km of the aircraft (after a runway start, say) are built at once. At most 64 full tiles are resident anywhere in the world, the same as the old world's total. Coarse tiles are drawn as 2 × 2 blocks (one draw each) unless a block holds a full tile. LOD steps, skirts, the one vertex grid and the one-metre near plane are unchanged.
 - **Forest**: the original 28,200 trees and the regions' 52,000 keep their sequences and buckets. Each outer tile plants its own forest (up to 2,600 trees, from a per-cell seed, so the same trees every time) once the camera comes within the forest range plus 2.5 km. Planting is spread across frames, and a cell is dropped 8 km past the range. Trees keep off water, steep ground, the airports and the surveyed sites.
@@ -106,7 +106,7 @@ To build one, add an `AIRPORTS` entry with these numbers. `GRADED_AIRPORTS` then
 
 ## Validation
 
-- `npm test`: **338 passed, 0 failed** (326 before, plus 12 in `tests/world-scale.test.js`; `tests/navigation.test.js` now expects the seventh tile level).
+- `npm test` on the branch merged with current main: **352 passed, 0 failed**. That includes the 12 tests in `tests/world-scale.test.js`. `tests/navigation.test.js` now expects the seventh tile level, and `tests/settings.test.js` clamps the saved map zoom to the widest step in `ZOOM_SPANS` (now 11) instead of a hard-coded 9.
 - `npm run build` passes (the existing large-chunk advisory remains).
 
 `tests/world-scale.test.js` covers:
@@ -144,5 +144,16 @@ Screenshots:
 **Limits of this check:**
 
 - SwiftShader gives no meaningful frame rate.
-- The CPU/GPU float32 comparison done for the 70 km world was not repeated. Outer heights reach 70 km from the origin, where float32 spacing is about 8 mm, so the error should stay within the centimetres measured before.
+- **GPU float32 heights, measured.** This is separate from the double-precision GLSL-to-JavaScript test. `groundShader` was compiled in WebGL2 (SwiftShader) and its heights rendered to an R32F texture on 256 × 256 grids, then compared with `groundHeight`:
+
+  | Area | Worst difference | Mean | Worst within 40 m of the water line |
+  | --- | --- | --- | --- |
+  | Original world (±35.2 km) | 0.27 m (a 2,540 m peak) | 7 mm | 3 cm |
+  | Outer ring, whole | 0.50 m | 6 mm | 0.46 m |
+  | Calmeterre | 0.57 m (bank of the Calme) | 4 mm | 0.56 m |
+  | Aurin Coast | 0.18 m | 2 mm | 5 cm |
+  | Vauclair | 7 cm | 4 mm | 3 mm |
+  | Cendre | 2 cm | 1 mm | 3 mm |
+
+  The outliers sit on the Calme's steep banks, which drop about 70 m over 200 m. There a few-decimetre float32 error in the river's centreline (its `sin` terms on the GPU) becomes up to 0.57 m of height. The only GPU user of these heights is the lake shader's depth, so the river's shallows and foam can be drawn up to about 1.5 m off along those banks. Collisions and placement use the double-precision CPU function and are unaffected. A hardware GPU may round differently; it was not measured.
 - Flying past the edge is still not stopped (unchanged; `inWorld`/`clampToWorld` exist for a boundary rule).
