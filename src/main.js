@@ -11,6 +11,7 @@ import { createAircraft, createCockpit } from './aircraft.js';
 import { FlightController, FlightAudio, FollowFrame } from './flight.js';
 import { FLEET, aircraftType } from './fleet.js';
 import { FlightInputs } from './controls.js';
+import { loadSettings, saveSettings as storeSettings, resetSettings, CUSTOMIZATION_KEYS, RESPONSE, CHASE_DISTANCE, VOLUME, percent } from './settings.js';
 import { disposeObject } from './helicopter.js';
 import { LandingMission, landingProfile } from './landing-mission.js';
 import { runwayPoint } from './airfield.js';
@@ -26,11 +27,10 @@ const refreshIcons = () => createIcons({icons,attrs:{'stroke-width':1.6}});
 refreshIcons();
 const $ = id => document.getElementById(id);
 const worldContainer = $('world');
-const settings = { quality:'high', invertPitch:false, mouseSteering:false, showMap:true, weather:'clear', aircraft:'jet', mapFraming:'route', mapZoom:3 };
-try { Object.assign(settings, JSON.parse(localStorage.getItem('aeronaut-settings') || '{}')); } catch {}
+// Validated, migrated preferences (src/settings.js); corrupt or blocked storage falls back to defaults.
+const settings = loadSettings();
 let miniMap=null,chartMap=null; // Navigation maps, made once the world exists (below).
-settings.aircraft = aircraftType(settings.aircraft).id;
-const saveSettings = () => {try{localStorage.setItem('aeronaut-settings',JSON.stringify(settings));}catch{}};
+const saveSettings = () => storeSettings(settings);
 // The selected field and runway (src/airport-selection.js), saved as a stable id; old or invalid settings mean Alpine Field 36.
 const selection = new AirportSelection(settings.airport, settings.runway);
 settings.airport = selection.id; settings.runway = selection.runway;
@@ -69,11 +69,11 @@ function setMissionCues(field){if(landingCues.field.id===field.id&&landingCues.f
 let missionResultShown=false;
 flight.toggleAutopilot();
 const audio = new FlightAudio();
-let paused=false, view='chase', hudVisible=true, frameTime=0, orbitAngle=0.45, orbitHeight=9, orbitDistance=31;
+let paused=false, view=settings.camera, frameTime=0, orbitAngle=0.45, orbitHeight=9, orbitDistance=31;
 const keys=new Set();
 const touch={pitch:0,roll:0,yaw:0,throttle:0};
 const mouse={pitch:0,roll:0,active:false};
-const controls=new FlightInputs(performance.now()/1000);
+const controls=new FlightInputs(performance.now()/1000,settings.response);
 const throttlePointers=new globalThis.Map();
 const yawPointers=new globalThis.Map();
 // DOM timestamps retain the hold duration when rendering delays delivery of both events.
@@ -102,7 +102,7 @@ function setWeather(value,notify=true){
 }
 function setQuality(value){settings.quality=value;renderer.setPixelRatio(Math.min(devicePixelRatio,value==='high'?1.75:value==='medium'?1.2:.85));renderer.shadowMap.enabled=value!=='low';world.setQuality?.(value);miniMap?.setQuality(value);chartMap?.setQuality(value);sceneDirty=true;$('quality-label').textContent=value.charAt(0).toUpperCase()+value.slice(1);saveSettings();}
 setWeather(weatherData[settings.weather]?settings.weather:'clear',false);setQuality(settings.quality);
-$('map-panel').hidden=!settings.showMap;
+applyDisplay();
 function toast(message){$('toast').textContent=message;$('toast').classList.add('visible');clearTimeout(toastTimeout);toastTimeout=setTimeout(()=>$('toast').classList.remove('visible'),3000);}
 function iconButton(id,icon){$(id).innerHTML=`<i data-lucide="${icon}"></i>`;refreshIcons();}
 function setPaused(value){
@@ -161,7 +161,7 @@ function startLanding(field=landing.field){
  paused=false;lastCrash=false;initialCamera=true;sceneDirty=true;missionResultShown=false;clearControls();
  $('pause-overlay').hidden=$('crash-overlay').hidden=$('landing-result').hidden=true;
  $('pause-btn').setAttribute('aria-label','Pause flight');iconButton('pause-btn','pause');
- hudVisible=true;$('hud').hidden=false;$('restore-hud').hidden=true;
+ settings.showHud=true;applyDisplay();saveSettings();
  document.querySelector('.mission-panel').classList.remove('collapsed');
  updateAssist();updateLandingUI();announceAirport();toast(landing.profile.helicopter?'You have control · gently lower collective to settle in the box':`You have control · follow runway ${field.runway}, then flare and idle power`);return true;
 }
@@ -203,10 +203,17 @@ function updateLandingUI(){
 }
 function updateAssist(){const a=flight.state.autopilot;document.querySelector('.mission-action').classList.toggle('manual',!a);document.querySelector('.mission-action').classList.toggle('rotorcraft',!!flight.type.flight.rotorcraft);$('assist-status').textContent=a?(flight.type.flight.rotorcraft?'Hover hold':'Flight assist enabled'):'Manual flight';$('take-control').innerHTML=`${a?'Take control':'Enable assist'} <i data-lucide="arrow-up-right"></i>`;refreshIcons();}
 function toggleAssist(){if(landing.finished)return;flight.toggleAutopilot();updateAssist();toast(flight.state.autopilot?(flight.type.flight.rotorcraft?'Hover hold · braking to hold position, altitude and heading':'Flight assist on · holding altitude and heading'):(flight.type.flight.rotorcraft?'Manual flight · cyclic to move, collective to climb or descend':'You have control · W/S to pitch, A/D to bank'));}
-function setView(value){sceneDirty=true;view=value;aircraft.setCockpit(view==='cockpit');if(cockpit)cockpit.visible=view==='cockpit';$('camera-label').textContent=({chase:'Chase camera',cockpit:'Cockpit view',orbit:'Orbit camera'})[view];initialCamera=true;toast(`${$('camera-label').textContent}${view==='orbit'?' · drag to look around':''}`);}
+function setView(value,notify=true){sceneDirty=true;view=value;settings.camera=value;saveSettings();aircraft.setCockpit(view==='cockpit');if(cockpit)cockpit.visible=view==='cockpit';$('camera-label').textContent=({chase:'Chase camera',cockpit:'Cockpit view',orbit:'Orbit camera'})[view];initialCamera=true;if(notify)toast(`${$('camera-label').textContent}${view==='orbit'?' · drag to look around':''}`);}
 function cycleView(){const views=['chase','cockpit','orbit'];setView(views[(views.indexOf(view)+1)%views.length]);}
-function toggleMap(){settings.showMap=!settings.showMap;$('map-panel').hidden=!settings.showMap;saveSettings();drawMap();}
-function toggleHud(){hudVisible=!hudVisible;$('hud').hidden=!hudVisible;$('restore-hud').hidden=hudVisible;}
+function toggleMap(){settings.showMap=!settings.showMap;applyDisplay();saveSettings();drawMap();}
+// Display preferences hide panels but never the stall, terrain and gear warnings, nor a mission card underway.
+// While anything is hidden, a restore button stays on screen; H (or that button) shows everything again.
+function partlyHidden(){return !settings.showInstruments||!settings.showHints;}
+function applyDisplay(){
+ const c=document.body.classList;c.toggle('hide-hud',!settings.showHud);c.toggle('hide-instruments',!settings.showInstruments);c.toggle('hide-hints',!settings.showHints);c.toggle('hide-crosshair',!settings.showCrosshair);
+ $('map-panel').hidden=!settings.showMap;const r=$('restore-hud');r.hidden=settings.showHud&&!partlyHidden();r.classList.toggle('partial',settings.showHud);sceneDirty=true;
+}
+function toggleHud(){if(!settings.showHud||partlyHidden())Object.assign(settings,{showHud:true,showInstruments:true,showHints:true,showCrosshair:true});else settings.showHud=false;applyDisplay();saveSettings();}
 function gear(){if(flight.type.flight.rotorcraft||flight.type.fixedGear){toast(flight.type.fixedGear?'Fixed landing gear · always down':wheeled(flight.type)?'Fixed wheeled landing gear · always down':'Fixed landing skids · always down');return;}sceneDirty=true;flight.toggleGear();toast(`Landing gear ${flight.state.gearDown?'down':'retracted'}`);}
 function flaps(){if(flight.type.flight.rotorcraft||flight.type.noFlaps){toast('No flaps on this aircraft');return;}sceneDirty=true;flight.cycleFlaps();toast(`Flaps set to ${flight.state.flaps*15}°`);}
 $('pause-btn').onclick=()=>setPaused(!paused);$('resume-btn').onclick=()=>setPaused(false);$('reset-btn').onclick=()=>restart();$('crash-reset').onclick=()=>restart();$('take-control').onclick=toggleAssist;$('camera-btn').onclick=cycleView;$('map-toggle').onclick=toggleMap;$('map-close').onclick=toggleMap;$('map-framing').onclick=cycleMapFraming;$('map-zoom-in').onclick=()=>zoomMap(1);$('map-zoom-out').onclick=()=>zoomMap(-1);$('map-expand').onclick=()=>showDialog('chart');$('hud-toggle').onclick=toggleHud;$('restore-hud').onclick=toggleHud;$('gear-btn').onclick=gear;$('flaps-btn').onclick=flaps;
@@ -215,7 +222,13 @@ for(const id of ['landing-retry','landing-result-retry'])$(id).onclick=()=>start
 for(const id of ['landing-cancel','landing-result-exit'])$(id).onclick=()=>cancelLanding(true);
 $('collapse-mission').onclick=()=>{const c=document.querySelector('.mission-panel');c.classList.toggle('collapsed');iconButton('collapse-mission',c.classList.contains('collapsed')?'plus':'minus');};
 $('throttle-slider').addEventListener('input',e=>{flight.state.throttle=Number(e.target.value)/100;if(flight.type.flight.rotorcraft)flight.state.autopilot=false;});
-$('sound-btn').onclick=async()=>{if(!audio.enabled)await audio.start();else audio.toggle();iconButton('sound-btn',audio.enabled?'volume-2':'volume-x');$('sound-btn').setAttribute('aria-label',audio.enabled?'Mute flight sound':'Enable flight sound');toast(audio.enabled?'Flight sound on':'Flight sound off');};
+// One audio context, unlocked by a gesture as browsers require. Sound starts off, as before; once the pilot turns
+// it on, that choice is saved and resumes at the first tap or key press after a reload.
+function updateSoundButton(){iconButton('sound-btn',audio.enabled?'volume-2':'volume-x');$('sound-btn').setAttribute('aria-label',audio.enabled?'Mute flight sound':'Enable flight sound');}
+async function setSound(on){settings.muted=!on;saveSettings();if(on&&!audio.enabled)await audio.start();else if(!on&&audio.enabled)audio.toggle();updateSoundButton();return audio.enabled;}
+audio.setVolume(settings.volume);
+for(const event of ['pointerdown','keydown'])window.addEventListener(event,e=>{if(!settings.muted&&!audio.enabled&&!e.target?.closest?.('#sound-btn,#setting-sound'))audio.start().then(updateSoundButton);},{capture:true});
+$('sound-btn').onclick=async()=>{const on=await setSound(!audio.enabled);toast(on?'Flight sound on':'Flight sound off');};
 $('fullscreen-btn').onclick=async()=>{try{if(!document.fullscreenElement)await document.documentElement.requestFullscreen();else await document.exitFullscreen();}catch{toast('Open the preview in its own tab for fullscreen.');}};
 document.addEventListener('fullscreenchange',()=>iconButton('fullscreen-btn',document.fullscreenElement?'minimize':'maximize'));
 $('photo-btn').onclick=()=>{renderer.render(scene,camera);const a=document.createElement('a');a.download=`aeronaut-${Date.now()}.png`;a.href=renderer.domElement.toDataURL('image/png');a.click();toast('Flight photo saved');};
@@ -268,6 +281,16 @@ function setupChart(){
 }
 // Re-list the fields after a choice, keeping focus on the chosen one.
 function rerenderChartList(id){const list=dialog.querySelector('.chart-airports');if(!list)return;list.innerHTML=AIRPORTS.map(chartAirport).join('');list.querySelectorAll('[data-airport]').forEach(b=>b.onclick=()=>{if(selection.select(b.dataset.airport))rerenderChartList(b.dataset.airport);});radioKeys('.chart-airports [data-airport]');list.querySelector(`[data-airport="${id}"]`)?.focus({preventScroll:true});drawChart();}
+// A labelled range with its value beside the label; values are kept in the bounds settings.js validates.
+const sliderMarkup=(id,label,value,{min,max,step})=>`<div class="settings-slider"><label for="${id}"><span>${label}</span><output id="${id}-value" for="${id}">${percent(value)}</output></label><input type="range" id="${id}" min="${Math.round(min*100)}" max="${Math.round(max*100)}" step="${Math.round(step*100)}" value="${Math.round(value*100)}" aria-valuetext="${percent(value)}"/></div>`;
+function bindSlider(id,apply){$(id).oninput=e=>{const v=Number(e.target.value)/100;apply(v);$(`${id}-value`).textContent=percent(v);e.target.setAttribute('aria-valuetext',percent(v));saveSettings();};}
+// Resets customization only: the aircraft, airfield, logbook and the flight or mission underway carry on where they are.
+function restoreDefaults(){
+ const d=resetSettings(settings);for(const key of CUSTOMIZATION_KEYS)settings[key]=d[key];
+ setQuality(settings.quality);controls.setResponse(settings.response);clearControls();setView(settings.camera,false);applyDisplay();drawMap();audio.setVolume(settings.volume);
+ if(settings.muted&&audio.enabled)audio.toggle();updateSoundButton();saveSettings();
+ showDialog('settings');$('restore-defaults').focus();toast('Settings restored to defaults');
+}
 function showDialog(type){
  clearControls();
  const heli=!!flight.type.flight.rotorcraft;
@@ -275,7 +298,13 @@ function showDialog(type){
  if(type==='menu'){content=dialogHead('Flight deck')+`<div class="dialog-body"><button class="menu-link" data-next-dialog="explore">Explore the Alps <i data-lucide="arrow-up-right"></i></button><button class="menu-link" data-next-dialog="chart">Navigation chart <i data-lucide="arrow-up-right"></i></button><button class="menu-link" data-next-dialog="logbook">Flight log <i data-lucide="arrow-up-right"></i></button><button class="menu-link" data-next-dialog="controls">Flight controls <i data-lucide="arrow-up-right"></i></button><button class="menu-link" data-next-dialog="environment">Weather <i data-lucide="arrow-up-right"></i></button></div>`;}else if(type==='environment'){
  content=dialogHead('A change of atmosphere')+`<div class="dialog-body"><p>Find your favorite light. Weather presets change the atmosphere, sunlight, visibility, and water.</p><div class="weather-options">${Object.entries(weatherData).map(([id,w])=>`<button class="weather-option ${settings.weather===id?'selected':''}" data-weather="${id}"><i data-lucide="${w.icon}"></i><div><strong>${w.label}</strong><span>${id==='clear'?'Blue skies. Endless visibility.':id==='golden'?'Warm light across the mountains.':'A moody sky above the valley.'}</span></div><span></span></button>`).join('')}</div><p class="dialog-note">Simulated weather presets. This is a procedural alpine world.</p></div>`;
  }else if(type==='settings'){
- content=dialogHead('Make it your flight')+`<div class="dialog-body"><div class="settings-row"><div><strong>Graphics quality</strong><p>Balance detail with a smooth flight.</p></div><select id="graphics-quality" aria-label="Graphics quality"><option value="high" ${settings.quality==='high'?'selected':''}>High</option><option value="medium" ${settings.quality==='medium'?'selected':''}>Balanced</option><option value="low" ${settings.quality==='low'?'selected':''}>Performance</option></select></div>${toggleMarkup('setting-assist','Flight assist',heli?'Brakes to a hover; holds position, altitude and heading.':'Holds your heading and altitude.',flight.state.autopilot)}${toggleMarkup('setting-invert','Invert pitch','Swap the up and down flight controls.',settings.invertPitch)}${toggleMarkup('setting-mouse','Mouse steering','Drag across the world to pitch and bank.',settings.mouseSteering)}${toggleMarkup('setting-map','Navigation map','Show your position above the valley.',settings.showMap)}<button class="primary-btn" data-close>Back to the skies <i data-lucide="arrow-up-right"></i></button></div>`;
+ const responseLabels=heli?['Cyclic fore / aft','Cyclic left / right','Yaw pedals','Collective']:['Pitch','Roll','Rudder','Throttle'];
+ content=dialogHead('Make it your flight')+`<div class="dialog-body settings-body"><h3 class="dialog-section-title">Flight</h3><div class="settings-row"><div><strong>Graphics quality</strong><p>Balance detail with a smooth flight.</p></div><select id="graphics-quality" aria-label="Graphics quality"><option value="high" ${settings.quality==='high'?'selected':''}>High</option><option value="medium" ${settings.quality==='medium'?'selected':''}>Balanced</option><option value="low" ${settings.quality==='low'?'selected':''}>Performance</option></select></div>${toggleMarkup('setting-assist','Flight assist',heli?'Brakes to a hover; holds position, altitude and heading.':'Holds your heading and altitude.',flight.state.autopilot)}${toggleMarkup('setting-invert','Invert pitch','Swap the up and down flight controls.',settings.invertPitch)}${toggleMarkup('setting-mouse','Mouse steering','Drag across the world to pitch and bank.',settings.mouseSteering)}`
+ +`<h3 class="dialog-section-title">Control response</h3><p class="settings-help">How quickly keys, mouse and touch reach full deflection. Holding always gives full travel; 100% is the gentle default.</p><div class="settings-sliders">${['pitch','roll','yaw','throttle'].map((axis,i)=>sliderMarkup(`response-${axis}`,responseLabels[i],settings.response[axis],RESPONSE)).join('')}</div>`
+ +`<h3 class="dialog-section-title">Camera</h3><div class="settings-row"><div><strong>View</strong><p>Saved for your next flight; C cycles it.</p></div><div class="segmented" role="radiogroup" aria-label="Camera view">${[['chase','Chase'],['cockpit','Cockpit'],['orbit','Orbit']].map(([id,label])=>`<button role="radio" data-view="${id}" aria-checked="${view===id}" tabindex="${view===id?0:-1}">${label}</button>`).join('')}</div></div><div class="settings-sliders single">${sliderMarkup('chase-distance','Chase distance',settings.chaseDistance,CHASE_DISTANCE)}</div>`
+ +`<h3 class="dialog-section-title">Sound</h3>${toggleMarkup('setting-sound','Flight sound','Engines, wind and warning horns.',!settings.muted)}<div class="settings-sliders single">${sliderMarkup('master-volume','Master volume',settings.volume,VOLUME)}</div>`
+ +`<h3 class="dialog-section-title">Display</h3>${toggleMarkup('setting-hud','Flight panels','Mission, weather and camera panels. Warnings stay visible; H shows everything.',settings.showHud)}${toggleMarkup('setting-instruments','Instrument strip','Airspeed, altitude, attitude, throttle and pause.',settings.showInstruments)}${toggleMarkup('setting-hints','Key hints','Keyboard reminders and frame rate.',settings.showHints)}${toggleMarkup('setting-crosshair','Crosshair','The centre marker ahead of the aircraft.',settings.showCrosshair)}${toggleMarkup('setting-map','Navigation map','Show your position above the valley.',settings.showMap)}`
+ +`<div class="settings-actions"><button class="secondary-btn" id="restore-defaults"><i data-lucide="rotate-ccw"></i>Restore defaults</button><button class="primary-btn" data-close>Back to the skies <i data-lucide="arrow-up-right"></i></button></div><p class="dialog-note">Restoring defaults keeps your aircraft, airfield, flight log and the flight in progress.</p></div>`;
  }else if(type==='controls'){
  const controls=[[heli?'Cyclic forward / backward':'Pitch down / up',['W','S']],[heli?'Cyclic left / right':'Bank left / right',['A','D']],['Alternate flight controls',['←','↑','↓','→']],[heli?'Yaw left / right':'Rudder left / right',['Q','E']],[heli?'Raise / lower collective':'Increase / decrease throttle',['Shift','Ctrl']],['Change camera',['C']],['Pause / resume',['P']],[heli?'Hover hold':'Flight assist',['Space']],...(!heli&&!flight.type.fixedGear?[['Landing gear',['G']]]:[]),...(!heli&&!flight.type.noFlaps?[['Cycle flaps',['F']]]:[]),['Navigation map',['M']],['Map zoom out / in',['−','+']],['Map framing',['V']],['Navigation chart',['N']],['Hide instruments',['H']],['Restart flight',['R']]];
  content=dialogHead('You have control')+`<div class="dialog-body"><p>${heli?`${hoverPercent(flight.type)}% collective hovers. Tilt forward with W to move; center the cyclic to level. Space brakes into a steady hover.`:'A little input goes a long way. Bank gently into turns and add power to climb.'}</p><div class="controls-list">${controls.map(([label,k])=>`<div class="control-row"><span>${label}</span><span>${k.map(v=>`<kbd>${v}</kbd>`).join('')}</span></div>`).join('')}</div><p class="dialog-note">On a phone, drag the left ${heli?'cyclic':'yoke'} to steer and hold + / − to adjust ${heli?'collective; use the two yaw buttons to turn':'throttle'}. In orbit view, drag to look around and scroll to zoom. ${flight.type.name}: ${flight.type.help}</p></div>`;
@@ -293,7 +322,7 @@ function showDialog(type){
  const totalTime=savedFlights.reduce((n,f)=>n+f.time,0)+flight.state.flightTime,totalDistance=savedFlights.reduce((n,f)=>n+f.distance,0)+flight.state.distance;
  content=dialogHead('Every flight is a story')+`<div class="dialog-body"><p>Your time in the skies, saved on this browser.</p><div class="log-stats"><div class="log-stat"><span>Total flight time</span><strong>${formatTime(totalTime)}</strong></div><div class="log-stat"><span>Distance explored</span><strong>${(totalDistance/1852).toFixed(1)} <span>NM</span></strong></div></div><h3 class="dialog-section-title">Current flight</h3><div class="log-row"><span>The Swiss Alps · ${flight.type.name}</span><strong>${formatTime(flight.state.flightTime)}</strong></div><h3 class="dialog-section-title">Previous flights</h3>${savedFlights.length?savedFlights.slice(0,5).map(f=>`<div class="log-row"><span>${new Date(f.date).toLocaleDateString(undefined,{month:'short',day:'numeric'})}${f.aircraft?` · ${aircraftType(f.aircraft).name}`:''} · ${(f.distance/1852).toFixed(1)} NM</span><strong>${formatTime(f.time)}</strong></div>`).join(''):'<div class="empty-log">Your adventure is just beginning. Flights are saved when you restart or leave the simulator.</div>'}</div>`;
  }
- $('dialog-content').innerHTML=content;dialog.classList.toggle('chart-dialog',type==='chart');if(type!=='chart')chartMap=null;
+ $('dialog-content').innerHTML=content;dialog.classList.toggle('chart-dialog',type==='chart');dialog.classList.toggle('settings-dialog',type==='settings');if(type!=='chart')chartMap=null;
  refreshIcons();if(!dialog.open)dialog.showModal();
  dialog.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>dialog.close());dialog.querySelectorAll('[data-next-dialog]').forEach(b=>b.onclick=()=>showDialog(b.dataset.nextDialog));
  dialog.querySelectorAll('[data-weather]').forEach(b=>b.onclick=()=>{setWeather(b.dataset.weather);showDialog('environment');});
@@ -302,6 +331,13 @@ function showDialog(type){
  $('setting-assist').onclick=e=>{flight.toggleAutopilot();e.currentTarget.setAttribute('aria-checked',flight.state.autopilot);updateAssist();};
  for(const [id,key] of [['setting-invert','invertPitch'],['setting-mouse','mouseSteering']])$(id).onclick=e=>{settings[key]=!settings[key];clearControls();e.currentTarget.setAttribute('aria-checked',settings[key]);saveSettings();};
  $('setting-map').onclick=e=>{toggleMap();e.currentTarget.setAttribute('aria-checked',settings.showMap);};
+ for(const [id,key] of [['setting-hud','showHud'],['setting-instruments','showInstruments'],['setting-hints','showHints'],['setting-crosshair','showCrosshair']])$(id).onclick=e=>{settings[key]=!settings[key];applyDisplay();saveSettings();e.currentTarget.setAttribute('aria-checked',settings[key]);};
+ for(const axis of ['pitch','roll','yaw','throttle'])bindSlider(`response-${axis}`,v=>{settings.response[axis]=v;controls.setResponse(settings.response);});
+ bindSlider('chase-distance',v=>{settings.chaseDistance=v;sceneDirty=true;});
+ bindSlider('master-volume',v=>{settings.volume=v;audio.setVolume(v);});
+ dialog.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{setView(b.dataset.view,false);dialog.querySelectorAll('[data-view]').forEach(o=>{const on=o.dataset.view===view;o.setAttribute('aria-checked',on);o.tabIndex=on?0:-1;});});radioKeys('[data-view]');
+ $('setting-sound').onclick=async e=>{const b=e.currentTarget;await setSound(settings.muted);b.setAttribute('aria-checked',!settings.muted);};
+ $('restore-defaults').onclick=restoreDefaults;
  }
  if(type==='chart')setupChart();
  if(type==='landing'){if($('start-landing'))$('start-landing').onclick=()=>{if(startLanding(selection.field))dialog.close();};dialog.querySelectorAll('[data-mission-airport]').forEach(b=>b.onclick=()=>{selection.select(b.dataset.missionAirport);showDialog('landing');$('start-landing')?.focus();});}
@@ -397,7 +433,7 @@ function updateCamera(dt){
   offset.fromArray(flight.type.cockpitOffset??[0,heli?0.65:1.05,heli?-1.25:-1.8]).applyQuaternion(s.quaternion);camera.position.copy(s.position).add(offset);camera.quaternion.copy(s.quaternion);camera.fov=67;
  }else{
   if(view==='orbit')offset.set(Math.sin(orbitAngle)*orbitDistance,orbitHeight,Math.cos(orbitAngle)*orbitDistance).multiplyScalar(scale*(heli?1:THREE.MathUtils.clamp(1.2/camera.aspect,1,2.3)));
-  else {const portraitFactor=THREE.MathUtils.clamp(1.2/camera.aspect,1,2.3);offset.set(0,(heli?6.2:8.3)*portraitFactor,(heli?19:23)*portraitFactor).multiplyScalar(scale);}
+  else {const portraitFactor=THREE.MathUtils.clamp(1.2/camera.aspect,1,2.3);offset.set(0,(heli?6.2:8.3)*portraitFactor,(heli?19:23)*portraitFactor).multiplyScalar(scale*settings.chaseDistance);}
   offset.applyQuaternion(frame);cameraPosition.copy(s.position).add(offset);
   // Chase stays on the heading centerline; world-space lag drifts sideways in turns.
   if(view==='chase')camera.position.copy(cameraPosition);
@@ -422,8 +458,8 @@ function tick(){
 function resize(){sceneDirty=true;const w=worldContainer.clientWidth,h=worldContainer.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);initialCamera=true;}
 window.addEventListener('resize',resize);
 window.addEventListener('beforeunload',saveFlight);
-updateAircraftLabels();updateAirportUI();updateAssist();updateUI(0);updateCamera(1);renderer.render(scene,camera);tick();
+setView(view,false);updateAircraftLabels();updateAirportUI();updateAssist();updateUI(0);updateCamera(1);renderer.render(scene,camera);tick();
 setTimeout(()=>{$('loading').classList.add('leaving');setTimeout(()=>$('loading').remove(),750);},500);
 // Expose read-only diagnostic snapshots for repeatable rendering and control checks.
-window.aeronaut={getState:()=>({...flight.state,position:flight.state.position.toArray(),quaternion:flight.state.quaternion.toArray(),paused,view,quality:settings.quality,weather:settings.weather}),getMission:()=>landing.snapshot(),startLanding:()=>startLanding(selection.field),getRendererInfo:()=>({...renderer.info.render}),reset:restart,setPaused, setQuality,setAircraft,runwayStart:(id,runway)=>runwayStart(id?resolveAirport(id,runway).field:selection.field),approachStart:(id,runway)=>approachStart(id?resolveAirport(id,runway).field:selection.field),airports:()=>world.airports.map(({position,windsock,...field})=>field),getAirport:airportState,getNavigation:()=>{const n=navReadout();return{destination:navigationDestination(airportState()),bearing:n&&Number(n.bearingText),distance:n?.distance,framing:{...miniFraming},scale:miniMap.scale?.label,pendingTiles:miniMap.pending,drawMs:mapDrawMs};},setMapFraming:(framing,zoom)=>setMapFraming({framing,...(zoom===undefined?{}:{zoom})}),selectAirport:(id,runway)=>selection.select(id,runway),getAircraft:()=>({id:flight.type.id,name:flight.type.name,gearPosition:aircraft.gearPosition,surfaces:aircraft.surfaces,afterburner:aircraft.afterburner})};
+window.aeronaut={getState:()=>({...flight.state,position:flight.state.position.toArray(),quaternion:flight.state.quaternion.toArray(),paused,view,quality:settings.quality,weather:settings.weather}),getSettings:()=>structuredClone(settings),getMission:()=>landing.snapshot(),startLanding:()=>startLanding(selection.field),getRendererInfo:()=>({...renderer.info.render}),reset:restart,setPaused, setQuality,setAircraft,runwayStart:(id,runway)=>runwayStart(id?resolveAirport(id,runway).field:selection.field),approachStart:(id,runway)=>approachStart(id?resolveAirport(id,runway).field:selection.field),airports:()=>world.airports.map(({position,windsock,...field})=>field),getAirport:airportState,getNavigation:()=>{const n=navReadout();return{destination:navigationDestination(airportState()),bearing:n&&Number(n.bearingText),distance:n?.distance,framing:{...miniFraming},scale:miniMap.scale?.label,pendingTiles:miniMap.pending,drawMs:mapDrawMs};},setMapFraming:(framing,zoom)=>setMapFraming({framing,...(zoom===undefined?{}:{zoom})}),selectAirport:(id,runway)=>selection.select(id,runway),getAircraft:()=>({id:flight.type.id,name:flight.type.name,gearPosition:aircraft.gearPosition,surfaces:aircraft.surfaces,afterburner:aircraft.afterburner})};
 if(query.get('start')==='runway')runwayStart();else if(query.get('start')==='approach')approachStart();
