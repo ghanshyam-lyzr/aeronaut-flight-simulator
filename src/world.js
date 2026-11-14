@@ -109,6 +109,10 @@ function makeTerrainMaterial() {
 
 // Detail by distance from the camera to a tile's nearest edge: [distance, index step].
 const FOREST_RANGE = { high: 16000, medium: 12500, low: 8500 };
+// The network's fields are drawn within this distance of the camera (from the
+// field's centre, so a long runway still shows on a long final); past it the haze
+// has hidden them and they cost nothing. Alpine Field is always drawn.
+export const AIRPORT_RANGE = { high: 40000, medium: 30000, low: 22000 };
 const TERRAIN_LOD = { high: [[9000, 1], [22000, 2], [Infinity, 4]], medium: [[16000, 2], [Infinity, 4]], low: [[7500, 2], [Infinity, 4]] };
 
 // Tiles keep full detail (104 segments, 84.6 m) only within reach of the step-1
@@ -339,8 +343,8 @@ function nearAirport(x, z, test) {
   for (const { airport, reach } of NETWORK) if (Math.abs(x - airport.x) < reach && Math.abs(z - airport.z) < reach && test(airport, x, z)) return true;
   return false;
 }
-// The surveyed sites for future fields are kept clear the same way.
-const SITES = AIRPORT_SITES.map(a => ({ airport: a, reach: a.runwayLength / 2 + 1900 }));
+// Surveyed sites not yet built are kept clear the same way (a built one is in NETWORK).
+const SITES = AIRPORT_SITES.filter(site => !AIRPORTS.some(a => a.id === site.id)).map(a => ({ airport: a, reach: a.runwayLength / 2 + 1900 }));
 function nearSite(x, z, test) {
   for (const { airport, reach } of SITES) if (Math.abs(x - airport.x) < reach && Math.abs(z - airport.z) < reach && test(airport, x, z)) return true;
   return false;
@@ -596,10 +600,19 @@ function networkField(scene, airport, materials) {
   const apron = airport.apron, side = Math.sign(apron.cross[0] + apron.cross[1]), mid = (apron.along[0] + apron.along[1]) / 2;
   const near = side > 0 ? apron.cross[0] : apron.cross[1], far = side > 0 ? apron.cross[1] : apron.cross[0];
   const apronDepth = Math.abs(far - near), apronLength = apron.along[1] - apron.along[0];
-  const deck = kind === 'regional' || kind === 'lakeside' ? materials.concrete : materials.gravel;
+  const large = kind === 'regional' || kind === 'commercial';
+  const deck = large || kind === 'lakeside' ? materials.concrete : materials.gravel;
   box(apronDepth, .3, apronLength, (near + far) / 2, 0, at(mid), deck);
   const taxi = Math.abs(near) - W / 2;
-  for (const t of kind === 'regional' ? [apron.along[0] + 60, apron.along[1] - 60] : [mid]) box(taxi + 2, .3, kind === 'regional' ? 23 : 15, side * (W / 2 + taxi / 2), 0, at(t), paved ? materials.runway : materials.gravel);
+  const links = kind === 'commercial' ? [apron.along[0] + 60, mid, apron.along[1] - 60] : kind === 'regional' ? [apron.along[0] + 60, apron.along[1] - 60] : [mid];
+  for (const t of links) box(taxi + 2, .3, large ? 23 : 15, side * (W / 2 + taxi / 2), 0, at(t), paved ? materials.runway : materials.gravel);
+  if (kind === 'commercial') {
+    // A parallel taxiway the length of the runway, so the large jets can taxi to either end, with its centreline.
+    const tx = side * (W / 2 + taxi / 2);
+    box(23, .3, L - 40, tx, 0, 0, materials.runway);
+    for (const t of [20, L - 20]) box(taxi + 2, .3, 23, tx, 0, at(t), materials.runway);
+    box(.4, .1, L - 60, tx, .32, 0, materials.stripe);
+  }
   if (paved) {
     // Designators, threshold bars, centreline and edge lines, read from each approach.
     const bars = THRESHOLD_BARS.find(([width]) => W >= width)[1], pitch = (W - 6) / bars;
@@ -623,6 +636,14 @@ function networkField(scene, airport, materials) {
   if (airport.lit) for (let d = 0; d <= L; d += 60) for (const x of [-1, 1]) {
     const light = new THREE.Mesh(new THREE.SphereGeometry(.6, 5, 4), materials.light); light.position.set(x * (W / 2 + 2.5), .9, at(d)); group.add(light);
   }
+  // Approach lights on the long runways: a centreline row and a crossbar beyond each
+  // threshold, kept to the flat ground the grading leaves past the overrun.
+  if (airport.lit && kind === 'commercial') for (const end of [0, L]) {
+    const out = end ? 1 : -1;
+    for (let d = 30; d <= 300; d += 30) for (const x of d === 150 ? [-12, -8, -4, 0, 4, 8, 12] : [-1.5, 0, 1.5]) {
+      const light = new THREE.Mesh(new THREE.SphereGeometry(.6, 5, 4), materials.light); light.position.set(x, .9, at(end + out * d)); group.add(light);
+    }
+  }
   // Buildings stand along the apron's far edge, facing the runway.
   const row = far - side * 22, along = t => at(apron.along[0] + apronLength * t);
   if (kind === 'regional') {
@@ -633,6 +654,16 @@ function networkField(scene, airport, materials) {
     box(15, 6, 15, row, 33, along(.12), materials.glass);
     box(17, 1.2, 17, row, 36.6, along(.12), materials.roof);
     for (const t of [.74, .9]) { box(42, 15, 54, row, 7.5, along(t), materials.wall); arch(44, 56, row, 15, along(t)); box(.4, 11, 40, row - side * 21.2, 6, along(t), materials.roof); }
+  } else if (kind === 'commercial') {
+    // A long glazed terminal with gate piers reaching toward the runway, a tall tower and a row of arched hangars.
+    box(34, 14, 520, row, 7, along(.36), materials.wall);
+    box(1, 7, 500, row - side * 17.2, 8, along(.36), materials.glass);
+    box(36, 1.4, 524, row, 14.6, along(.36), materials.roof);
+    for (const t of [.2, .36, .52]) { box(70, 6, 14, row - side * 52, 4, along(t), materials.wall); box(70, .8, 15, row - side * 52, 7.3, along(t), materials.roof); }
+    box(12, 44, 12, row, 22, along(.06), materials.concrete);
+    box(18, 7, 18, row, 47.5, along(.06), materials.glass);
+    box(20, 1.4, 20, row, 51.6, along(.06), materials.roof);
+    for (const t of [.7, .8, .9]) { box(60, 20, 70, row, 10, along(t), materials.wall); arch(62, 72, row, 20, along(t)); box(.4, 15, 54, row - side * 30.2, 8, along(t), materials.roof); }
   } else if (kind === 'grass') {
     box(12, 4.5, 16, row, 2.25, along(.3), materials.timber); gable(13.5, 4, 17, row, 4.5, along(.3), materials.roof);
     box(20, 6, 24, row, 3, along(.72), materials.timber); gable(22, 5, 25, row, 6, along(.72), materials.roof);
@@ -654,7 +685,7 @@ function networkField(scene, airport, materials) {
   // Every sock shows the same wind as Alpine Field's.
   sock.rotation.y = airport.heading;
   batchStatic(group);
-  return { ...airport, position: new THREE.Vector3(airport.x, airport.elevation, airport.z), windsock: sock };
+  return { ...airport, position: new THREE.Vector3(airport.x, airport.elevation, airport.z), windsock: sock, group };
 }
 
 function airports(scene) {
@@ -884,6 +915,8 @@ export function createWorld(scene, renderer) {
     }
     // A cell half planted and no longer wanted starts again next time.
     for (const key of plantings.keys()) if (!pendingStands.some(p => p.key === key)) plantings.delete(key);
+    const airportRange = AIRPORT_RANGE[quality] ?? AIRPORT_RANGE.high;
+    for (const field of fields) if (field.group) field.group.visible = Math.hypot(position.x - field.x, position.z - field.z) < airportRange;
     for (const cloud of clouds) cloud.visible = cloud.userData.enabled && Math.hypot(position.x - cloud.position.x, position.z - cloud.position.z) < CLOUD_RANGE;
     // Nearest last, so they are popped first.
     pendingTiles.sort((a, b) => b.userData.distance - a.userData.distance);

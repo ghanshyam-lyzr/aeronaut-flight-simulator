@@ -32,11 +32,12 @@ function glslAsJs() {
 }
 const each = (field, step, fn) => { const f = footprint(field); for (let a = f.along[0]; a <= f.along[1]; a += step) for (let c = f.cross[0]; c <= f.cross[1]; c += step) fn(runwayPoint(a, c, field), a, c); };
 
-test('the registry: five distinct fields with stable ids, truthful runway numbers and complete metadata', () => {
-  assert.equal(AIRPORTS.length, 5);
-  assert.deepEqual(AIRPORTS.map(a => a.id), ['alpine-field', 'orvane-regional', 'verdance-meadow', 'serein-lakeside', 'brume-col']);
+test('the registry: ten distinct fields with stable ids, truthful runway numbers and complete metadata', () => {
+  assert.equal(AIRPORTS.length, 10);
+  assert.deepEqual(AIRPORTS.map(a => a.id), ['alpine-field', 'orvane-regional', 'verdance-meadow', 'serein-lakeside', 'brume-col',
+    'calmeterre-international', 'aurin-cote', 'port-aurin', 'sorre-meadow', 'vauclair-altiport']);
   for (const key of ['id', 'ident', 'name']) assert.equal(new Set(AIRPORTS.map(a => a[key])).size, AIRPORTS.length, key);
-  assert.deepEqual(new Set(NEW.map(a => a.kind)), new Set(['regional', 'grass', 'lakeside', 'mountain']));
+  assert.deepEqual(new Set(NEW.map(a => a.kind)), new Set(['regional', 'grass', 'lakeside', 'mountain', 'commercial']));
   for (const a of AIRPORTS) {
     assert.ok(Object.isFrozen(a) && Object.isFrozen(a.runways), a.id);
     assert.match(a.ident, /^QA[A-Z]{2}$/);
@@ -50,7 +51,8 @@ test('the registry: five distinct fields with stable ids, truthful runway number
     assert.equal(Math.abs(Number(a.runway) - Number(a.reciprocal)), 18, a.id);
     assert.deepEqual(a.runways.map(r => r.designator), [a.runway, a.reciprocal]);
     assert.ok(close(tenths(a.runways[1].heading), (tenths(a.heading) + 180) % 360, 1e-9));
-    assert.ok(a.runwayLength >= 600 && a.runwayWidth >= 18 && a.elevation > WATER_LEVEL + 25, a.id);
+    // Dry: the original fields stand 25 m above the water, the shore fields of the Aurin coast at least 8 m.
+    assert.ok(a.runwayLength >= 600 && a.runwayWidth >= 18 && a.elevation > WATER_LEVEL + (a.region === 'southern-coast' ? 8 : 25), a.id);
   }
   assert.equal(designator(0), '36'); assert.equal(designator(Math.PI), '18'); assert.equal(designator(Math.PI / 180 * 4), '36'); assert.equal(designator(Math.PI / 180 * 106), '11');
   // Two or more runways cross the valley grain rather than running north/south.
@@ -120,7 +122,7 @@ test('each new field is graded flat in runway-local coordinates, in the collider
     assert.ok(steps[1] < 1e-3 && steps[2] < 1e-3, `${a.id}: mesh ${steps[1]} / ${steps[2]} m off at steps 1 / 2`);
     assert.ok(steps[4] < 1.5, `${a.id}: mesh ${steps[4]} m off at step 4`);
     // Dry with a margin, and the lake shader sees the same land.
-    each(a, 40, (p, along, cross) => assert.ok(Math.max(WATER_LEVEL, groundHeight(p.x, p.z)) > WATER_LEVEL + 25, `${a.id} ${along}, ${cross}`));
+    each(a, 40, (p, along, cross) => assert.ok(Math.max(WATER_LEVEL, groundHeight(p.x, p.z)) > WATER_LEVEL + Math.min(25, a.elevation - WATER_LEVEL - 2), `${a.id} ${along}, ${cross}`));
   }
 });
 
@@ -138,10 +140,12 @@ test('approaches: open finals on both runways, without artificial walls', () => 
       previous = highest;
     }
   }
-  // Beside the new runways the grading never cuts a bank steeper than 40°.
+  // Beside the new runways the grading never cuts a bank steeper than 40° (where it
+  // reaches: the box's corners beyond the blend are natural ground, like Val Vauclair's glacial step).
   for (const g of GRADED_AIRPORTS) {
     const a = g.airport;
     for (let along = -g.halfAlong - g.blendAlong; along <= g.halfAlong + g.blendAlong; along += 60) for (let cross = -g.halfCross - g.blendCross; cross <= g.halfCross + g.blendCross; cross += 30) {
+      if (Math.hypot(Math.max(Math.abs(along) - g.halfAlong, 0) / g.blendAlong, Math.max(Math.abs(cross) - g.halfCross, 0) / g.blendCross) >= 1) continue;
       const x = a.x + (along + g.along) * g.sin + (cross + g.cross) * g.cos, z = a.z - (along + g.along) * g.cos + (cross + g.cross) * g.sin, h = groundHeight(x, z);
       const slope = Math.hypot(groundHeight(x + 10, z) - h, groundHeight(x, z + 10) - h) / 10;
       assert.ok(slope < Math.tan(40 * Math.PI / 180), `${a.id}: slope ${slope.toFixed(2)} at ${along}, ${cross}`);

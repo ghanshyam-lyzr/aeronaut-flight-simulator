@@ -8,6 +8,7 @@
 // runway's threshold. `runwayDirection(field, designator)` turns a field round to
 // land the other way. Every name and identifier is fictional.
 import { AIRFIELD } from './airfield.js';
+import { AIRPORT_SITES } from './regions.js';
 
 const degrees = d => d * Math.PI / 180;
 const ANY = Object.freeze(['asphalt', 'grass']), PAVED = Object.freeze(['asphalt']);
@@ -39,6 +40,14 @@ function field(spec) {
     apron: Object.freeze({ along: Object.freeze(spec.apron.along), cross: Object.freeze(spec.apron.cross) }),
   });
 }
+
+// The outer regions' fields are built on the sites surveyed in regions.js
+// (docs/world-scale.md), keeping each site's id, name, position, elevation,
+// runway and apron exactly; the registry adds an ident, lighting and the words.
+const surveyed = (id, spec) => {
+  const { approach, heading, ...site } = AIRPORT_SITES.find(s => s.id === id);
+  return field({ ...site, apron: { along: [...site.apron.along], cross: [...site.apron.cross] }, ...spec });
+};
 
 // The original field keeps its own object's numbers and its original elliptical
 // apron grading in terrain.js (`grading: 'legacy'`); the new fields grade the
@@ -81,6 +90,21 @@ export const AIRPORTS = Object.freeze([
     summary: 'A short altiport on the 1,140 m saddle of the Col de Brume, approached up either valley.',
     caution: 'Short and narrow at 1,142 m, with high ground beside the strip: light and short-field aircraft only.',
   }),
+  surveyed('calmeterre-international', { ident: 'QACI', lit: true,
+    summary: 'The long runway on the open Calmeterre floodplain, with a gated terminal for the large jets.',
+    caution: 'The Calme and an oxbow lake lie under the runway 01 final; a 40 m terrace rises 1 km east.' }),
+  surveyed('aurin-cote', { ident: 'QAAC', lit: true,
+    summary: 'A long coastal runway on the Aurin plain, built for the large jets.',
+    caution: 'The Divide rises close north of the runway 10 final: join it from the sea to the south, inside 4 km, and keep right of the centreline.' }),
+  surveyed('port-aurin', { ident: 'QAPA', lit: true,
+    summary: "A regional shore field 800 m inland from the Mer d'Aurin, open water along its south side.",
+    caution: 'Aurin Côte lies 18 km east: keep the pattern west of the gorge.' }),
+  surveyed('sorre-meadow', { ident: 'QASM', lit: false,
+    summary: 'A mown grass strip among the farms of the Plaine de Sorre, open tableland both ways.',
+    caution: 'Grass at 703 m: light aircraft and turboprops only. Puy de Sorre stands 10 km north-north-east.' }),
+  surveyed('vauclair-altiport', { ident: 'QAPV', lit: true,
+    summary: 'A high paved strip on the outwash floor of Val Vauclair, below the glacier.',
+    caution: 'Field elevation 1,483 m with walls 350 m high 2 km either side: approach along the trough only, and allow a longer roll.' }),
 ]);
 
 /** A field by id, or undefined. */

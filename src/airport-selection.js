@@ -35,13 +35,14 @@ export function describeField(field) {
 /**
  * Whether a scored landing mission can be flown by an aircraft (a fleet id) at
  * a field. Unsuitable pairings (too short, too narrow, grass for a paved-only
- * aircraft) are refused with the reason and the fields that do suit it; runway
- * departures stay open to any pairing for free exploration.
+ * aircraft) are refused with the reason and the fields that do suit it, nearest
+ * first; runway departures stay open to any pairing for free exploration.
  */
 export function missionAvailability(airport, aircraftId) {
   const fit = suitability(airport, aircraftId), available = fit.rating !== 'unsuitable';
+  const away = a => Math.hypot(a.x - airport.x, a.z - airport.z);
   return { available, rating: fit.rating, reason: fit.reason,
-    alternatives: available ? [] : AIRPORTS.filter(a => suitability(a, aircraftId).rating !== 'unsuitable').map(a => a.id) };
+    alternatives: available ? [] : AIRPORTS.filter(a => suitability(a, aircraftId).rating !== 'unsuitable').sort((a, b) => away(a) - away(b)).map(a => a.id) };
 }
 
 /**

@@ -70,7 +70,7 @@ The chart, minimap, world framing, bounds clamp and edge outline all read `WORLD
 
 ## Surveyed airport sites (for the new-airports thread)
 
-`AIRPORT_SITES` in `src/regions.js` holds five sites, **not built and not graded**. Each is shaped like an `AIRPORTS` entry, so `footprint`, `gradingBox`, `localCoordinates`, `inProtectedArea` and `runwayPoint` work on it directly. Trees, houses and roads already keep off each site's footprint and protected approaches.
+`AIRPORT_SITES` in `src/regions.js` holds five sites, now built as airports (docs/airport-expansion.md); the site data stays as the survey record. Each is shaped like an `AIRPORTS` entry, so `footprint`, `gradingBox`, `localCoordinates`, `inProtectedArea` and `runwayPoint` work on it directly. Trees, houses and roads already keep off each site's footprint and protected approaches.
 
 Headings are the primary runway's landing direction, true, clockwise from north (the airports.js convention). The apron is in runway-local metres: along from the primary threshold, cross to the right of the centreline.
 

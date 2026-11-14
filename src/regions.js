@@ -219,8 +219,8 @@ export const AIRFIELD_SITES = Object.freeze([
   { id: 'serein', region: 'southern-basin', x: 7800, z: 29800, heading: .9, length: 1500 },
 ]);
 
-// Surveyed for the airports of the outer regions (docs/world-scale.md): not built
-// and not graded yet. Each is shaped like an AIRPORTS entry (airports.js) so its
+// Surveyed for the airports of the outer regions (docs/world-scale.md); airports.js
+// builds a field on each (docs/airport-expansion.md). Each is shaped like an AIRPORTS entry (airports.js) so its
 // footprint and protected approaches can be measured the same way.
 // `heading` is the primary runway's landing direction in radians clockwise from
 // north; `apron` is in runway-local metres (along from the primary threshold,

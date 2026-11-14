@@ -51,12 +51,12 @@ test('the original 70.4 km world is unchanged, bit for bit, outside the new pass
   assert.equal(n, 117954);
   assert.equal(sum, 250638851.79134178);
   assert.equal(sq, 732288478.6898963);
-  // All five fields keep their positions, elevations and graded runways.
+  // The original five fields keep their positions, elevations and graded runways (the outer fields are graded outside CORE).
   for (const a of AIRPORTS) for (let along = 0; along <= a.runwayLength; along += 50) for (const cross of [-a.runwayWidth / 2, 0, a.runwayWidth / 2]) {
     const p = runwayPoint(along, cross, a);
     assert.ok(Math.abs(groundHeight(p.x, p.z) - a.elevation) < 1e-6, `${a.name} at ${along}`);
   }
-  assert.deepEqual(AIRPORTS.map(a => [a.id, a.x, a.z, a.elevation]), [
+  assert.deepEqual(AIRPORTS.slice(0, 5).map(a => [a.id, a.x, a.z, a.elevation]), [
     ['alpine-field', 900, -1800, 78], ['orvane-regional', 21000, -2000, 1058], ['verdance-meadow', -23900, -3100, 440],
     ['serein-lakeside', 1390, 15540, 42], ['brume-col', -11350, 2350, 1142]]);
 });
@@ -200,7 +200,7 @@ test('five surveyed airport sites: viable, dry, flat, clear on both approaches a
       assert.ok(s.elevation + Math.tan(3 * Math.PI / 180) * d - groundHeight(p.x, p.z) > 30, `${s.id} approach to ${end ? 'far' : 'near'} end at ${d} m`);
     }
     // Far from every field and every other site.
-    for (const o of [...AIRPORTS, ...AIRPORT_SITES]) if (o !== s) assert.ok(Math.hypot(o.x - s.x, o.z - s.z) > 12000, `${s.id} and ${o.id}`);
+    for (const o of [...AIRPORTS, ...AIRPORT_SITES]) if (o.id !== s.id) assert.ok(Math.hypot(o.x - s.x, o.z - s.z) > 12000, `${s.id} and ${o.id}`);
     // No village is planned on the field or under its approaches.
     for (const [x, z] of VILLAGES) assert.ok(!inProtectedArea(s, x, z), `${s.id} village at ${x}, ${z}`);
     assert.ok(Math.abs(localCoordinates(s, s.x, s.z).along - s.runwayLength / 2) < 1e-9);

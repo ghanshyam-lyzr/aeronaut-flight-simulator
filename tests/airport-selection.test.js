@@ -92,9 +92,10 @@ test('scored missions need a suitable aircraft; unsuited pairings name the reaso
   for (const a of AIRPORTS) for (const id of ['helicopter', 'transport']) assert.equal(missionAvailability(a, id).rating, 'recommended');
   assert.equal(missionAvailability(ALPINE_FIELD, 'airliner').available, true);
   assert.equal(missionAvailability(ALPINE_FIELD, 'airliner').rating, 'suitable');
-  assert.deepEqual(missionAvailability(airportById('brume-col'), 'jet').alternatives, ['alpine-field', 'orvane-regional', 'serein-lakeside']);
+  // Alternatives come nearest first.
+  assert.deepEqual(missionAvailability(airportById('brume-col'), 'jet').alternatives.slice(0, 3), ['alpine-field', 'serein-lakeside', 'orvane-regional']);
   assert.match(missionAvailability(airportById('verdance-meadow'), 'jet').reason, /paved/);
-  assert.deepEqual(missionAvailability(airportById('serein-lakeside'), 'widebody').alternatives, ['alpine-field', 'orvane-regional']);
+  assert.deepEqual(missionAvailability(airportById('serein-lakeside'), 'widebody').alternatives, ['alpine-field', 'orvane-regional', 'aurin-cote', 'calmeterre-international']);
 });
 
 test('missions start on the selected field and runway: rotated headings, elevations and helicopters', () => {
