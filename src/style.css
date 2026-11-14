@@ -204,6 +204,6 @@ dialog.chart-dialog{width:min(1060px,calc(100% - 32px))}
 /* Display preferences. Hidden flight panels keep the warnings, and a mission card underway. */
 .hide-hud .hud>:not(.flight-notice):not(.gear-warning):not(.mission-panel),.hide-hud:not(.landing-mode) .hud>.mission-panel{display:none}
 .hide-instruments .instruments,.hide-hints .control-strip,.hide-crosshair .center-indicator{display:none}
-.restore-hud.partial{top:auto;right:auto;bottom:8px;left:50%;transform:translateX(-50%);padding:8px 12px}
-@media(max-width:550px){.settings-dialog .segmented button{padding:0 9px}.settings-sliders{gap:0 16px}.landing-mode .restore-hud:not(.partial){top:292px}.restore-hud.partial{bottom:3px;padding:5px 10px}}
+.restore-hud.partial{padding:9px 12px}
+@media(max-width:550px){.settings-dialog .segmented button{padding:0 9px}.settings-sliders{gap:0 16px}.landing-mode .restore-hud:not(.partial){top:292px}.restore-hud.partial{padding:7px 10px}}
 @media(prefers-reduced-motion:reduce){.segmented button{transition:none}}

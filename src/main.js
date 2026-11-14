@@ -11,7 +11,7 @@ import { createAircraft, createCockpit } from './aircraft.js';
 import { FlightController, FlightAudio, FollowFrame } from './flight.js';
 import { FLEET, aircraftType } from './fleet.js';
 import { FlightInputs } from './controls.js';
-import { loadSettings, saveSettings as storeSettings, resetSettings, CUSTOMIZATION_KEYS, RESPONSE, CHASE_DISTANCE, VOLUME, percent } from './settings.js';
+import { loadSettings, saveSettings as storeSettings, resetSettings, CUSTOMIZATION_KEYS, anyDisplayHidden, toggleDisplay, RESPONSE, CHASE_DISTANCE, VOLUME, percent } from './settings.js';
 import { disposeObject } from './helicopter.js';
 import { LandingMission, landingProfile } from './landing-mission.js';
 import { runwayPoint } from './airfield.js';
@@ -207,13 +207,18 @@ function setView(value,notify=true){sceneDirty=true;view=value;settings.camera=v
 function cycleView(){const views=['chase','cockpit','orbit'];setView(views[(views.indexOf(view)+1)%views.length]);}
 function toggleMap(){settings.showMap=!settings.showMap;applyDisplay();saveSettings();drawMap();}
 // Display preferences hide panels but never the stall, terrain and gear warnings, nor a mission card underway.
-// While anything is hidden, a restore button stays on screen; H (or that button) shows everything again.
-function partlyHidden(){return !settings.showInstruments||!settings.showHints;}
+// While any of them is hidden a restore button stays on screen; it and H show everything again (toggleDisplay).
 function applyDisplay(){
  const c=document.body.classList;c.toggle('hide-hud',!settings.showHud);c.toggle('hide-instruments',!settings.showInstruments);c.toggle('hide-hints',!settings.showHints);c.toggle('hide-crosshair',!settings.showCrosshair);
- $('map-panel').hidden=!settings.showMap;const r=$('restore-hud');r.hidden=settings.showHud&&!partlyHidden();r.classList.toggle('partial',settings.showHud);sceneDirty=true;
+ $('map-panel').hidden=!settings.showMap;$('restore-hud').hidden=!anyDisplayHidden(settings);$('restore-hud').classList.toggle('partial',settings.showHud);placeRestore();sceneDirty=true;
 }
-function toggleHud(){if(!settings.showHud||partlyHidden())Object.assign(settings,{showHud:true,showInstruments:true,showHints:true,showCrosshair:true});else settings.showHud=false;applyDisplay();saveSettings();}
+// With the flight panels shown, the restore button sits beside the map and HUD tools, wherever the layout puts them.
+function placeRestore(){
+ const r=$('restore-hud');if(r.hidden||!settings.showHud){r.style.top=r.style.right='';return;}
+ const tools=document.querySelector('.right-tools').getBoundingClientRect(),stage=document.querySelector('.flight-stage').getBoundingClientRect();
+ r.style.top=`${tools.top-stage.top}px`;r.style.right=`${stage.right-tools.left+8}px`;
+}
+function toggleHud(){Object.assign(settings,toggleDisplay(settings));applyDisplay();saveSettings();drawMap();}
 function gear(){if(flight.type.flight.rotorcraft||flight.type.fixedGear){toast(flight.type.fixedGear?'Fixed landing gear · always down':wheeled(flight.type)?'Fixed wheeled landing gear · always down':'Fixed landing skids · always down');return;}sceneDirty=true;flight.toggleGear();toast(`Landing gear ${flight.state.gearDown?'down':'retracted'}`);}
 function flaps(){if(flight.type.flight.rotorcraft||flight.type.noFlaps){toast('No flaps on this aircraft');return;}sceneDirty=true;flight.cycleFlaps();toast(`Flaps set to ${flight.state.flaps*15}°`);}
 $('pause-btn').onclick=()=>setPaused(!paused);$('resume-btn').onclick=()=>setPaused(false);$('reset-btn').onclick=()=>restart();$('crash-reset').onclick=()=>restart();$('take-control').onclick=toggleAssist;$('camera-btn').onclick=cycleView;$('map-toggle').onclick=toggleMap;$('map-close').onclick=toggleMap;$('map-framing').onclick=cycleMapFraming;$('map-zoom-in').onclick=()=>zoomMap(1);$('map-zoom-out').onclick=()=>zoomMap(-1);$('map-expand').onclick=()=>showDialog('chart');$('hud-toggle').onclick=toggleHud;$('restore-hud').onclick=toggleHud;$('gear-btn').onclick=gear;$('flaps-btn').onclick=flaps;
@@ -455,7 +460,7 @@ function tick(){
  if(canFly||sceneDirty||orbitDrag){world.update(dt,frameTime,flight.state.position);updateCamera(dt);renderer.render(scene,camera);sceneDirty=false;fpsFrames++;}audio.update({...flight.state,stalled:canFly&&flight.state.stalled,throttle:paused||landing.finished?0:flight.state.throttle,speed:paused||landing.finished?0:flight.state.speed,crashed:flight.state.crashed||paused||landing.finished},flight.gearWarning);
  if(frameTime-lastUi>.12){lastUi=frameTime;updateUI(frameTime);}const now=performance.now();if(now-lastFps>1500){if(canFly)$('fps-label').textContent=`${Math.round(fpsFrames/((now-lastFps)/1000))} FPS`;fpsFrames=0;lastFps=now;}
 }
-function resize(){sceneDirty=true;const w=worldContainer.clientWidth,h=worldContainer.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);initialCamera=true;}
+function resize(){sceneDirty=true;placeRestore();const w=worldContainer.clientWidth,h=worldContainer.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);initialCamera=true;}
 window.addEventListener('resize',resize);
 window.addEventListener('beforeunload',saveFlight);
 setView(view,false);updateAircraftLabels();updateAirportUI();updateAssist();updateUI(0);updateCamera(1);renderer.render(scene,camera);tick();

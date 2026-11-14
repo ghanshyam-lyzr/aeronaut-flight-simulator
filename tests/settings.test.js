@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SETTINGS_KEY, SETTINGS_VERSION, CUSTOMIZATION_KEYS, defaultSettings, normalizeSettings, resetSettings, loadSettings, saveSettings, bounded, RESPONSE } from '../src/settings.js';
+import { SETTINGS_KEY, SETTINGS_VERSION, CUSTOMIZATION_KEYS, defaultSettings, normalizeSettings, resetSettings, loadSettings, saveSettings, bounded, RESPONSE, DISPLAY, anyDisplayHidden, toggleDisplay } from '../src/settings.js';
 
 class MemoryStorage {
   constructor(entries = {}) { this.data = new Map(Object.entries(entries)); }
@@ -113,4 +113,34 @@ test('master volume sits after every engine, wind and warning voice, on one audi
     assert.equal(contexts.length, 1, 'muting and unmuting reuse the single context');
     assert.equal(audio.enabled, true);
   } finally { delete globalThis.AudioContext; }
+});
+
+// The H key and the restore button share toggleDisplay; main.js applies its result, saves it and shows the
+// restore button whenever anyDisplayHidden. Each case is saved and reloaded as the page does.
+test('any hidden display preference is restored in full by one H or restore, across a reload', () => {
+  const allShown = Object.fromEntries(DISPLAY.map(key => [key, true]));
+  const cases = { crosshair: { showCrosshair: false }, map: { showMap: false }, instruments: { showInstruments: false }, hints: { showHints: false },
+    panels: { showHud: false }, mixed: { showCrosshair: false, showMap: false, showHints: false }, everything: { showHud: false, showInstruments: false, showHints: false, showCrosshair: false, showMap: false } };
+  for (const [name, hidden] of Object.entries(cases)) {
+    const storage = new MemoryStorage();
+    saveSettings({ ...defaultSettings(), aircraft: 'fighter', response: { pitch: 1.5, roll: 1, yaw: 1, throttle: 1 }, ...hidden }, storage);
+    const reloaded = loadSettings(storage);
+    assert.equal(anyDisplayHidden(reloaded), true, `${name}: a restore button is shown after reload`);
+    const pressed = { ...reloaded, ...toggleDisplay(reloaded) };
+    assert.deepEqual(Object.fromEntries(DISPLAY.map(key => [key, pressed[key]])), allShown, `${name}: one press shows everything`);
+    saveSettings(pressed, storage);
+    const after = loadSettings(storage);
+    assert.equal(anyDisplayHidden(after), false, `${name}: restored panels persist`);
+    assert.equal(after.aircraft, 'fighter'); assert.equal(after.response.pitch, 1.5, 'restoring panels changes nothing else');
+  }
+});
+
+test('with everything visible, H hides only the flight panels and the next H brings them back', () => {
+  const shown = defaultSettings();
+  assert.equal(anyDisplayHidden(shown), false);
+  const hidden = { ...shown, ...toggleDisplay(shown) };
+  assert.deepEqual(Object.fromEntries(DISPLAY.map(key => [key, hidden[key]])), { showHud: false, showInstruments: true, showHints: true, showCrosshair: true, showMap: true });
+  const back = { ...hidden, ...toggleDisplay(hidden) };
+  assert.equal(anyDisplayHidden(back), false);
+  assert.equal(anyDisplayHidden({ ...shown, showMap: 'no' }), false, 'only an actual false hides');
 });

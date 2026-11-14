@@ -100,3 +100,14 @@ export function saveSettings(settings, storage = browserStorage()) {
 }
 
 export const percent = value => `${Math.round(value * 100)}%`;
+
+/** True while any display preference hides part of the interface. */
+export const anyDisplayHidden = settings => DISPLAY.some(key => settings[key] === false);
+
+/**
+ * The H key and the on-screen restore button: while anything is hidden, show all of it;
+ * only with everything visible does it hide the flight panels.
+ */
+export function toggleDisplay(settings) {
+  return anyDisplayHidden(settings) ? Object.fromEntries(DISPLAY.map(key => [key, true])) : { showHud: false };
+}
