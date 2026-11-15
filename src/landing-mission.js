@@ -2,6 +2,8 @@ import { AIRFIELD, runwayCoordinates, runwayPoint } from './airfield.js';
 
 const degrees = radians => Math.abs(Math.atan2(Math.sin(radians), Math.cos(radians))) * 180 / Math.PI;
 export const TOUCHDOWN_ZONE = Object.freeze({ start: 60, end: 440, aim: 220 });
+/** The touchdown attitude the mission accepts: heading within `alignment` degrees of the runway, |bank| and |pitch| in radians. */
+export const TOUCHDOWN_ATTITUDE = Object.freeze({ alignment: 12, bank: 0.18, pitch: 0.22 });
 
 export function landingProfile(type) {
   const f = type.flight, helicopter = !!f.rotorcraft, speed = type.landing.speed;
@@ -66,7 +68,7 @@ export class LandingMission {
       if (p.helicopter && (Math.abs(t.along - TOUCHDOWN_ZONE.aim) > 18 || Math.abs(t.cross) > 10)) return this.fail(`Land the ${p.contact} inside the target box`);
       if (!t.gearDown) return this.fail('Landing gear was retracted');
       if (t.sink >= p.maxSink || t.speed >= p.maxSpeed || t.stalled) return this.fail('Unsafe touchdown speed or sink rate');
-      if (t.alignment > 12 || Math.abs(t.bank) > 0.18 || Math.abs(t.pitch) > 0.22) return this.fail(`Touch down level and aligned with runway ${field.runway}`);
+      if (t.alignment > TOUCHDOWN_ATTITUDE.alignment || Math.abs(t.bank) > TOUCHDOWN_ATTITUDE.bank || Math.abs(t.pitch) > TOUCHDOWN_ATTITUDE.pitch) return this.fail(`Touch down level and aligned with runway ${field.runway}`);
       if (!p.helicopter && t.flaps !== p.flaps) return this.fail(p.flaps ? 'Use full flaps for landing' : 'This aircraft has no flaps');
       this.phase = 'rollout';
     }
