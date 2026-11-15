@@ -207,3 +207,8 @@ dialog.chart-dialog{width:min(1060px,calc(100% - 32px))}
 .restore-hud.partial{padding:9px 12px}
 @media(max-width:550px){.settings-dialog .segmented button{padding:0 9px}.settings-sliders{gap:0 16px}.landing-mode .restore-hud:not(.partial){top:292px}.restore-hud.partial{padding:7px 10px}}
 @media(prefers-reduced-motion:reduce){.segmented button{transition:none}}
+/* Flight-path marker: a thin chartreuse velocity symbol, placed per frame by transform. First in the HUD, so panels,
+   warnings and touch controls draw over it; it hides with the flight panels like the crosshair. */
+.flight-path-marker{position:absolute;left:0;top:0;width:34px;height:22px;margin:-13px 0 0 -17px;color:var(--accent);filter:drop-shadow(0 1px 2px var(--shadow));pointer-events:none;will-change:transform}
+.flight-path-marker svg{display:block}
+@media(max-width:550px){.flight-path-marker{opacity:.9}}

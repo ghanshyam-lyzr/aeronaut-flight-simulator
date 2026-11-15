@@ -69,10 +69,12 @@ Both runway directions give identical results. Their graded surfaces are flat, a
   - response settings untouched;
   - unchanged unbraked takeoffs for every fixed-wing type, and a normal takeoff after a braked run-up;
   - the scored landings above.
-- `npm test`: 498 passed (489 existing + 9 new). `npm run build`: passed, with Vite's existing large-chunk advisory. No dependency was added.
+- `npm test`: 522 passed after merging `origin/main` at `55bf553` (flight-log recovery #34 and flight-path marker #35), including their suites and the 9 brake tests. `npm run build`: passed, with Vite's existing large-chunk advisory. No dependency was added.
 - Browser checks ran in Chromium on the `forge serve` dev preview (port 5173), with no console errors:
   - **Keyboard (390×844):** a Mira T2 ran to 10 m/s under Shift. Ctrl alone stopped it in 86 m and 12.8 s. Ctrl plus held B stopped it in 44 m and 5.3 s, at exactly 0 m/s. The notice showed while braking and cleared on key-up.
   - **Touch button (390×844):** the Brake button applied the brake, and pointer-up, pointer-cancel, a dialog opening, window blur and pause each released it. Switching to the Laret H4 hid the button and left the brake at 0. Phone layout had no horizontal overflow.
   - **Desktop:** holding B on a Vela J8 at **1600×900** and **1280×800** applied the brake and showed the notice, and releasing B cleared it. The key hints include `B Brakes` and fit both widths. The Controls dialog lists the brake for fixed-wing types, and the helicopter hints omit it.
+
+- **After the merge (1280×800):** a Mira T2 under Ctrl plus held B stopped from 7 m/s in 32 m, to exactly 0, with the brake notice. Releasing B cleared the notice. The Settings flight-path toggle switched the marker on: absent while stationary on the runway, as designed, and shown once airborne. The Flight log dialog opened. No brake stayed applied after the dialogs.
 
 Browser limitation: this VM renders with software WebGL. Each frame took about 1 s at 390×844 and about 2.8 s at 1600×900, longer than the simulator's 250 ms safety cap, which discards input after a long absence. For repeatable scenarios, `performance.now()` and DOM event `timeStamp` were set to a controlled clock that advanced 250 ms per rendered frame. The pointer events were Playwright mouse pointers on the button, not real multi-touch hardware. These checks exercise the real rendered app, DOM handlers and fixed-step input integration. They are not hardware frame rates or a subjective flight test on a normal GPU or phone.
