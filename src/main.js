@@ -12,7 +12,7 @@ import { FlightController, FlightAudio, FollowFrame } from './flight.js';
 import { FLEET, aircraftType } from './fleet.js';
 import { FlightInputs } from './controls.js';
 import { loadFlights, saveFlights as storeFlights, recordFlight, flightTotals, formatFlightDate } from './flight-log.js';
-import { loadSettings, saveSettings as storeSettings, resetSettings, CUSTOMIZATION_KEYS, anyDisplayHidden, toggleDisplay, RESPONSE, CHASE_DISTANCE, VOLUME, percent } from './settings.js';
+import { loadSettings, saveSettings as storeSettings, resetSettings, CUSTOMIZATION_KEYS, anyDisplayHidden, toggleDisplay, flightPathShown, RESPONSE, CHASE_DISTANCE, VOLUME, percent } from './settings.js';
 import { disposeObject } from './helicopter.js';
 import { LandingMission, landingProfile } from './landing-mission.js';
 import { runwayPoint } from './airfield.js';
@@ -20,6 +20,7 @@ import { AIRPORTS, suitability } from './airports.js';
 import { AirportSelection, resolveAirport, missionAvailability, describeField, headingDegrees } from './airport-selection.js';
 import { region } from './regions.js';
 import { createLandingGuidance } from './landing-guidance.js';
+import { FlightPathMarker } from './flight-path.js';
 import { NavigationMap } from './nav-map.js';
 import { navigationDestination, navigationReadout, bearingDistance, degrees, formatNM, zoomFrom, nearestZoom, FRAMINGS, FRAMING_LABELS, ZOOM_SPANS } from './navigation.js';
 
@@ -308,7 +309,7 @@ function showDialog(type){
  +`<h3 class="dialog-section-title">Control response</h3><p class="settings-help">How quickly keys, mouse and touch reach full deflection. Holding always gives full travel; 100% is the gentle default.</p><div class="settings-sliders">${['pitch','roll','yaw','throttle'].map((axis,i)=>sliderMarkup(`response-${axis}`,responseLabels[i],settings.response[axis],RESPONSE)).join('')}</div>`
  +`<h3 class="dialog-section-title">Camera</h3><div class="settings-row"><div><strong>View</strong><p>Saved for your next flight; C cycles it.</p></div><div class="segmented" role="radiogroup" aria-label="Camera view">${[['chase','Chase'],['cockpit','Cockpit'],['orbit','Orbit']].map(([id,label])=>`<button role="radio" data-view="${id}" aria-checked="${view===id}" tabindex="${view===id?0:-1}">${label}</button>`).join('')}</div></div><div class="settings-sliders single">${sliderMarkup('chase-distance','Chase distance',settings.chaseDistance,CHASE_DISTANCE)}</div>`
  +`<h3 class="dialog-section-title">Sound</h3>${toggleMarkup('setting-sound','Flight sound','Engines, wind and warning horns.',!settings.muted)}<div class="settings-sliders single">${sliderMarkup('master-volume','Master volume',settings.volume,VOLUME)}</div>`
- +`<h3 class="dialog-section-title">Display</h3>${toggleMarkup('setting-hud','Flight panels','Mission, weather and camera panels. Warnings stay visible; H shows everything.',settings.showHud)}${toggleMarkup('setting-instruments','Instrument strip','Airspeed, altitude, attitude, throttle and pause.',settings.showInstruments)}${toggleMarkup('setting-hints','Key hints','Keyboard reminders and frame rate.',settings.showHints)}${toggleMarkup('setting-crosshair','Crosshair','The centre marker ahead of the aircraft.',settings.showCrosshair)}${toggleMarkup('setting-map','Navigation map','Show your position above the valley.',settings.showMap)}`
+ +`<h3 class="dialog-section-title">Display</h3>${toggleMarkup('setting-hud','Flight panels','Mission, weather and camera panels. Warnings stay visible; H shows everything.',settings.showHud)}${toggleMarkup('setting-instruments','Instrument strip','Airspeed, altitude, attitude, throttle and pause.',settings.showInstruments)}${toggleMarkup('setting-hints','Key hints','Keyboard reminders and frame rate.',settings.showHints)}${toggleMarkup('setting-crosshair','Crosshair','The centre marker ahead of the aircraft.',settings.showCrosshair)}${toggleMarkup('setting-flight-path','Flight path marker','Where the aircraft is actually travelling, not where the nose points. Off by default; hidden with the flight panels.',settings.showFlightPath)}${toggleMarkup('setting-map','Navigation map','Show your position above the valley.',settings.showMap)}`
  +`<div class="settings-actions"><button class="secondary-btn" id="restore-defaults"><i data-lucide="rotate-ccw"></i>Restore defaults</button><button class="primary-btn" data-close>Back to the skies <i data-lucide="arrow-up-right"></i></button></div><p class="dialog-note">Restoring defaults keeps your aircraft, airfield, flight log and the flight in progress.</p></div>`;
  }else if(type==='controls'){
  const controls=[[heli?'Cyclic forward / backward':'Pitch down / up',['W','S']],[heli?'Cyclic left / right':'Bank left / right',['A','D']],['Alternate flight controls',['←','↑','↓','→']],[heli?'Yaw left / right':'Rudder left / right',['Q','E']],[heli?'Raise / lower collective':'Increase / decrease throttle',['Shift','Ctrl']],['Change camera',['C']],['Pause / resume',['P']],[heli?'Hover hold':'Flight assist',['Space']],...(!heli&&!flight.type.fixedGear?[['Landing gear',['G']]]:[]),...(!heli&&!flight.type.noFlaps?[['Cycle flaps',['F']]]:[]),['Navigation map',['M']],['Map zoom out / in',['−','+']],['Map framing',['V']],['Navigation chart',['N']],['Hide instruments',['H']],['Restart flight',['R']]];
@@ -336,7 +337,7 @@ function showDialog(type){
  $('setting-assist').onclick=e=>{flight.toggleAutopilot();e.currentTarget.setAttribute('aria-checked',flight.state.autopilot);updateAssist();};
  for(const [id,key] of [['setting-invert','invertPitch'],['setting-mouse','mouseSteering']])$(id).onclick=e=>{settings[key]=!settings[key];clearControls();e.currentTarget.setAttribute('aria-checked',settings[key]);saveSettings();};
  $('setting-map').onclick=e=>{toggleMap();e.currentTarget.setAttribute('aria-checked',settings.showMap);};
- for(const [id,key] of [['setting-hud','showHud'],['setting-instruments','showInstruments'],['setting-hints','showHints'],['setting-crosshair','showCrosshair']])$(id).onclick=e=>{settings[key]=!settings[key];applyDisplay();saveSettings();e.currentTarget.setAttribute('aria-checked',settings[key]);};
+ for(const [id,key] of [['setting-hud','showHud'],['setting-instruments','showInstruments'],['setting-hints','showHints'],['setting-crosshair','showCrosshair'],['setting-flight-path','showFlightPath']])$(id).onclick=e=>{settings[key]=!settings[key];applyDisplay();saveSettings();e.currentTarget.setAttribute('aria-checked',settings[key]);};
  for(const axis of ['pitch','roll','yaw','throttle'])bindSlider(`response-${axis}`,v=>{settings.response[axis]=v;controls.setResponse(settings.response);});
  bindSlider('chase-distance',v=>{settings.chaseDistance=v;sceneDirty=true;});
  bindSlider('master-volume',v=>{settings.volume=v;audio.setVolume(v);});
@@ -448,6 +449,14 @@ function updateCamera(dt){
  }
  camera.updateProjectionMatrix();initialCamera=false;
 }
+// The flight-path marker (src/flight-path.js): actual travel through the camera just rendered. Read-only; it never
+// touches the flight model, and it is hidden rather than pinned to an edge when the path is off screen or too slow.
+const flightPath=new FlightPathMarker(),flightPathMarker=$('flight-path-marker');let flightPathView={visible:false,x:0,y:0,reason:'off'},stageWidth=worldContainer.clientWidth,stageHeight=worldContainer.clientHeight;
+function updateFlightPath(){
+ const m=flightPathView=flightPath.update(flight.state,flight.type,camera,stageWidth,stageHeight,flightPathShown(settings)&&!landing.finished);
+ if(m.visible)flightPathMarker.style.transform=`translate(${m.x.toFixed(1)}px,${m.y.toFixed(1)}px)`;
+ if(flightPathMarker.hidden===m.visible)flightPathMarker.hidden=!m.visible;
+}
 const clock=new THREE.Clock();
 function tick(){
  requestAnimationFrame(tick);const dt=Math.min(clock.getDelta(),.25);frameTime+=dt;
@@ -457,14 +466,14 @@ function tick(){
   trailClock+=dt;if(trailClock>1){trailClock=0;flightTrail.push({x:flight.state.position.x,z:flight.state.position.z});if(flightTrail.length>2000)flightTrail.shift();}
  }else controls.reset(performance.now()/1000);
  aircraft.group.position.copy(flight.state.position);aircraft.group.quaternion.copy(flight.state.quaternion);cockpit.userData.update?.(flight.state);aircraft.update(canFly?dt:flight.type.flight.rotorcraft?0:dt*.15,flight.state.throttle,{...flight.state,time:frameTime});
- if(canFly||sceneDirty||orbitDrag){world.update(dt,frameTime,flight.state.position);updateCamera(dt);renderer.render(scene,camera);sceneDirty=false;fpsFrames++;}audio.update({...flight.state,stalled:canFly&&flight.state.stalled,throttle:paused||landing.finished?0:flight.state.throttle,speed:paused||landing.finished?0:flight.state.speed,crashed:flight.state.crashed||paused||landing.finished},flight.gearWarning);
+ if(canFly||sceneDirty||orbitDrag){world.update(dt,frameTime,flight.state.position);updateCamera(dt);renderer.render(scene,camera);updateFlightPath();sceneDirty=false;fpsFrames++;}audio.update({...flight.state,stalled:canFly&&flight.state.stalled,throttle:paused||landing.finished?0:flight.state.throttle,speed:paused||landing.finished?0:flight.state.speed,crashed:flight.state.crashed||paused||landing.finished},flight.gearWarning);
  if(frameTime-lastUi>.12){lastUi=frameTime;updateUI(frameTime);}const now=performance.now();if(now-lastFps>1500){if(canFly)$('fps-label').textContent=`${Math.round(fpsFrames/((now-lastFps)/1000))} FPS`;fpsFrames=0;lastFps=now;}
 }
-function resize(){sceneDirty=true;placeRestore();const w=worldContainer.clientWidth,h=worldContainer.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);initialCamera=true;}
+function resize(){sceneDirty=true;placeRestore();const w=stageWidth=worldContainer.clientWidth,h=stageHeight=worldContainer.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);initialCamera=true;}
 window.addEventListener('resize',resize);
 window.addEventListener('beforeunload',saveFlight);
-setView(view,false);updateAircraftLabels();updateAirportUI();updateAssist();updateUI(0);updateCamera(1);renderer.render(scene,camera);tick();
+setView(view,false);updateAircraftLabels();updateAirportUI();updateAssist();updateUI(0);updateCamera(1);renderer.render(scene,camera);updateFlightPath();tick();
 setTimeout(()=>{$('loading').classList.add('leaving');setTimeout(()=>$('loading').remove(),750);},500);
 // Expose read-only diagnostic snapshots for repeatable rendering and control checks.
-window.aeronaut={getState:()=>({...flight.state,position:flight.state.position.toArray(),quaternion:flight.state.quaternion.toArray(),paused,view,quality:settings.quality,weather:settings.weather}),getSettings:()=>structuredClone(settings),getMission:()=>landing.snapshot(),startLanding:()=>startLanding(selection.field),getRendererInfo:()=>({...renderer.info.render}),reset:restart,setPaused, setQuality,setAircraft,runwayStart:(id,runway)=>runwayStart(id?resolveAirport(id,runway).field:selection.field),approachStart:(id,runway)=>approachStart(id?resolveAirport(id,runway).field:selection.field),airports:()=>world.airports.map(({position,windsock,...field})=>field),getAirport:airportState,getNavigation:()=>{const n=navReadout();return{destination:navigationDestination(airportState()),bearing:n&&Number(n.bearingText),distance:n?.distance,framing:{...miniFraming},scale:miniMap.scale?.label,pendingTiles:miniMap.pending,drawMs:mapDrawMs};},setMapFraming:(framing,zoom)=>setMapFraming({framing,...(zoom===undefined?{}:{zoom})}),selectAirport:(id,runway)=>selection.select(id,runway),getAircraft:()=>({id:flight.type.id,name:flight.type.name,gearPosition:aircraft.gearPosition,surfaces:aircraft.surfaces,afterburner:aircraft.afterburner})};
+window.aeronaut={getState:()=>({...flight.state,position:flight.state.position.toArray(),quaternion:flight.state.quaternion.toArray(),paused,view,quality:settings.quality,weather:settings.weather}),getSettings:()=>structuredClone(settings),getMission:()=>landing.snapshot(),startLanding:()=>startLanding(selection.field),getRendererInfo:()=>({...renderer.info.render}),getFlightPath:()=>({...flightPathView,enabled:settings.showFlightPath}),reset:restart,setPaused, setQuality,setAircraft,runwayStart:(id,runway)=>runwayStart(id?resolveAirport(id,runway).field:selection.field),approachStart:(id,runway)=>approachStart(id?resolveAirport(id,runway).field:selection.field),airports:()=>world.airports.map(({position,windsock,...field})=>field),getAirport:airportState,getNavigation:()=>{const n=navReadout();return{destination:navigationDestination(airportState()),bearing:n&&Number(n.bearingText),distance:n?.distance,framing:{...miniFraming},scale:miniMap.scale?.label,pendingTiles:miniMap.pending,drawMs:mapDrawMs};},setMapFraming:(framing,zoom)=>setMapFraming({framing,...(zoom===undefined?{}:{zoom})}),selectAirport:(id,runway)=>selection.select(id,runway),getAircraft:()=>({id:flight.type.id,name:flight.type.name,gearPosition:aircraft.gearPosition,surfaces:aircraft.surfaces,afterburner:aircraft.afterburner})};
 if(query.get('start')==='runway')runwayStart();else if(query.get('start')==='approach')approachStart();
