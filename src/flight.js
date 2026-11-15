@@ -30,6 +30,19 @@ export function brakeDeceleration(type) {
   return type.flight.brakeDeceleration ?? BRAKE_DECELERATION[type.id] ?? 2.5;
 }
 
+/**
+ * Pitch trim, in radians of stick-free pitch attitude: the attitude a conventional (attitude-limited) aircraft settles
+ * to with the stick released, on top of its own neutral (level, or a glider's idle glide). Held trim moves at a fixed
+ * 2°/s up to ±8°; released, it stays put. Free-attitude types already hold any attitude hands-off, so they have none.
+ */
+export const TRIM_LIMIT = 8 * Math.PI / 180;
+export const TRIM_RATE = 2 * Math.PI / 180;
+
+/** Whether a type has pilot pitch trim: fixed-wing types that self-level, not helicopters or free-attitude aerobatic types. */
+export function hasPitchTrim(type) {
+  return !type.flight.rotorcraft && !type.flight.aerobatic;
+}
+
 /** Vela J8 performance, in metres per second. Speeds are tuned for the valley, not a certified type. */
 export const JET = FLEET.jet.flight;
 
@@ -60,6 +73,7 @@ export class FlightController {
       spool: f.cruiseThrottle,
       afterburner: false,
       brake: 0,
+      pitchTrim: 0,
       heading: 0,
       pitch: 0,
       bank: 0,
@@ -154,6 +168,7 @@ export class FlightController {
       yaw: clamp(Number(inputs.yaw) || 0, -1, 1),
       throttle: clamp(Number(inputs.throttle) || 0, -1, 1),
       brake: clamp(Number(inputs.brake) || 0, 0, 1),
+      trim: clamp(Number(inputs.trim) || 0, -1, 1),
     };
     if (Math.abs(controls.pitch) + Math.abs(controls.roll) + Math.abs(controls.yaw) > (this.type.flight.rotorcraft ? 0.001 : 0.12)
       || (this.type.flight.rotorcraft && Math.abs(controls.throttle) > 0.001)) {
@@ -176,6 +191,9 @@ export class FlightController {
     // Engine response lags the lever, slowest near idle.
     s.spool = mix(s.spool, s.throttle, s.spool < 0.35 ? f.spoolUp : f.spoolCruise, dt);
     s.afterburner = f.afterburnerFrom !== null && s.throttle >= f.afterburnerFrom && s.spool > f.afterburnerFrom - 0.05;
+    // The trim wheel turns at a fixed rate while held, in the air or on the ground, with assist on or off.
+    const trimBefore = s.pitchTrim;
+    if (controls.trim && hasPitchTrim(this.type)) s.pitchTrim = clamp(s.pitchTrim + controls.trim * TRIM_RATE * dt, -TRIM_LIMIT, TRIM_LIMIT);
     const burner = s.afterburner ? clamp((s.spool - f.afterburnerFrom + 0.05) / (1.05 - f.afterburnerFrom), 0, 1) * f.afterburnerSpeed : 0;
 
     const pitch = angularResponse(this.pitchRate, controls.pitch * f.pitchRate, f.pitchResponse, dt);
@@ -205,8 +223,14 @@ export class FlightController {
       // Soft self-stability makes cruising possible without continuous corrections.
       s.bank = mix(s.bank, 0, 0.17 * clamp((0.1 - Math.abs(controls.roll)) / 0.05, 0, 1), dt);
       // A glider's released stick settles to its idle-power glide attitude rather than level.
-      const trim = f.glidePitch ? -f.glidePitch * clamp(1 - s.spool / 0.32, 0, 1) : 0;
-      s.pitch = mix(s.pitch, trim, 0.045 * clamp((0.1 - Math.abs(controls.pitch)) / 0.05, 0, 1), dt);
+      // Airborne, pilot trim moves that stick-free attitude; on the runway, rotation keeps its own behaviour.
+      const stickFree = clamp((0.1 - Math.abs(controls.pitch)) / 0.05, 0, 1);
+      const trim = (f.glidePitch ? -f.glidePitch * clamp(1 - s.spool / 0.32, 0, 1) : 0) + (s.grounded ? 0 : s.pitchTrim);
+      // While the wheel turns, the released nose follows it towards the new trimmed attitude, never past it.
+      const turned = s.grounded ? 0 : (s.pitchTrim - trimBefore) * stickFree;
+      if (turned > 0 && s.pitch < trim) s.pitch = Math.min(trim, s.pitch + turned);
+      else if (turned < 0 && s.pitch > trim) s.pitch = Math.max(trim, s.pitch + turned);
+      s.pitch = mix(s.pitch, trim, 0.045 * stickFree, dt);
     }
 
     if (!free) {

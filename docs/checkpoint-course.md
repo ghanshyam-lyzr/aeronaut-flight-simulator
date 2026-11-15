@@ -54,6 +54,10 @@ The lights keep following the runway selected in Explore while the course runs. 
 
 Checked in the browser: the lights read *outside the sector* (live, Alpine Field 36) during the run. After *Free flight* and an approach start they read on path, two white over two red.
 
+## Terrain alert (after merging main's terrain lookahead)
+
+Along the scripted course line the terrain lookahead stays at *clear* for the whole run: 0 cautions and 0 warnings in about 1,800 samples for the Mira T2 and the Vela J8 at cruise, and for the Aven W280 and Taris F12 below 210 kt. A finished course suppresses it, as a finished landing mission does.
+
 ## Code
 
 - `src/checkpoint-course.js`: the course definition, `gateCoordinates`, `gateCrossing`, `courseAvailability` and `CheckpointCourse` (start, update, guidance, snapshot). It is pure: no DOM, no Three.js and no wall clock.
@@ -64,7 +68,7 @@ Checked in the browser: the lights read *outside the sector* (live, Alpine Field
 
 ## Verification
 
-- `npm test`: every test passes, 16 of them in `tests/checkpoint-course.test.js`. They cover:
+- `npm test`: all 572 tests pass after merging main at 9e9afb2, 16 of them in `tests/checkpoint-course.test.js`. They cover:
   - geometry: turns, climbs, leg lengths, and gate 1 lined up;
   - terrain clearance under every gate and in a ±400 m corridor along every leg (at least 100 m), and clear of every airfield;
   - crossing edge cases: forward, backward, posts, beams, edge, behind, on-plane, diagonal;
