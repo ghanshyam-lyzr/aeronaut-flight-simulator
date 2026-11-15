@@ -257,3 +257,20 @@ test('clearing the selection mid-turn holds the heading then flown, without a sn
   fly(flight, 60);
   assert.ok(Math.abs(wrap(s.heading - heading)) < 15 * DEG, 'rolls out near the heading it was on');
 });
+
+test('in wind the bug holds the nose heading and the track drifts: no wind correction or track capture', () => {
+  for (const id of ['trainer', 'jet', 'widebody', 'aerobatic']) for (const preset of ['breeze', 'gusts']) {
+    const flight = airborne(id), s = flight.state;
+    flight.setWind(preset, { immediate: true });
+    flight.setHeadingTarget(90); flight.holdSelectedHeading();
+    fly(flight, 150);
+    assert.ok(s.autopilot && s.headingHold);
+    // Gusts and veer nudge it only through the assist's own bounded turn; the nose stays on the bug.
+    assert.ok(Math.abs(wrap(s.heading - 90 * DEG)) < 1.5 * DEG, `${id} ${preset} nose ${(s.heading / DEG).toFixed(2)}°`);
+    const start = s.position.clone();
+    fly(flight, 30);
+    const track = Math.atan2(s.position.x - start.x, -(s.position.z - start.z));
+    // A wind from 240–260° blows towards the north-east, across an eastbound nose: the track drifts left of 090.
+    assert.ok(wrap(track - s.heading) < -0.5 * DEG, `${id} ${preset} drifts (${(wrap(track - s.heading) / DEG).toFixed(2)}°)`);
+  }
+});

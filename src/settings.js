@@ -3,12 +3,15 @@
 // partial, older or hand-edited `aeronaut-settings` entry still yields a flyable sim.
 import { aircraftType } from './fleet.js';
 import { FRAMINGS, ZOOM_SPANS } from './navigation.js';
+import { WINDS } from './wind.js';
 
 export const SETTINGS_KEY = 'aeronaut-settings';
 export const SETTINGS_VERSION = 2;
 export const AXES = Object.freeze(['pitch', 'roll', 'yaw', 'throttle']);
 export const QUALITIES = Object.freeze(['high', 'medium', 'low']);
 export const WEATHERS = Object.freeze(['clear', 'golden', 'overcast']);
+// Wind (src/wind.js) is chosen apart from the light and weather: anything saved before it existed, or invalid, is calm.
+export { WINDS };
 export const VIEWS = Object.freeze(['chase', 'cockpit', 'orbit']);
 // Control response multiplies how fast a held input travels to full deflection. 100% is the
 // original gentle ramp; full deflection is always reached, so held authority never changes.
@@ -30,10 +33,10 @@ const DEFAULTS = Object.freeze({
   volume: 1, muted: true,
   showHud: true, showInstruments: true, showHints: true, showCrosshair: true, showMap: true,
   showFlightPath: false,
-  weather: 'clear', aircraft: 'jet', mapFraming: 'route', mapZoom: 3,
+  weather: 'clear', wind: 'calm', aircraft: 'jet', mapFraming: 'route', mapZoom: 3,
 });
 
-// Restore defaults resets these; aircraft, airfield/runway, weather and map framing are choices
+// Restore defaults resets these; aircraft, airfield/runway, weather, wind and map framing are choices
 // made elsewhere and survive, as do the logbook and the flight in progress.
 export const CUSTOMIZATION_KEYS = Object.freeze(['quality', 'invertPitch', 'mouseSteering', 'response', 'camera', 'chaseDistance', 'volume', 'muted', ...DISPLAY, ...FEATURES]);
 
@@ -68,6 +71,7 @@ export function normalizeSettings(raw) {
     volume: bounded(s.volume, VOLUME, d.volume),
     muted: flag(s.muted, d.muted),
     weather: oneOf(WEATHERS, s.weather, d.weather),
+    wind: oneOf(WINDS, s.wind, d.wind),
     aircraft: aircraftType(typeof s.aircraft === 'string' ? s.aircraft : d.aircraft).id,
     mapFraming: oneOf(FRAMINGS, s.mapFraming, d.mapFraming),
     mapZoom: Math.round(bounded(s.mapZoom, { min: 0, max: ZOOM_SPANS.length - 1, step: 1 }, d.mapZoom)),
@@ -79,7 +83,7 @@ export function normalizeSettings(raw) {
   return out;
 }
 
-/** Resets customization only; selections (aircraft, field, runway, weather, map framing) are kept. */
+/** Resets customization only; selections (aircraft, field, runway, weather, wind, map framing) are kept. */
 export function resetSettings(current) {
   const s = normalizeSettings(current), d = defaultSettings();
   for (const key of CUSTOMIZATION_KEYS) s[key] = key === 'response' ? { ...d.response } : d[key];
