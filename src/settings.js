@@ -18,6 +18,9 @@ export const RESPONSE = Object.freeze({ min: 0.5, max: 2, step: 0.25 });
 export const CHASE_DISTANCE = Object.freeze({ min: 1, max: 1.6, step: 0.1 });
 export const VOLUME = Object.freeze({ min: 0, max: 1, step: 0.05 });
 export const DISPLAY = Object.freeze(['showHud', 'showInstruments', 'showHints', 'showCrosshair', 'showMap']);
+// The flight-path marker is an opt-in aid, not a panel: off by default, so it is not one of the DISPLAY keys that
+// H and "Show hidden panels" turn back on, and leaving it off never counts as something hidden.
+export const FEATURES = Object.freeze(['showFlightPath']);
 
 const DEFAULTS = Object.freeze({
   quality: 'high', invertPitch: false, mouseSteering: false,
@@ -26,12 +29,13 @@ const DEFAULTS = Object.freeze({
   // Sound stays off until the pilot turns it on, as before; unmuting is remembered.
   volume: 1, muted: true,
   showHud: true, showInstruments: true, showHints: true, showCrosshair: true, showMap: true,
+  showFlightPath: false,
   weather: 'clear', aircraft: 'jet', mapFraming: 'route', mapZoom: 3,
 });
 
 // Restore defaults resets these; aircraft, airfield/runway, weather and map framing are choices
 // made elsewhere and survive, as do the logbook and the flight in progress.
-export const CUSTOMIZATION_KEYS = Object.freeze(['quality', 'invertPitch', 'mouseSteering', 'response', 'camera', 'chaseDistance', 'volume', 'muted', ...DISPLAY]);
+export const CUSTOMIZATION_KEYS = Object.freeze(['quality', 'invertPitch', 'mouseSteering', 'response', 'camera', 'chaseDistance', 'volume', 'muted', ...DISPLAY, ...FEATURES]);
 
 export function defaultSettings() {
   return { ...DEFAULTS, response: { ...DEFAULTS.response }, version: SETTINGS_VERSION };
@@ -68,7 +72,7 @@ export function normalizeSettings(raw) {
     mapFraming: oneOf(FRAMINGS, s.mapFraming, d.mapFraming),
     mapZoom: Math.round(bounded(s.mapZoom, { min: 0, max: ZOOM_SPANS.length - 1, step: 1 }, d.mapZoom)),
   };
-  for (const key of DISPLAY) out[key] = flag(s[key], d[key]);
+  for (const key of [...DISPLAY, ...FEATURES]) out[key] = flag(s[key], d[key]);
   // The airfield and runway are validated by AirportSelection, which falls back to Alpine Field 36.
   if (typeof s.airport === 'string') out.airport = s.airport;
   if (typeof s.runway === 'string') out.runway = s.runway;
@@ -111,3 +115,6 @@ export const anyDisplayHidden = settings => DISPLAY.some(key => settings[key] ==
 export function toggleDisplay(settings) {
   return anyDisplayHidden(settings) ? Object.fromEntries(DISPLAY.map(key => [key, true])) : { showHud: false };
 }
+
+/** The marker shows only when the pilot turned it on and the flight panels are shown; hiding panels hides it too. */
+export const flightPathShown = settings => settings.showFlightPath === true && settings.showHud !== false;

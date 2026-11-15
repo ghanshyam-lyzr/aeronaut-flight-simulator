@@ -11,6 +11,7 @@ The settings dialog (sliders icon in the top bar) now holds every saved preferen
 | Sound | Flight sound | on / off (also the top-bar speaker) | off |
 | Sound | Master volume | 0–100 %, steps of 5 % | 100 % |
 | Display | Flight panels, instrument strip, key hints, crosshair, navigation map | on / off | all on |
+| Display | Flight path marker (see [flight-path-marker.md](flight-path-marker.md)) | on / off | off |
 
 ## How it works
 
