@@ -66,7 +66,7 @@ Without trim the pilot needs 9–23 corrective presses in 90 s, about one every 
   - control release keeping the chosen trim;
   - independence from the response settings;
   - no effect on helicopters and free-attitude types.
-- `npm test`: 533 passed (522 existing plus 11 new). `npm run build`: passed, with Vite's existing large-chunk advisory. No dependency was added.
+- `npm test`: 556 passed after merging `origin/main` at `fab4d11` (glide-path lights #37 and terrain lookahead #39), including the 11 trim tests. `npm run build`: passed, with Vite's existing large-chunk advisory. No dependency was added. The neutral-trim comparison above was rerun against that `main` and still matched bit for bit.
 - Browser checks in Chromium on the dev preview (port 5173), with no console errors:
   - **Phone (390×844), touch:** holding ▲ on a Mira T2 for 2.75 s set +5.5°, and the nose followed to 5.5°. Both stayed there for the next 3 s. The held arrow turned chartreuse. Pointer-cancel on a held ▼ stopped the wheel at −2.5° and cleared the highlight, and the value held. Tapping the value set neutral. In the landing-mission layout the trim column sits between Brake (x 138–203) and Power (x 320–368) with no overlap. The page has no horizontal overflow, and a mission start leaves the trim neutral.
   - **Keyboard (on 390×844):**
