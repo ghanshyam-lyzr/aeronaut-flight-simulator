@@ -21,6 +21,7 @@ import { AirportSelection, resolveAirport, missionAvailability, describeField, h
 import { region } from './regions.js';
 import { createLandingGuidance } from './landing-guidance.js';
 import { FlightPathMarker } from './flight-path.js';
+import { TerrainAlert, terrainNotice } from './terrain-alert.js';
 import { NavigationMap } from './nav-map.js';
 import { navigationDestination, navigationReadout, bearingDistance, degrees, formatNM, zoomFrom, nearestZoom, FRAMINGS, FRAMING_LABELS, ZOOM_SPANS } from './navigation.js';
 
@@ -424,6 +425,9 @@ function drawMap(){
   $('map-framing-label').textContent=FRAMING_LABELS[miniFraming.framing];$('map-framing').setAttribute('aria-label',`Map framing: ${FRAMING_LABELS[miniFraming.framing]}. Change framing`);
   $('mini-map').setAttribute('aria-label',d?`Navigation map, ${FRAMING_LABELS[miniFraming.framing].toLowerCase()} view: aircraft and ${d.name}`:'Navigation map');}
 }
+// The TERRAIN warning (src/terrain-alert.js): a bounded look-ahead along the actual travel over world.heightAt,
+// resampled at most four times a flight second. Read-only; runway approaches and takeoffs at any field stay quiet.
+const terrainAlert=new TerrainAlert(world.heightAt);let terrainView=terrainAlert.view();
 let lastAssist=true,lastUi=0,lastFps=performance.now(),fpsFrames=0;
 function updateUI(time){
  const s=flight.state,h=!!flight.type.flight.rotorcraft;const speed=s.speed*1.94384,alt=s.position.y*3.28084,heading=(s.heading*180/Math.PI+360)%360,vsi=Math.round(s.verticalSpeed*196.85/10)*10;
@@ -432,9 +436,9 @@ function updateUI(time){
  if(lastAssist!==s.autopilot){lastAssist=s.autopilot;updateAssist();}
  $('gear-warning').hidden=!flight.gearWarning||landing.finished;
  const stalled=s.stalled&&!landing.finished&&!s.grounded&&!s.crashed&&!paused&&!dialog.open;
- const onFinal=landing.onFinal(s);
- let notice='';const agl=s.position.y-world.heightAt(s.position.x,s.position.z);if(stalled)notice='STALL · Add power and regain airspeed';else if(!onFinal&&!landing.finished&&agl<(h?12:100)&&!s.grounded&&!s.crashed&&(!h||s.verticalSpeed < -2))notice=h?'TERRAIN · Raise collective':'TERRAIN · Pull up';else if(s.grounded&&!h&&s.brake>0.02)notice='Wheel brakes on · release to roll';else if(s.grounded&&landing.status==='idle')notice=h?'On the ground · Raise collective to lift vertically':'On the ground · Add power and pitch up to take off';
- if(notice!==lastNotice){lastNotice=notice;$('flight-notice').textContent=notice;$('flight-notice').classList.toggle('visible',!!notice);$('flight-notice').classList.toggle('warning',stalled||notice.startsWith('TERRAIN'));$('flight-notice').classList.toggle('stall',stalled);}
+ const terrain=terrainView=terrainAlert.update(s,flight.type,landing.finished);
+ let notice='';if(stalled)notice='STALL · Add power and regain airspeed';else if(terrain.level!=='clear')notice=terrainNotice(terrain.level,h);else if(s.grounded&&!h&&s.brake>0.02)notice='Wheel brakes on · release to roll';else if(s.grounded&&landing.status==='idle')notice=h?'On the ground · Raise collective to lift vertically':'On the ground · Add power and pitch up to take off';
+ if(notice!==lastNotice){lastNotice=notice;$('flight-notice').textContent=notice;$('flight-notice').classList.toggle('visible',!!notice);$('flight-notice').classList.toggle('warning',stalled||terrain.level==='warning');$('flight-notice').classList.toggle('caution',!stalled&&terrain.level==='caution');$('flight-notice').classList.toggle('stall',stalled);}
  updateLandingUI();
  if(s.crashed&&!lastCrash&&landing.status==='idle'){lastCrash=true;$('crash-overlay').hidden=false;$('sim-status').textContent='Flight ended';}
  drawMap();drawChart();
@@ -484,5 +488,5 @@ window.addEventListener('beforeunload',saveFlight);
 setView(view,false);updateAircraftLabels();updateAirportUI();updateAssist();updateUI(0);updateCamera(1);renderer.render(scene,camera);updateFlightPath();tick();
 setTimeout(()=>{$('loading').classList.add('leaving');setTimeout(()=>$('loading').remove(),750);},500);
 // Expose read-only diagnostic snapshots for repeatable rendering and control checks.
-window.aeronaut={getState:()=>({...flight.state,position:flight.state.position.toArray(),quaternion:flight.state.quaternion.toArray(),paused,view,quality:settings.quality,weather:settings.weather}),getSettings:()=>structuredClone(settings),getMission:()=>landing.snapshot(),startLanding:()=>startLanding(selection.field),getRendererInfo:()=>({...renderer.info.render}),getFlightPath:()=>({...flightPathView,enabled:settings.showFlightPath}),reset:restart,setPaused, setQuality,setAircraft,runwayStart:(id,runway)=>runwayStart(id?resolveAirport(id,runway).field:selection.field),approachStart:(id,runway)=>approachStart(id?resolveAirport(id,runway).field:selection.field),airports:()=>world.airports.map(({position,windsock,...field})=>field),getAirport:airportState,getNavigation:()=>{const n=navReadout();return{destination:navigationDestination(airportState()),bearing:n&&Number(n.bearingText),distance:n?.distance,framing:{...miniFraming},scale:miniMap.scale?.label,pendingTiles:miniMap.pending,drawMs:mapDrawMs};},setMapFraming:(framing,zoom)=>setMapFraming({framing,...(zoom===undefined?{}:{zoom})}),selectAirport:(id,runway)=>selection.select(id,runway),getAircraft:()=>({id:flight.type.id,name:flight.type.name,gearPosition:aircraft.gearPosition,surfaces:aircraft.surfaces,afterburner:aircraft.afterburner})};
+window.aeronaut={getState:()=>({...flight.state,position:flight.state.position.toArray(),quaternion:flight.state.quaternion.toArray(),paused,view,quality:settings.quality,weather:settings.weather}),getSettings:()=>structuredClone(settings),getMission:()=>landing.snapshot(),startLanding:()=>startLanding(selection.field),getRendererInfo:()=>({...renderer.info.render}),getFlightPath:()=>({...flightPathView,enabled:settings.showFlightPath}),getTerrainAlert:()=>({...terrainView,samples:terrainAlert.samples,probes:terrainAlert.probes}),reset:restart,setPaused, setQuality,setAircraft,runwayStart:(id,runway)=>runwayStart(id?resolveAirport(id,runway).field:selection.field),approachStart:(id,runway)=>approachStart(id?resolveAirport(id,runway).field:selection.field),airports:()=>world.airports.map(({position,windsock,...field})=>field),getAirport:airportState,getNavigation:()=>{const n=navReadout();return{destination:navigationDestination(airportState()),bearing:n&&Number(n.bearingText),distance:n?.distance,framing:{...miniFraming},scale:miniMap.scale?.label,pendingTiles:miniMap.pending,drawMs:mapDrawMs};},setMapFraming:(framing,zoom)=>setMapFraming({framing,...(zoom===undefined?{}:{zoom})}),selectAirport:(id,runway)=>selection.select(id,runway),getAircraft:()=>({id:flight.type.id,name:flight.type.name,gearPosition:aircraft.gearPosition,surfaces:aircraft.surfaces,afterburner:aircraft.afterburner})};
 if(query.get('start')==='runway')runwayStart();else if(query.get('start')==='approach')approachStart();
