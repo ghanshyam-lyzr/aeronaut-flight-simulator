@@ -20,7 +20,10 @@ The live rows describe the **mission's locked field and runway while a landing f
 - Signs follow `windComponents`: headwind is positive into the nose (negative is a tailwind), crosswind is positive from the right. Words say it: "Tailwind 3 kt · crosswind 7 kt from the left"; the short form is "Tail 3 · Cross 7 L kt".
 - **Colour is never the only cue.** Chartreuse marks a headwind of at least 2 kt, the danger coral a tailwind of at least 2 kt, ivory everything else. The words always name head/tail and the side.
 - Whole knots. A component that rounds to 0 kt reads as "No headwind" or "no crosswind"; a live sample under ½ kt reads "Wind calm" and hides the arrow.
-- This is gameplay advice for the arcade model, not aircraft crosswind limits. "Strong crosswind" (15 kt or more, steady or in gusts) is one generic note for every aircraft.
+- This is gameplay advice for the arcade model, not aircraft crosswind limits. "Strong crosswind" (15 kt or more, steady or in gusts) uses one threshold for every aircraft. Its note says what this model does, with one sentence for fixed-wing aircraft and one for rotorcraft:
+  - Fixed-wing: "crab into the wind on final to hold the centreline, then straighten before touchdown. The wheels stop the drift." In this model the crosswind stops at the wheels, so nothing drifts on the rollout (`docs/wind-model.md`).
+  - Rotorcraft: "a hover drifts downwind, so hold the cyclic into the wind over the spot. Once down, the helicopter stays put."
+- The landing brief's footer separates the two kinds of weather. Weather presets (light, haze, water) are visual only. The wind shown in the block moves the aircraft as it flies.
 
 ## The advice (`adviseRunway`)
 
