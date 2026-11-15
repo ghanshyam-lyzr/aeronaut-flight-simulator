@@ -1,12 +1,14 @@
-// The four flight axes the pilot's response settings tune, then the one-sided wheel brake (0–1).
+// The four flight axes the pilot's response settings tune, the one-sided wheel brake (0–1), then the pitch-trim
+// adjustment (−1 nose down … 1 nose up), a rate command for the trim wheel, never for the aircraft's rotation.
 const RESPONSIVE = ['pitch', 'roll', 'yaw', 'throttle'];
-const AXES = [...RESPONSIVE, 'brake'];
+const AXES = [...RESPONSIVE, 'brake', 'trim'];
 const neutral = () => Object.fromEntries(AXES.map(axis => [axis, 0]));
 const clamp = (value, min = -1) => Math.max(min, Math.min(1, Number(value) || 0));
 // Full stick travel takes 650 ms; the throttle buttons reach full slew in 350 ms.
 // A 100 ms tap is a fine correction, while a held control retains full authority.
 // Held brakes come on over 800 ms, so a tapped B only trims speed; release is immediate.
-export const TRAVEL = Object.freeze({ pitch: 0.65, roll: 0.65, yaw: 0.65, throttle: 0.35, brake: 0.8 });
+// The trim wheel turns at its own fixed rate the instant it is held and stops the instant it is released (no ramp).
+export const TRAVEL = Object.freeze({ pitch: 0.65, roll: 0.65, yaw: 0.65, throttle: 0.35, brake: 0.8, trim: 0 });
 // Pilot-chosen response divides the travel time, bounded so a tap stays a correction.
 const RESPONSE_MIN = 0.5, RESPONSE_MAX = 2;
 const responseOf = value => Number.isFinite(value) ? Math.max(RESPONSE_MIN, Math.min(RESPONSE_MAX, value)) : 1;
@@ -19,6 +21,7 @@ export class FlightInputs {
   setResponse(response = {}) {
     this.travel = Object.fromEntries(RESPONSIVE.map(axis => [axis, TRAVEL[axis] / responseOf(Number(response?.[axis] ?? 1))]));
     this.travel.brake = TRAVEL.brake;
+    this.travel.trim = TRAVEL.trim;
   }
 
   reset(now) {
@@ -50,6 +53,11 @@ export class FlightInputs {
       const controls = {};
       for (const axis of AXES) {
         const target = this.target[axis];
+        if (!this.travel[axis]) {
+          // Slices split at press and release, so an unramped axis is exactly the held fraction of time.
+          controls[axis] = this.value[axis] = target;
+          continue;
+        }
         let value = this.value[axis];
         // Releasing, easing back or reversing never leaves a continuing stick command.
         if (Math.sign(value) !== Math.sign(target)) value = 0;
