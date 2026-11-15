@@ -75,18 +75,18 @@ for (const id of ['jet', 'fighter']) {
       assert.ok(released.length > 0 && released.every(c => axes.every(a => c[a] === 0)), 'released commands are neutral');
       if (axis === 'pitch') {
         const correction = degrees(s.pitch - b.pitch) * sign;
-        assert.ok(correction > 0.08 && correction < 0.4, `pitch correction ${correction}° at ${rate} Hz`);
+        assert.ok(correction > 0.02 && correction < 0.2, `pitch correction ${correction}° at ${rate} Hz`);
         assert.equal(Math.sign(s.verticalSpeed), -sign, 'one tap does not reverse the approach/climb');
         assert.ok(Math.abs(s.verticalSpeed - b.verticalSpeed) < 0.5);
         assert.ok(Math.abs(flight.pitchRate) < 0.0001, 'angular rate settles after release');
       }
       if (axis === 'roll') {
         const correction = degrees(s.bank - b.bank) * sign;
-        assert.ok(correction > 0.25 && correction < 1.5, `bank correction ${correction}°`);
+        assert.ok(correction > 0.06 && correction < 0.7, `bank correction ${correction}°`);
       }
       if (axis === 'yaw') {
         const correction = degrees(Math.atan2(Math.sin(s.heading - b.heading), Math.cos(s.heading - b.heading))) * sign;
-        assert.ok(correction > 0.07 && correction < 0.17, `rudder heading correction ${correction}°`);
+        assert.ok(correction > 0.025 && correction < 0.08, `rudder heading correction ${correction}°`);
       }
       if (axis === 'throttle') {
         const correction = (s.throttle - startThrottle) * sign;

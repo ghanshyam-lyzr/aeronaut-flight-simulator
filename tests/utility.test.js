@@ -79,7 +79,8 @@ test('short-field takeoff on the real runway with flaps 15 and normal inputs', (
   const roll = s.distance;
   assert.ok(roll < 520, `takeoff roll ${roll}`);
   assert.ok(roll < takeoff('commuter').s.distance, 'shorter than the twin commuter');
-  run(flight, 8, { throttle: 1 });
+  // Continue rotating to a modest climb attitude instead of relying on residual elevator rate.
+  for (let i = 0; i < 8 * 120; i++) flight.update(1 / 120, { throttle: 1, pitch: s.pitch < 0.18 ? 0.6 : 0 });
   assert.equal(s.crashed, false); assert.equal(s.stalled, false); assert.ok(s.position.y > AIRFIELD.elevation + 40);
   // Clean takeoff also works, with a longer roll.
   const clean = takeoff(id, 0);
