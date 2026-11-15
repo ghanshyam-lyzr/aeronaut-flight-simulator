@@ -212,6 +212,17 @@ dialog.chart-dialog{width:min(1060px,calc(100% - 32px))}
 .flight-path-marker{position:absolute;left:0;top:0;width:34px;height:22px;margin:-13px 0 0 -17px;color:var(--accent);filter:drop-shadow(0 1px 2px var(--shadow));pointer-events:none;will-change:transform}
 .flight-path-marker svg{display:block}
 @media(max-width:550px){.flight-path-marker{opacity:.9}}
+/* Airspeed envelope: bands under the fixed-wing tape. Solid coral is beyond a limit (stall, overspeed), dotted is a
+   margin (coral for low speed, ivory for the upper caution band); the label names the state, so colour is never alone. */
+.speed-band{position:absolute;bottom:-4px;height:0;border-top:2px solid var(--danger);pointer-events:none}
+.speed-band.low{border-top-style:dotted}
+.speed-band.caution{border-top:2px dotted var(--foreground);opacity:.8}
+.speed-band.over:before{content:'';position:absolute;left:0;bottom:0;width:1px;height:9px;background:var(--danger)}
+.speed-ticks>span{z-index:1}
+.airspeed.low .instrument-label,.airspeed.high .instrument-label{color:var(--foreground)}
+.airspeed.overspeed .instrument-label,.airspeed.overspeed .instrument-number,.airspeed.overspeed .unit{color:var(--danger)}
+/* Phones: the overspeed notice takes the stall banner's slot, below the mission and map panels and the GEAR banner. */
+@media(max-width:550px){.flight-notice.overspeed{top:264px;max-width:calc(100% - 28px)}.landing-mode .flight-notice.overspeed{top:292px}}
 /* Pitch trim — a readout beside gear and flaps; on phones a hold-to-trim column beside the power buttons. */
 .touch-trim{pointer-events:auto;position:absolute;right:62px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:4px}
 .touch-trim>button:not(#touch-trim-reset){width:34px;height:34px;border-radius:6px;background:var(--panel);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
