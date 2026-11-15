@@ -48,9 +48,7 @@ export class FlightInputs {
       while (this.events.length && this.events[0].time <= this.time + 1e-9) {
         this.target = this.events.shift().target;
       }
-      let end = Math.min(now, this.events[0]?.time ?? now, this.time + 1 / 120);
-      // A float-rounding remainder (1e-13 s at low frame rates) joins this slice: a sliver step measures no load factor.
-      if (now - end < 1e-6) end = now;
+      const end = Math.min(now, this.events[0]?.time ?? now, this.time + 1 / 120);
       const dt = end - this.time;
       const controls = {};
       for (const axis of AXES) {
