@@ -25,6 +25,7 @@ import { CheckpointCourse, courseAvailability, formatCourseTime, RECOMMENDED_AIR
 import { Activities } from './activities.js';
 import { createCourseGates } from './course-gates.js';
 import { FlightPathMarker } from './flight-path.js';
+import { AirspeedMonitor, airspeedEnvelope, tapeLayout, AIRSPEED_LABELS, OVERSPEED_NOTICE } from './airspeed-envelope.js';
 import { TerrainAlert, terrainNotice } from './terrain-alert.js';
 import { NavigationMap } from './nav-map.js';
 import { navigationDestination, navigationReadout, bearingDistance, degrees, formatNM, zoomFrom, nearestZoom, FRAMINGS, FRAMING_LABELS, ZOOM_SPANS } from './navigation.js';
@@ -518,6 +519,17 @@ function drawMap(){
   $('map-framing-label').textContent=FRAMING_LABELS[miniFraming.framing];$('map-framing').setAttribute('aria-label',`Map framing: ${FRAMING_LABELS[miniFraming.framing]}. Change framing`);
   $('mini-map').setAttribute('aria-label',d?`Navigation map, ${FRAMING_LABELS[miniFraming.framing].toLowerCase()} view: aircraft and ${d.name}`:'Navigation map');}
 }
+// The airspeed envelope (src/airspeed-envelope.js): read-only bands on the fixed-wing tape, and a latched low / high /
+// overspeed state that is off on the ground, after a crash, while paused, under a dialog and once a mission is over.
+const airspeedMonitor=new AirspeedMonitor();let lastBands=null,lastAirspeed='';
+function updateAirspeed(s,speed,active){
+ const e=airspeedEnvelope(flight.type,s.flaps),state=airspeedMonitor.update(s,flight.type,active),bands=e?`${flight.type.id}|${s.flaps}`:'';
+ $('speed-marker').style.left=`${e?tapeLayout(e,speed).marker:Math.min(96,speed/flight.type.speedScale*100)}%`;
+ if(bands!==lastBands){lastBands=bands;const t=e&&tapeLayout(e,0),band=(id,from,to)=>{const b=$(id);b.hidden=!e;if(e){b.style.left=`${from}%`;b.style.width=`${to-from}%`;}};
+  band('band-stall',0,t?.stall);band('band-low',t?.stall,t?.low);band('band-caution',t?.caution,t?.overspeed);band('band-over',t?.overspeed,100);}
+ if(state!==lastAirspeed){lastAirspeed=state;$('airspeed-label').textContent=AIRSPEED_LABELS[state];const c=$('airspeed-instrument').classList;for(const k of ['low','high','overspeed'])c.toggle(k,state===k);}
+ return state;
+}
 // The TERRAIN warning (src/terrain-alert.js): a bounded look-ahead along the actual travel over world.heightAt,
 // resampled at most four times a flight second. Read-only; runway approaches and takeoffs at any field stay quiet.
 const terrainAlert=new TerrainAlert(world.heightAt);let terrainView=terrainAlert.view();
@@ -525,13 +537,15 @@ let lastAssist=true,lastUi=0,lastFps=performance.now(),fpsFrames=0;
 function updateUI(time){
  const s=flight.state,h=!!flight.type.flight.rotorcraft;const speed=s.speed*1.94384,alt=s.position.y*3.28084,heading=(s.heading*180/Math.PI+360)%360,vsi=Math.round(s.verticalSpeed*196.85/10)*10;
  $('g-force').textContent=(Math.abs(s.gForce)<0.05?0:s.gForce).toFixed(1);$('g-force-instrument').classList.toggle('overload',s.gForce>6);
- $('speed').textContent=Math.round(speed);$('altitude').textContent=Math.round(alt).toLocaleString();$('agl').textContent=Math.round((s.position.y-world.heightAt(s.position.x,s.position.z))*3.28084).toLocaleString();$('heading').textContent=String(Math.round(heading)%360).padStart(3,'0');$('vertical-speed').textContent=`${vsi>0?'+':''}${vsi}`;$('vertical-state').textContent=Math.abs(vsi)<50?(h&&s.speed<.5?'Hovering':'Level flight'):vsi>0?'Climbing':'Descending';$('heading-cardinal').textContent=['N','NE','E','SE','S','SW','W','NW'][Math.round(heading/45)%8];$('throttle-value').textContent=`${Math.round(s.throttle*100)}%${s.afterburner?' · AB':''}`;$('touch-power-label').textContent=h?`Collective ${Math.round(s.throttle*100)}%`:'Power';$('throttle-slider').value=s.throttle*100;$('gear-state').textContent=h||flight.type.fixedGear?'FIXED':s.gearDown?'DOWN':'UP';$('gear-btn').classList.toggle('active',s.gearDown);$('flaps-state').textContent=h||flight.type.noFlaps?'N/A':`${s.flaps*15}°`;$('flaps-btn').classList.toggle('active',s.flaps>0);updateTrim();$('flight-timer').textContent=formatTime(s.flightTime);$('map-distance').textContent=`${(s.distance/1852).toFixed(1)} NM`;$('speed-marker').style.left=`${Math.min(96,speed/flight.type.speedScale*100)}%`;$('attitude-inner').style.transform=`rotate(${-s.bank*180/Math.PI}deg) translateY(${s.pitch*45}px)`;
+ $('speed').textContent=Math.round(speed);$('altitude').textContent=Math.round(alt).toLocaleString();$('agl').textContent=Math.round((s.position.y-world.heightAt(s.position.x,s.position.z))*3.28084).toLocaleString();$('heading').textContent=String(Math.round(heading)%360).padStart(3,'0');$('vertical-speed').textContent=`${vsi>0?'+':''}${vsi}`;$('vertical-state').textContent=Math.abs(vsi)<50?(h&&s.speed<.5?'Hovering':'Level flight'):vsi>0?'Climbing':'Descending';$('heading-cardinal').textContent=['N','NE','E','SE','S','SW','W','NW'][Math.round(heading/45)%8];$('throttle-value').textContent=`${Math.round(s.throttle*100)}%${s.afterburner?' · AB':''}`;$('touch-power-label').textContent=h?`Collective ${Math.round(s.throttle*100)}%`:'Power';$('throttle-slider').value=s.throttle*100;$('gear-state').textContent=h||flight.type.fixedGear?'FIXED':s.gearDown?'DOWN':'UP';$('gear-btn').classList.toggle('active',s.gearDown);$('flaps-state').textContent=h||flight.type.noFlaps?'N/A':`${s.flaps*15}°`;$('flaps-btn').classList.toggle('active',s.flaps>0);updateTrim();$('flight-timer').textContent=formatTime(s.flightTime);$('map-distance').textContent=`${(s.distance/1852).toFixed(1)} NM`;$('attitude-inner').style.transform=`rotate(${-s.bank*180/Math.PI}deg) translateY(${s.pitch*45}px)`;
  if(lastAssist!==s.autopilot){lastAssist=s.autopilot;updateAssist();}
  $('gear-warning').hidden=!flight.gearWarning||activities.finished;
  const stalled=s.stalled&&!activities.finished&&!s.grounded&&!s.crashed&&!paused&&!dialog.open;
+ const overspeed=updateAirspeed(s,speed,!paused&&!dialog.open&&!activities.finished)==='overspeed';
  const terrain=terrainView=terrainAlert.update(s,flight.type,activities.finished);
- let notice='';if(stalled)notice='STALL · Add power and regain airspeed';else if(terrain.level!=='clear')notice=terrainNotice(terrain.level,h);else if(s.grounded&&!h&&s.brake>0.02)notice='Wheel brakes on · release to roll';else if(s.grounded&&landing.status==='idle')notice=h?'On the ground · Raise collective to lift vertically':'On the ground · Add power and pitch up to take off';
- if(notice!==lastNotice){lastNotice=notice;$('flight-notice').textContent=notice;$('flight-notice').classList.toggle('visible',!!notice);$('flight-notice').classList.toggle('warning',stalled||terrain.level==='warning');$('flight-notice').classList.toggle('caution',!stalled&&terrain.level==='caution');$('flight-notice').classList.toggle('stall',stalled);}
+ let notice='';if(stalled)notice='STALL · Add power and regain airspeed';else if(terrain.level!=='clear')notice=terrainNotice(terrain.level,h);else if(overspeed)notice=OVERSPEED_NOTICE;else if(s.grounded&&!h&&s.brake>0.02)notice='Wheel brakes on · release to roll';else if(s.grounded&&landing.status==='idle')notice=h?'On the ground · Raise collective to lift vertically':'On the ground · Add power and pitch up to take off';
+ const overspeedShown=notice===OVERSPEED_NOTICE;
+ if(notice!==lastNotice){lastNotice=notice;$('flight-notice').textContent=notice;$('flight-notice').classList.toggle('visible',!!notice);$('flight-notice').classList.toggle('warning',stalled||terrain.level==='warning'||overspeedShown);$('flight-notice').classList.toggle('caution',!stalled&&terrain.level==='caution');$('flight-notice').classList.toggle('stall',stalled);$('flight-notice').classList.toggle('overspeed',overspeedShown);}
  updateLandingUI();
  if(s.crashed&&!lastCrash&&activities.kind==='free'){lastCrash=true;$('crash-overlay').hidden=false;$('sim-status').textContent='Flight ended';}
  drawMap();drawChart();
