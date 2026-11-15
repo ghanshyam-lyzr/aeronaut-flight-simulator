@@ -1,9 +1,12 @@
-const AXES = ['pitch', 'roll', 'yaw', 'throttle'];
+// The four flight axes the pilot's response settings tune, then the one-sided wheel brake (0–1).
+const RESPONSIVE = ['pitch', 'roll', 'yaw', 'throttle'];
+const AXES = [...RESPONSIVE, 'brake'];
 const neutral = () => Object.fromEntries(AXES.map(axis => [axis, 0]));
-const clamp = value => Math.max(-1, Math.min(1, Number(value) || 0));
+const clamp = (value, min = -1) => Math.max(min, Math.min(1, Number(value) || 0));
 // Full stick travel takes 650 ms; the throttle buttons reach full slew in 350 ms.
 // A 100 ms tap is a fine correction, while a held control retains full authority.
-export const TRAVEL = Object.freeze({ pitch: 0.65, roll: 0.65, yaw: 0.65, throttle: 0.35 });
+// Held brakes come on over 800 ms, so a tapped B only trims speed; release is immediate.
+export const TRAVEL = Object.freeze({ pitch: 0.65, roll: 0.65, yaw: 0.65, throttle: 0.35, brake: 0.8 });
 // Pilot-chosen response divides the travel time, bounded so a tap stays a correction.
 const RESPONSE_MIN = 0.5, RESPONSE_MAX = 2;
 const responseOf = value => Number.isFinite(value) ? Math.max(RESPONSE_MIN, Math.min(RESPONSE_MAX, value)) : 1;
@@ -14,7 +17,8 @@ export class FlightInputs {
 
   /** Per-axis response (0.5–2, 1 = default): how quickly held inputs reach full deflection. */
   setResponse(response = {}) {
-    this.travel = Object.fromEntries(AXES.map(axis => [axis, TRAVEL[axis] / responseOf(Number(response?.[axis] ?? 1))]));
+    this.travel = Object.fromEntries(RESPONSIVE.map(axis => [axis, TRAVEL[axis] / responseOf(Number(response?.[axis] ?? 1))]));
+    this.travel.brake = TRAVEL.brake;
   }
 
   reset(now) {
@@ -25,7 +29,7 @@ export class FlightInputs {
   }
 
   set(inputs, now) {
-    const target = Object.fromEntries(AXES.map(axis => [axis, clamp(inputs[axis])]));
+    const target = Object.fromEntries(AXES.map(axis => [axis, clamp(inputs[axis], axis === 'brake' ? 0 : -1)]));
     const previous = this.events.at(-1)?.target ?? this.target;
     if (AXES.some(axis => target[axis] !== previous[axis])) {
       this.events.push({ time: Math.max(this.time, now), target });

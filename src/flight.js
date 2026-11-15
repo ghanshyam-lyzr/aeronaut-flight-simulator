@@ -13,6 +13,23 @@ const ASSIST_RECOVERY_RATE = 1.2;
 const _q = new THREE.Quaternion(), _prev = new THREE.Quaternion(), _euler = new THREE.Euler(0, 0, 0, 'YXZ');
 const _forward = new THREE.Vector3(), _up = new THREE.Vector3(), _right = new THREE.Vector3(), _axis = new THREE.Vector3();
 
+/**
+ * Full wheel-brake deceleration in m/s², added to rolling resistance while grounded. Light singles with good brakes
+ * stop hardest; the tailwheel biplane, the single-wheel motorglider and the heavy jets and freighters brake gentler,
+ * and land faster, so they need more runway. Arcade tuning, not certified stopping performance.
+ */
+export const BRAKE_DECELERATION = Object.freeze({
+  bush: 3.4, trainer: 3, utility: 3, jet: 3, pushpull: 2.9, aerobatic: 2.8, commuter: 2.8, fighter: 2.7,
+  canard: 2.6, racer: 2.6, cityliner: 2.6, regional: 2.6, airliner: 2.4, interceptor: 2.4,
+  biplane: 2.2, widebody: 2.1, cargo: 2, motorglider: 2,
+});
+
+/** A fixed-wing type's full braking deceleration; helicopters have none (their ground translation is frozen). */
+export function brakeDeceleration(type) {
+  if (type.flight.rotorcraft) return 0;
+  return type.flight.brakeDeceleration ?? BRAKE_DECELERATION[type.id] ?? 2.5;
+}
+
 /** Vela J8 performance, in metres per second. Speeds are tuned for the valley, not a certified type. */
 export const JET = FLEET.jet.flight;
 
@@ -42,6 +59,7 @@ export class FlightController {
       throttle: f.cruiseThrottle,
       spool: f.cruiseThrottle,
       afterburner: false,
+      brake: 0,
       heading: 0,
       pitch: 0,
       bank: 0,
@@ -135,6 +153,7 @@ export class FlightController {
       roll: clamp(Number(inputs.roll) || 0, -1, 1),
       yaw: clamp(Number(inputs.yaw) || 0, -1, 1),
       throttle: clamp(Number(inputs.throttle) || 0, -1, 1),
+      brake: clamp(Number(inputs.brake) || 0, 0, 1),
     };
     if (Math.abs(controls.pitch) + Math.abs(controls.roll) + Math.abs(controls.yaw) > (this.type.flight.rotorcraft ? 0.001 : 0.12)
       || (this.type.flight.rotorcraft && Math.abs(controls.throttle) > 0.001)) {
@@ -151,6 +170,8 @@ export class FlightController {
     this.previousVelocity.set(0, 0, -s.speed).applyQuaternion(s.quaternion);
     this.previousVelocity.y = s.verticalSpeed;
     s.flightTime += dt;
+    // Wheel brakes act only through the tyres: never in the air, never as a speed brake.
+    s.brake = 0;
     s.throttle = clamp(s.throttle + controls.throttle * dt * f.throttleRate, 0, 1);
     // Engine response lags the lever, slowest near idle.
     s.spool = mix(s.spool, s.throttle, s.spool < 0.35 ? f.spoolUp : f.spoolCruise, dt);
@@ -299,6 +320,9 @@ export class FlightController {
     const targetSpeed = s.spool > 0.2 ? (s.spool - 0.2) * f.groundThrust + burner : 0;
     const nextSpeed = mix(s.speed, targetSpeed, s.spool < 0.2 ? 0.35 : f.groundRate, dt);
     s.speed = f.maxAcceleration ? Math.min(nextSpeed, s.speed + f.maxAcceleration * dt) : nextSpeed;
+    // Brakes add a bounded deceleration that stops at zero: they hold low power but never roll the aircraft back.
+    s.brake = controls.brake ?? 0;
+    if (s.brake > 0) s.speed = Math.max(0, s.speed - s.brake * brakeDeceleration(this.type) * dt);
     s.heading = ((s.heading + (controls.yaw + controls.roll * 0.6) * dt * 0.35) % TAU + TAU) % TAU;
     s.bank = mix(s.bank, 0, 5, dt);
     s.pitch = mix(s.pitch, Math.max(0, controls.pitch) * 0.12, 3, dt);
