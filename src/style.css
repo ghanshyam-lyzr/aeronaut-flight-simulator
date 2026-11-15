@@ -259,3 +259,19 @@ dialog.chart-dialog{width:min(1060px,calc(100% - 32px))}
 @media(max-width:550px){.map-wind{padding:4px 8px 0;gap:4px;font-size:12px}.map-wind-runway{display:none}.map-wind .wind-arrow{width:10px;height:10px}.landing-guidance .landing-wind{margin-bottom:4px}}
 @media(prefers-reduced-motion:reduce){.wind-arrow{transition:none}}
 .landing-brief>.runway-wind{margin:0 0 14px}
+/* Phones: the course card is one compact block above the first gate's projected opening (y ≈ 225 px in the chase view at 390×844).
+   The title gives way to the phase line, the readings share a row with Retry / Free flight, and the rules line lives in the brief. */
+.course-best{display:none}
+@media(max-width:550px){
+ .course-mode .mission-panel:not(.collapsed) h1{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;margin:0;padding:0}
+ .course-mode .mission-panel.collapsed{padding-bottom:12px}
+ .course-mode .mission-top{top:5px;right:6px}.course-mode .tiny-btn{width:32px;height:32px}
+ .course-mode .mission-panel:not(.collapsed) #course-guidance:not([hidden]){display:grid;grid-template-columns:1fr auto;grid-template-areas:"phase phase" "pips pips" "readings actions" "cue cue"}
+ #course-phase{grid-area:phase}.course-pips{grid-area:pips}#course-guidance .landing-readings{grid-area:readings}#course-guidance .landing-actions{grid-area:actions}#course-cue{grid-area:cue}
+ #course-phase{font-size:12px;padding-right:34px;margin-bottom:6px}
+ #course-guidance .landing-readings{grid-template-columns:auto auto auto;justify-content:start;gap:16px;padding:6px 0}
+ .course-next-reading{display:none}.course-best:not([hidden]){display:block}
+ #course-guidance .landing-actions{align-items:center;padding:6px 0;border-top:1px solid var(--border)}
+ #course-guidance .landing-actions button{min-height:34px}
+ #course-cue{margin:0;padding:2px 0 10px}#course-objective{display:none}
+}
