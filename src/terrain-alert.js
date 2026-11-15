@@ -74,8 +74,9 @@ const _v = new THREE.Vector3();
 /**
  * One look-ahead sample. Returns { level, cause, time, clearance, probes } where cause is 'rising' (ground ahead
  * climbs into the path), 'descent' (the path sinks into flat ground) or '' and time is the seconds to the first
- * conflicting probe (or the interpolated contact, where the path meets the ground); `extra` metres widen the margin (the hysteresis while an alert shows). `probes` counts the
- * height lookups, never more than the profile's probes + 1.
+ * conflicting probe (or to the interpolated contact, where the path meets the ground); `extra` metres widen the
+ * margin (the hysteresis while an alert shows). `probes` counts the height lookups, never more than the profile's
+ * probes + 1.
  */
 export function sampleTerrain(state, type, heightAt, { airports = AIRPORTS, extra = 0 } = {}) {
   const rotorcraft = !!type.flight.rotorcraft, c = rotorcraft ? TERRAIN_ALERT.rotorcraft : TERRAIN_ALERT.fixedWing;
