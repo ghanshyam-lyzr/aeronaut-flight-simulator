@@ -151,10 +151,10 @@ export function inProtectedArea(airport, x, z) {
 // half as long again as `length` is recommended.
 const need = (length, width, surfaces = ANY) => Object.freeze({ length, width, surfaces });
 export const RUNWAY_NEEDS = Object.freeze({
-  helicopter: need(0, 0), transport: need(0, 0),
-  bush: need(250, 10), biplane: need(250, 10), motorglider: need(300, 12), trainer: need(350, 10), utility: need(350, 12),
-  canard: need(400, 10, PAVED), aerobatic: need(400, 10), commuter: need(700, 18), cityliner: need(700, 23, PAVED),
-  jet: need(700, 23, PAVED), regional: need(900, 30, PAVED), fighter: need(900, 23, PAVED), cargo: need(1000, 30),
+  helicopter: need(0, 0), transport: need(0, 0), tandem: need(0, 0),
+  bush: need(250, 10), biplane: need(250, 10), motorglider: need(300, 12), trainer: need(350, 10), utility: need(350, 12), pushpull: need(350, 12),
+  canard: need(400, 10, PAVED), aerobatic: need(400, 10), racer: need(400, 10, PAVED), commuter: need(700, 18), cityliner: need(700, 23, PAVED),
+  jet: need(700, 23, PAVED), regional: need(900, 30, PAVED), fighter: need(900, 23, PAVED), interceptor: need(1000, 23, PAVED), cargo: need(1000, 30),
   airliner: need(1100, 30, PAVED), widebody: need(1100, 45, PAVED),
 });
 

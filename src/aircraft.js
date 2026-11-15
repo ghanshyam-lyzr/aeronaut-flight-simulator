@@ -14,6 +14,10 @@ import { aircraftType } from './fleet.js';
 import { createCanard, createCanardCockpit } from './canard.js';
 import { createTransport, createTransportCockpit } from './transport.js';
 import { createMotorglider, createMotorgliderCockpit } from './motorglider.js';
+import { createRacer, createRacerCockpit } from './racer.js';
+import { createPushpull, createPushpullCockpit } from './pushpull.js';
+import { createTandem, createTandemCockpit } from './tandem.js';
+import { createInterceptor, createInterceptorCockpit } from './interceptor.js';
 
 const clamp = THREE.MathUtils.clamp;
 const ease = (value, target, rate, dt) => THREE.MathUtils.lerp(value, target, 1 - Math.exp(-rate * dt));
@@ -30,6 +34,10 @@ export function createAircraft(type = 'jet') {
   if (type === 'motorglider') return createMotorglider();
   if (type === 'biplane') return createBiplane();
   if (type === 'cityliner') return createCityliner();
+  if (type === 'racer') return createRacer();
+  if (type === 'pushpull') return createPushpull();
+  if (type === 'tandem') return createTandem();
+  if (type === 'interceptor') return createInterceptor();
   return type === 'airliner' ? create737() : type === 'helicopter' ? createHelicopter() : type === 'fighter' ? createFighter() : createVela();
 }
 
@@ -453,6 +461,10 @@ export function createCockpit(type = 'jet') {
   if (type === 'motorglider') return createMotorgliderCockpit();
   if (type === 'biplane') return createBiplaneCockpit();
   if (type === 'cityliner') return createCitylinerCockpit();
+  if (type === 'racer') return createRacerCockpit();
+  if (type === 'pushpull') return createPushpullCockpit();
+  if (type === 'tandem') return createTandemCockpit();
+  if (type === 'interceptor') return createInterceptorCockpit();
   if (type === 'helicopter') return createHelicopterCockpit();
   if (type === 'transport') return createTransportCockpit();
   const fighter = type === 'fighter', airliner = type === 'airliner';
