@@ -36,13 +36,15 @@ The brief explains the technique in the arcade model's own terms:
 
 It does not claim certified limits. Fixed-wing phones have no rudder buttons, so the brief says to level the wings and land with the crab in. The landing mission accepts up to 12° of misalignment.
 
-**During the attempt** ([1600](crosswind-practice/approach-paused-1600.png), [1280](crosswind-practice/card-trainer-paused-1280.png), [390](crosswind-practice/card-paused-390.png)), the landing card adds one muted line: the wind and the live crosswind (`Wind 080° 9G12 kt · now 10 kt across from the right`). The cue reads the actual drift over the ground (the flight-path marker's track):
+**During the attempt** ([1600](crosswind-practice/approach-paused-1600.png), [1280](crosswind-practice/card-trainer-paused-1280.png), [390](crosswind-practice/card-paused-390.png)), the landing card's **Wind now** line (from the runway-wind advisor, #45) reads the practice wind on runway 36, for example `Wind now Head 1 · Cross 11 R kt`. The map's wind row does the same. This exercise adds no wind readout of its own.
+
+The cue reads the actual drift over the ground (the flight-path marker's track):
 - "Drifting left · turn into the wind with E"
 - "Drifting right · ease the crab back with Q"
 - "Crabbed 8° right · tracking the centreline"
 - below 8 m, "Straighten now with Q · then flare gently with S"
 
-When the heading is more than 12° off the runway, the landing mission's own cues take over.
+Where the touch yoke shows (phones), the cues name a bank instead ("turn into the wind with a gentle right bank"), and below 8 m they say "Level the wings · flare gently, the crab can stay in". When the heading is more than 12° off the runway, the landing mission's own cues take over.
 
 **The result** ([1600](crosswind-practice/result-uncorrected-1600.png), [390](crosswind-practice/result-390.png)) keeps the mission's reason and four touchdown measurements. It adds one sentence of advice and two tiles: **Crab on final** (the mean heading offset from 800 m to 50 m before the threshold) and **Crosswind**. Example sentences:
 - "No crab into the wind on final · the wind carried you 108 m left by the threshold. Turn a few degrees right early and hold it."
@@ -62,6 +64,7 @@ The retry button reads **Retry crosswind practice**.
 - **`settings.wind` is never touched.** A Wind choice made in the Weather dialog during the attempt is saved, the dialog says the practice holds its wind until it ends, and that new choice is what comes back ([1600](crosswind-practice/weather-during-practice-1600.png)).
   - Changing the light (Clear / Golden hour / Cloud cover) does not touch the attempt.
   - The weather panel reads the wind blowing: the practice wind during it, the pilot's afterwards.
+- **Runway advice** (#45) for the selected destination, in Explore and the landing brief, uses the pilot's wind during the attempt (`CrosswindPractice.pilotWind`), because any departure or mission started from there ends the practice and flies in that wind. In the browser, with Breeze chosen, Orvane 32's advice read "Reported wind 240° at 8 kt" during the attempt and after it. The live **Wind now** readouts show the wind actually blowing.
 - **Pause and dialogs** freeze the wind and the mission clock, because the flight is not updated.
 - **One activity at a time.** `Activities` (`src/activities.js`) gains `startCrosswind` and kind `'crosswind'`: it starts only if the aircraft can fly it, and ends the checkpoint course. Starting the course or a landing mission ends the practice first. A refused start (a helicopter) leaves whatever was running untouched.
 - **Destination and glide lights.** The practice uses its own field and never changes the airport selection. During the attempt the glide-path lights and the map follow Alpine Field 36, as they do for any mission; afterwards they return to the selected field. In the browser: Orvane Regional 32 was selected, the lights followed Alpine Field 36 during the attempt and were back on Orvane 32 afterwards.
@@ -101,7 +104,7 @@ What the measurements show:
 
 Both are covered by tests in `tests/crosswind-practice.test.js` that fail without the fix.
 
-1. **Load factor at low frame rates (`src/controls.js`).**
+1. **Load factor at low frame rates (`src/controls.js`).** This one predates this branch: it also shows in an ordinary landing mission with Gusts selected.
    - **Symptom.** At about 1 fps, `FlightInputs` cut each 0.25 s frame into 1/120 s slices and left a floating-point remainder of about 2 × 10⁻¹³ s. On a pitched approach in wind, the wind is sampled at each step's midpoint, so the load factor differentiated over that sliver read in the thousands of g (−3488.7 g on the G-force instrument in the browser).
    - **Fix.** Any remainder under 1 µs now joins the slice before it. Total time is unchanged.
    - **Result.** Worst |g − 1| over 40 one-fps frames fell from 46,728 to 0.01.

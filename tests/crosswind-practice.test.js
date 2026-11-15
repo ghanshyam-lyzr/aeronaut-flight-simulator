@@ -64,7 +64,9 @@ test('an attempt owns the wind: retries keep it, ending restores the pilot selec
   // The pilot's choice made during the attempt is the one handed back.
   practice.start(flight); assert.equal(practice.holdPilotChoice('calm'), true);
   assert.equal(windOf(flight), PRACTICE.wind, 'the attempt keeps its own wind');
+  assert.equal(practice.pilotWind(windOf(flight)), WIND_PRESETS.calm, 'runway advice reads the pilot wind, not the practice wind');
   practice.end(); assert.equal(windOf(flight), WIND_PRESETS.calm);
+  assert.equal(practice.pilotWind(WIND_PRESETS.gusts), WIND_PRESETS.gusts, 'outside an attempt the live wind is the pilot wind');
   assert.equal(practice.holdPilotChoice('gusts'), false, 'outside an attempt the choice applies directly');
 });
 

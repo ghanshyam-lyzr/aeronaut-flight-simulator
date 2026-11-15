@@ -71,6 +71,12 @@ export class CrosswindPractice {
   /** While the attempt owns the wind, a new pilot choice (the Weather dialog) is what end() restores. */
   holdPilotChoice(config) { if (!this.owning) return false; this.previous = normalizeWind(config); return true; }
 
+  /**
+   * The wind a flight started after the attempt will meet: the pilot's selection while the attempt owns the wind,
+   * otherwise `live`. Runway advice for the selected destination reads this, never the practice wind.
+   */
+  pilotWind(live) { return this.owning ? this.previous : live; }
+
   /** End the attempt (if any) and give the pilot's wind back, exactly once. Returns whether it restored the wind. */
   end() {
     const restored = this.owning;

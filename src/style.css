@@ -241,3 +241,39 @@ dialog.chart-dialog{width:min(1060px,calc(100% - 32px))}
 @media(max-width:550px){#course-entry,#crosswind-entry{display:none}}
 /* Crosswind practice brief: the landing metrics grid, with the readings a size down so four fit beside the steps. */
 .crosswind-brief{margin:4px 0 16px;padding:14px 0;gap:14px 16px}.crosswind-brief dd{font-size:22px}
+/* Runway wind advice (src/runway-wind.js): text first, chartreuse headwind, coral tailwind, ivory otherwise. */
+.wind-headwind{color:var(--accent)}.wind-tailwind{color:var(--danger)}.wind-neutral{color:var(--foreground)}
+.wind-arrow{width:13px;height:13px;flex-shrink:0;color:var(--foreground);transition:transform .16s}
+.runway-wind{margin-top:10px;padding:11px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface-raised);font-size:12px;line-height:1.55}
+.runway-wind-head{display:flex;gap:10px;align-items:center;margin-bottom:6px}
+.runway-wind-head strong{display:block;font-weight:500}.runway-wind-head span{display:block;color:var(--muted);font-size:11px}
+.runway-wind.switch .runway-wind-head strong{color:var(--danger)}.runway-wind.into-wind .runway-wind-head strong{color:var(--accent)}
+.runway-wind-diagram{position:relative;width:30px;height:30px;flex-shrink:0;border:1px solid var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center}
+.runway-wind-diagram i{position:absolute;left:50%;top:5px;bottom:5px;width:4px;margin-left:-2px;border-radius:1px;background:var(--subtle)}
+.runway-wind-diagram .wind-arrow{position:relative;width:18px;height:18px}
+.runway-wind>p{margin:0}.runway-wind>p b{font-family:var(--numbers);font-weight:500;font-size:13px;margin-right:4px}
+.runway-wind .runway-wind-gust{color:var(--muted);font-size:11px;margin-top:4px}
+.runway-wind .secondary-btn{margin-top:10px;background:var(--surface);border:1px solid var(--border);color:var(--accent)}
+.map-wind{display:flex;align-items:center;gap:7px;padding:6px 12px 0;font-family:var(--numbers);font-size:14px;white-space:nowrap;overflow:hidden}
+.map-wind-runway{color:var(--muted)}
+.map-wind .wind-arrow.calm{opacity:0}
+.landing-guidance .landing-wind{font-size:11px;margin-bottom:8px}.landing-wind>span:first-child{color:var(--muted)}
+@media(max-width:550px){.map-wind{padding:4px 8px 0;gap:4px;font-size:12px}.map-wind-runway{display:none}.map-wind .wind-arrow{width:10px;height:10px}.landing-guidance .landing-wind{margin-bottom:4px}}
+@media(prefers-reduced-motion:reduce){.wind-arrow{transition:none}}
+.landing-brief>.runway-wind{margin:0 0 14px}
+/* Phones: the course card is one compact block above the first gate's projected opening (y ≈ 225 px in the chase view at 390×844).
+   The title gives way to the phase line, the readings share a row with Retry / Free flight, and the rules line lives in the brief. */
+.course-best{display:none}
+@media(max-width:550px){
+ .course-mode .mission-panel:not(.collapsed) h1{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;margin:0;padding:0}
+ .course-mode .mission-panel.collapsed{padding-bottom:12px}
+ .course-mode .mission-top{top:5px;right:6px}.course-mode .tiny-btn{width:32px;height:32px}
+ .course-mode .mission-panel:not(.collapsed) #course-guidance:not([hidden]){display:grid;grid-template-columns:1fr auto;grid-template-areas:"phase phase" "pips pips" "readings actions" "cue cue"}
+ #course-phase{grid-area:phase}.course-pips{grid-area:pips}#course-guidance .landing-readings{grid-area:readings}#course-guidance .landing-actions{grid-area:actions}#course-cue{grid-area:cue}
+ #course-phase{font-size:12px;padding-right:34px;margin-bottom:6px}
+ #course-guidance .landing-readings{grid-template-columns:auto auto auto;justify-content:start;gap:16px;padding:6px 0}
+ .course-next-reading{display:none}.course-best:not([hidden]){display:block}
+ #course-guidance .landing-actions{align-items:center;padding:6px 0;border-top:1px solid var(--border)}
+ #course-guidance .landing-actions button{min-height:34px}
+ #course-cue{margin:0;padding:2px 0 10px}#course-objective{display:none}
+}
