@@ -219,3 +219,12 @@ dialog.chart-dialog{width:min(1060px,calc(100% - 32px))}
 #touch-trim-reset{display:flex;flex-direction:column;align-items:center;min-width:52px;padding:2px 4px;border-radius:6px;background:var(--scrim);line-height:1.15}
 #touch-trim-reset span{font-size:11px;color:var(--muted)}#touch-trim-reset b{font-family:var(--numbers);font-weight:500;font-size:14px;color:var(--accent);white-space:nowrap}
 .aircraft-controls button{white-space:nowrap}@media(min-width:1151px){.aircraft-controls{gap:12px}.throttle{flex:2}.throttle-heading{max-width:none}}
+/* Checkpoint course: the landing mission card's layout, with a compact row of gate pips. */
+.course-pips{display:flex;gap:4px;margin:0 0 10px}.course-pips span{flex:1;height:3px;border-radius:2px;background:var(--border)}.course-pips span.done{background:var(--accent)}.course-pips span.next{background:var(--foreground)}
+#course-phase{color:var(--accent)}
+.mission-entry+.mission-entry{padding-top:9px}
+@media(max-width:550px){.course-pips{margin-bottom:6px}}
+/* The course entry adds one row to the free-flight card; the scene label moves down with it. */
+.scene-label{top:345px}@media(max-width:800px){.scene-label{top:322px}}
+/* Phones keep the free-flight card at its old height; the course starts from Menu → Explore there. */
+@media(max-width:550px){#course-entry{display:none}}

@@ -19,11 +19,19 @@
         <h1 id="mission-title">The Swiss Alps</h1><p class="location-line"><i data-lucide="map-pin"></i>Alpine Valley, Switzerland</p>
         <div class="mission-details"><div class="aircraft-icon"><i data-lucide="plane"></i></div><div><strong id="aircraft-name">Vela J8</strong><span id="aircraft-type">Twin turbofan · A-VJ08</span></div><span class="aircraft-badge" id="aircraft-badge">JET</span></div>
         <button class="mission-entry" id="landing-entry">Landing mission <i data-lucide="arrow-up-right"></i></button>
+        <button class="mission-entry" id="course-entry">Fly the Lake Azure gates <i data-lucide="arrow-up-right"></i></button>
         <div id="landing-guidance" class="landing-guidance" hidden>
           <p id="landing-phase">Final approach · runway 36</p>
           <div class="landing-readings"><div><span>Target speed</span><strong id="landing-speed"></strong></div><div><span id="landing-path-label">Glide path</span><strong id="landing-path"></strong></div></div>
           <p id="landing-cue"></p><p id="landing-objective" class="landing-objective"></p>
           <div class="landing-actions"><button id="landing-retry">Retry</button><button id="landing-cancel">Free flight</button></div>
+        </div>
+        <div id="course-guidance" class="landing-guidance" hidden>
+          <p id="course-phase">Gate 1 of 6</p>
+          <div class="course-pips" id="course-pips" aria-hidden="true"></div>
+          <div class="landing-readings"><div><span>Course time</span><strong id="course-time">0:00.0</strong></div><div><span id="course-next-label">Next gate</span><strong id="course-next"></strong></div></div>
+          <p id="course-cue" aria-live="polite"></p><p id="course-objective" class="landing-objective"></p>
+          <div class="landing-actions"><button id="course-retry">Retry</button><button id="course-cancel">Free flight</button></div>
         </div>
         <div class="mission-action"><span><span class="status-dot"></span><span id="assist-status">Flight assist enabled</span></span><button id="take-control" title="Switch between assisted and manual flight">Take control <i data-lucide="arrow-up-right"></i></button></div>
       </section>
