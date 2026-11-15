@@ -31,7 +31,7 @@ Who can fly it:
 
 The brief explains the technique in the arcade model's own terms:
 1. **Crab.** Left alone, the wind carries you left of the centreline. Turn a few degrees right, with E or a gentle bank (D or the touch yoke), until the runway stops sliding sideways.
-2. **Straighten.** About 10 ft up, yaw the nose back in line with Q, then flare. In this model the drift stops when the wheels touch, so straighten late and quickly.
+2. **Flare, then straighten.** Flare as in the landing mission with the crab still in. At about 10 ft (`STRAIGHTEN_HEIGHT`, 3 m), yaw the nose in line with Q and hold the flare. In this model the drift stops when the wheels touch, so straighten late and quickly.
 3. **Roll out.** As in the landing mission.
 
 It does not claim certified limits. Fixed-wing phones have no rudder buttons, so the brief says to level the wings and land with the crab in. The landing mission accepts up to 12° of misalignment.
@@ -42,13 +42,20 @@ The cue reads the actual drift over the ground (the flight-path marker's track):
 - "Drifting left · turn into the wind with E"
 - "Drifting right · ease the crab back with Q"
 - "Crabbed 8° right · tracking the centreline"
-- below 8 m, "Straighten now with Q · then flare gently with S"
+- from 8 m down to 10 ft, "Keep the crab · flare gently with S · straighten at 10 ft with Q"
+- below 10 ft, "Straighten now with Q · hold the flare", then "Nose lined up · hold the flare and let it settle"
 
-Where the touch yoke shows (phones), the cues name a bank instead ("turn into the wind with a gentle right bank"), and below 8 m they say "Level the wings · flare gently, the crab can stay in". When the heading is more than 12° off the runway, the landing mission's own cues take over.
+The flare cue and the straighten cue are separate, and "Straighten" never shows above 10 ft. Straightening at 8 m, which an earlier draft of this cue asked for, lets the wind carry the aircraft 21.6 m (Mira T2) or 16.1 m (Vela J8) off centre before touchdown (table below).
+
+Where the touch yoke shows (phones), the cues name a bank instead ("turn into the wind with a gentle right bank"). From 8 m they say "Keep the crab · level the wings and flare gently", and below 10 ft "Wings level · let it settle, the crab can stay in". When the heading is more than 12° off the runway, the landing mission's own cues take over.
+
+All of this is one pure function, `practiceCue()` in `src/crosswind-practice.js`; the landing card shows what it returns.
 
 **The result** ([1600](crosswind-practice/result-uncorrected-1600.png), [390](crosswind-practice/result-390.png)) keeps the mission's reason and four touchdown measurements. It adds one sentence of advice and two tiles: **Crab on final** (the mean heading offset from 800 m to 50 m before the threshold) and **Crosswind**. Example sentences:
 - "No crab into the wind on final · the wind carried you 108 m left by the threshold. Turn a few degrees right early and hold it."
 - "Crabbed 9° right to hold the centreline and straightened to 1° for touchdown."
+- On a phone, a level touchdown with the crab in: "… then touched down wings level with 9° of crab, within the 12° the landing accepts." Rudder advice is only given where rudder keys exist.
+- An attempt that ends before the threshold: "Crabbed 7° right on final; the attempt ended before the threshold." The advice never claims centreline tracking or straightening that wasn't measured.
 
 The retry button reads **Retry crosswind practice**.
 
@@ -74,48 +81,49 @@ The retry button reads **Retry crosswind practice**.
 Reproducible with `node scripts/measure-crosswind.js`. A deterministic pilot (`tests/crosswind-pilot.js`) flies through `FlightInputs` with ordinary rate inputs only:
 - pitch to hold the 3° path and flare;
 - rudder (Q/E) for the crab, wings level;
-- rudder to straighten 3 m above the runway;
+- rudder to straighten at 10 ft (3 m) above the runway, or, with `followCue`, exactly when the card's live cue says so;
 - idle power and full brakes on the ground, rudder to keep straight.
 
 It reads what the pilot sees (the wind on the card, the ground track, the runway) and never writes the aircraft's pose. "Uncorrected" is the identical pitch, power and brake pilot with hands off the lateral controls.
 
 | Aircraft | Pilot | Result | Crab on final | Offset at threshold | Touchdown along / offset | Touchdown crab | Sink | Max offset |
 |---|---|---|---|---|---|---|---|---|
-| Mira T2 | crab + straighten | success | 9.4° | 0.0 m | 212 m / −4.7 m | 0.8° | 338 fpm | 4.8 m |
+| Mira T2 | crab + straighten at 10 ft | success | 9.4° | 0.0 m | 212 m / −4.7 m | 0.8° | 338 fpm | 4.8 m |
+| Mira T2 | following the live cue | success | 9.4° | 0.0 m | 212 m / −4.6 m | 0.9° | 338 fpm | 4.8 m |
+| Mira T2 | following the live cue, yoke only | success | 10.1° | 0.0 m | 163 m / −1.2 m | 8.9° | 340 fpm | 16.9 m |
+| Mira T2 | straighten at 8 m (too early) | success | 9.4° | 0.0 m | 213 m / −21.6 m | 0.0° | 338 fpm | 21.6 m |
 | Mira T2 | crab, never straightened | success | 9.4° | 0.0 m | 211 m / 0.0 m | 9.6° | 338 fpm | 4.8 m |
 | Mira T2 | crab, not straightened or steered | success | 9.4° | 0.0 m | 211 m / 0.0 m | 9.6° | 338 fpm | 11.9 m |
-| Mira T2 | touch yoke only (no rudder) | success | 10.1° | 0.2 m | 166 m / 1.7 m | 9.8° | 340 fpm | 16.9 m |
 | Mira T2 | **uncorrected** | **touchdown outside the runway** | 0.0° | **−183 m** | 230 m / −222 m | 0.0° | 338 fpm | 222 m |
-| Vela J8 | crab + straighten | success | 5.6° | 0.0 m | 285 m / −4.4 m | 0.7° | 343 fpm | 4.4 m |
+| Vela J8 | crab + straighten at 10 ft | success | 5.6° | 0.0 m | 285 m / −4.4 m | 0.7° | 343 fpm | 4.4 m |
+| Vela J8 | following the live cue | success | 5.6° | 0.0 m | 285 m / −4.4 m | 1.0° | 343 fpm | 4.4 m |
+| Vela J8 | following the live cue, yoke only | success | 6.6° | −0.5 m | 251 m / −1.9 m | 5.0° | 343 fpm | 16.2 m |
+| Vela J8 | straighten at 8 m (too early) | success | 5.6° | 0.0 m | 286 m / −16.1 m | 0.0° | 343 fpm | 16.1 m |
 | Vela J8 | crab, never straightened | success | 5.6° | 0.0 m | 285 m / −0.1 m | 6.1° | 343 fpm | 4.0 m |
 | Vela J8 | crab, not straightened or steered | success | 5.6° | 0.0 m | 285 m / −0.1 m | 6.1° | 343 fpm | 19.0 m |
-| Vela J8 | touch yoke only (no rudder) | success | 6.6° | −0.8 m | 254 m / 0.0 m | 5.6° | 343 fpm | 16.2 m |
 | Vela J8 | **uncorrected** | **touchdown outside the runway** | 0.0° | **−107 m** | 292 m / −135 m | 0.0° | 343 fpm | 135 m |
 
-Every success stops on the runway: Mira T2 near 285 m from the threshold, Vela J8 near 470 m.
+The script also prints the fixed-height yoke pilot and the 30, 20 and 10 fps runs.
+
+Every success stops on the runway: Mira T2 near 235–285 m from the threshold, Vela J8 near 430–470 m.
 
 What the measurements show:
-- **Crab and straighten** lands on the centreline in both aircraft.
+- **Crab, then straighten at 10 ft** lands on the centreline in both aircraft. A pilot who does exactly what the live cue says, with rudder or with the yoke alone, lands within 5 m of it.
+- **Straightening too early (8 m)** lets the drift back in: 16–22 m off centre.
 - **The same approach uncorrected** drifts 107–183 m left by the threshold and touches down off the runway.
-- **A crabbed touchdown still counts**, because the mission's own 12° alignment rule is kept unchanged. Its rollout wanders 12–19 m sideways when not steered, and the feedback says to straighten in the flare.
+- **A crabbed touchdown still counts**, because the mission's own 12° alignment rule is kept unchanged. Its rollout wanders 12–19 m sideways when not steered.
 - **Frame rate.** The rudder pilot at 30, 20 and 10 fps lands within 0.1 m of its 60 fps touchdown, with the same crab to 0.1° (the script's table; the test allows 3 m and 0.5°).
 
-## Two fixes this exercise exposed
+## Known pre-existing limitations
 
-Both are covered by tests in `tests/crosswind-practice.test.js` that fail without the fix.
+Both exist on main without this exercise. They are separate threads (gust-step stability, terrain-approach hysteresis), and this PR does not change them.
 
-1. **Load factor at low frame rates (`src/controls.js`).** This one predates this branch: it also shows in an ordinary landing mission with Gusts selected.
-   - **Symptom.** At about 1 fps, `FlightInputs` cut each 0.25 s frame into 1/120 s slices and left a floating-point remainder of about 2 × 10⁻¹³ s. On a pitched approach in wind, the wind is sampled at each step's midpoint, so the load factor differentiated over that sliver read in the thousands of g (−3488.7 g on the G-force instrument in the browser).
-   - **Fix.** Any remainder under 1 µs now joins the slice before it. Total time is unchanged.
-   - **Result.** Worst |g − 1| over 40 one-fps frames fell from 46,728 to 0.01.
-2. **Terrain alert hysteresis on final (`src/terrain-alert.js`).**
-   - **Symptom.** While an alert shows, hysteresis widened every margin by 15 m, including the 5 m approach-corridor margin, which an ordinary 3° final sits inside. The practice starts lined up with the runway, not crabbed, so the Vela J8's first look-ahead runs off the corridor and raises a correct caution. Hysteresis then latched it into a warning from 619 m out to 194 m out, down a good, centred approach.
-   - **Fix.** Hysteresis now widens only the open-ground margin.
-   - **Result.** A corrected Vela J8 approach shows a caution for its first 1.8 s and nothing after. Corrected Mira T2 approaches stay clear. Both uncorrected approaches are still warned. The existing terrain-alert tests all pass.
+1. **G-force readout at very low frame rates.** At about 1 fps, `FlightInputs` (`src/controls.js`) can hand the flight model a floating-point remainder slice of about 2 × 10⁻¹³ s. On a pitched approach in any wind, the load factor differentiated over that sliver reads in the thousands of g on the G-force instrument. This was seen as −3488.7 g in the browser during the practice. It also happens in an ordinary landing mission with Gusts selected. Only the readout is affected: position, attitude, scoring and the measurements above are not.
+2. **A terrain caution can latch into a warning on final.** The practice starts lined up with the runway, not crabbed. The Vela J8's first look-ahead therefore runs off the approach corridor and raises a correct caution. The alert's hysteresis then widens the approach margin, which an ordinary 3° final sits inside, so the caution becomes a warning from 619 m out to 195 m out, even on a correctly crabbed, centred approach. The Mira T2 flown correctly stays clear, and uncorrected approaches are warned in both aircraft.
 
 ## Tests
 
-`tests/crosswind-practice.test.js` (16 tests) covers:
+`tests/crosswind-practice.test.js` (18 tests) covers:
 - the exercise definition and the brief's numbers;
 - rotorcraft and unsuitable-field refusal;
 - wind ownership: retries, exactly-once restore, and a pilot choice made during the attempt;
@@ -128,13 +136,14 @@ Both are covered by tests in `tests/crosswind-practice.test.js` that fail withou
 - 30, 20 and 10 fps;
 - pause and no-time updates;
 - the feedback wording;
-- the low-frame-rate load factor and the terrain-alert latch.
+- the live cue (`practiceCue`): its wording and heights, and pilots who follow it with rudder and with the yoke alone;
+- result advice for phone and rudder pilots, and for attempts that end before the threshold or without a touchdown.
 
 `npm test` runs it with the rest of the suite.
 
 ## Interface checks (headless Chromium, software WebGL)
 
-All checks ran against the dev server through `window.aeronaut`. The new diagnostics are `getPractice()` and `startCrosswind()`.
+All checks ran against the dev server through `window.aeronaut`. The new diagnostics are `getPractice()` and `startCrosswind()`. These checks ran on the head that integrates touchdown feedback (#46).
 
 - **Sizes.** 1600×900, 1280×800 and 390×844, with screenshots linked above.
   - The third flight-card entry pushes the scene label down by one row: it now clears the card by 20 px at 1600 and 1280, and by 15 px at 800 wide.

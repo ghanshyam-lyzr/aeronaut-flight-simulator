@@ -11,8 +11,8 @@ for (const id of ['trainer', 'jet']) {
   console.log(`${FLEET[id].name}: wind ${b.report}, crosswind ${kt(b.crosswind)} kt from the ${b.side} (gusts ${kt(b.gustCrosswind)}), headwind ${kt(b.headwind)} kt, approach ${kt(b.speed)} kt, crab ${deg(b.crab)}°`);
 }
 const rows = [];
-for (const id of ['trainer', 'jet']) for (const [label, opts] of [['crab + straighten', {}], ['crab, never straightened', { straighten: null }], ['crab, not straightened or steered', { straighten: null, steer: false }], ['touch yoke only (no rudder)', { rudder: false }], ['uncorrected', { correct: false }],
-  ['crab + straighten, 30 fps', { rate: 30 }], ['crab + straighten, 20 fps', { rate: 20 }], ['crab + straighten, 10 fps', { rate: 10 }]]) {
+for (const id of ['trainer', 'jet']) for (const [label, opts] of [['crab + straighten at 10 ft', {}], ['following the live cue', { followCue: true }], ['following the live cue, yoke only', { followCue: true, rudder: false }], ['straighten at 8 m (too early)', { straighten: 8 }], ['crab, never straightened', { straighten: null }], ['crab, not straightened or steered', { straighten: null, steer: false }], ['touch yoke only (no rudder)', { rudder: false }], ['uncorrected', { correct: false }],
+  ['crab + straighten at 10 ft, 30 fps', { rate: 30 }], ['crab + straighten at 10 ft, 20 fps', { rate: 20 }], ['crab + straighten at 10 ft, 10 fps', { rate: 10 }]]) {
   const x = setup(id); x.activities.startCrosswind(x.flight);
   const r = flyApproach(x, opts), t = r.touchdown, fb = r.feedback;
   rows.push({ aircraft: FLEET[id].name, pilot: label, result: r.status === 'success' ? 'success' : r.reason,

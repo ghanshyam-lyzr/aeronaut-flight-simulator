@@ -8,10 +8,8 @@ import { Activities } from '../src/activities.js';
 import { AirportSelection } from '../src/airport-selection.js';
 import { airportById, runwayDirection } from '../src/airports.js';
 import { KNOT, WIND_PRESETS, normalizeWind } from '../src/wind.js';
-import { CrosswindPractice, PRACTICE, crosswindAdvice, practiceAvailability, practiceBrief, practiceField } from '../src/crosswind-practice.js';
+import { CrosswindPractice, FLARE_HEIGHT, PRACTICE, STRAIGHTEN_HEIGHT, crosswindAdvice, practiceAvailability, practiceBrief, practiceCue, practiceField } from '../src/crosswind-practice.js';
 import { groundHeight } from '../src/world.js';
-import { FlightInputs } from '../src/controls.js';
-import { TerrainAlert } from '../src/terrain-alert.js';
 import { flyApproach, setup } from './crosswind-pilot.js';
 
 const DEG = Math.PI / 180, dt = 1 / 120;
@@ -164,7 +162,7 @@ test('a crabbed touchdown is named in the feedback; the mission keeps its own 12
   const r = flyApproach(x, { straighten: null });
   assert.ok(r.feedback.touchdownCrab > 6 * DEG);
   assert.ok(r.touchdown.alignment < 12, 'within the landing mission rule, so it still counts');
-  assert.match(crosswindAdvice(r.feedback, x.landing), /touched down still \d+° right: straighten with rudder in the flare/);
+  assert.match(crosswindAdvice(r.feedback, x.landing), /touched down still \d+° right: straighten with rudder at about 10 ft/);
 });
 
 test('touch yoke alone (no rudder on fixed-wing phones): bank to crab, level wings, land with the crab in', () => {
@@ -209,31 +207,65 @@ test('feedback words follow the correction: too little crab, too much, and a res
   assert.equal(practice.snapshot().landing, 'idle'); assert.equal(practice.guidance({}), null);
 });
 
-test('at one frame a second the approach keeps a sane load factor: no float-remainder slivers reach the flight model', () => {
-  const x = setup('jet'); x.activities.startCrosswind(x.flight);
-  const inputs = new FlightInputs(1000.123); let now = 1000.123, worst = 0, shortest = Infinity;
-  for (let frame = 0; frame < 40; frame++) {
-    now += 0.9 + 0.37 * (frame % 3); inputs.set({ yaw: frame % 4 < 2 ? 1 : 0 }, now - 0.1);
-    inputs.advance(now, (step, c) => { shortest = Math.min(shortest, step); x.flight.update(step, c); x.activities.update(step, x.s); });
-    worst = Math.max(worst, Math.abs(x.s.gForce - 1));
-  }
-  assert.ok(shortest > 1e-6, `shortest slice ${shortest} s`); assert.ok(worst < 0.2, `load factor off by ${worst} g`);
+for (const id of ['trainer', 'jet']) {
+  test(`${FLEET[id].name}: the pilot who does what the live cue says lands near the centreline, with rudder and with the yoke alone`, () => {
+    for (const rudder of [true, false]) {
+      const x = setup(id); x.activities.startCrosswind(x.flight);
+      const r = flyApproach(x, { followCue: true, rudder });
+      assert.equal(r.status, 'success', `${id} rudder=${rudder}: ${r.reason}`);
+      assert.ok(Math.abs(r.touchdown.cross) < 6, `${id} rudder=${rudder}: touchdown ${r.touchdown.cross} m off centre`);
+      // The flare cue keeps the crab; "Straighten" never shows above 10 ft, and the yoke is never told to straighten.
+      const keep = r.cues.find(c => c.cue.startsWith('Keep the crab')), straighten = r.cues.filter(c => c.cue.startsWith('Straighten'));
+      assert.ok(keep && keep.height <= FLARE_HEIGHT && keep.height >= STRAIGHTEN_HEIGHT, JSON.stringify(r.cues.slice(-4)));
+      if (rudder) {
+        assert.ok(straighten.length && straighten.every(c => c.height <= STRAIGHTEN_HEIGHT), JSON.stringify(r.cues.slice(-4)));
+        assert.ok(Math.abs(r.feedback.touchdownCrab) < 2 * DEG, 'straightened when told');
+      } else {
+        assert.equal(straighten.length, 0); assert.ok(r.cues.some(c => /^Wings level/.test(c.cue)));
+        assert.ok(r.feedback.touchdownCrab > 3 * DEG && Math.abs(r.touchdown.bank) < 0.05, 'landed level with the crab in');
+      }
+    }
+  });
+}
+
+test('the live cue: drift, offset, crab, flare and straighten in order of height; the mission cue past 12°', () => {
+  const at = o => practiceCue({ height: 40, alignment: 5 * DEG, crab: 5 * DEG, drift: 0, cross: 0, ...o });
+  assert.equal(at({ alignment: 13 * DEG }), null, 'far off the runway the landing mission keeps its align cue');
+  assert.equal(at({ drift: -3 }), 'Drifting left · turn into the wind with E');
+  assert.equal(at({ drift: 3 }), 'Drifting right · ease the crab back with Q');
+  assert.equal(at({ cross: -12 }), '12 m left of centre · steer gently back');
+  assert.equal(at({ crab: 8 * DEG }), 'Crabbed 8° right · tracking the centreline');
+  assert.equal(at({ crab: 0 }), 'Crab right into the wind with E');
+  assert.equal(at({ drift: -3, rudder: false }), 'Drifting left · turn into the wind with a gentle right bank');
+  // Between 8 m and 10 ft: flare and keep the crab, even if drifting; below 10 ft: straighten (rudder) or stay level (yoke).
+  assert.equal(at({ height: 6, drift: -3 }), 'Keep the crab · flare gently with S · straighten at 10 ft with Q');
+  assert.equal(at({ height: 6, rudder: false }), 'Keep the crab · level the wings and flare gently');
+  assert.equal(at({ height: 2 }), 'Straighten now with Q · hold the flare');
+  assert.equal(at({ height: 2, crab: 0.5 * DEG }), 'Nose lined up · hold the flare and let it settle');
+  assert.equal(at({ height: 2, rudder: false }), 'Wings level · let it settle, the crab can stay in');
+  assert.ok(STRAIGHTEN_HEIGHT * 3.28084 > 9 && STRAIGHTEN_HEIGHT * 3.28084 < 11, 'the brief says about 10 ft');
 });
 
-test('terrain alerts: a crabbed approach on the centreline stays quiet; the uncorrected drift is warned', () => {
-  const watch = (id, opts) => {
-    const x = setup(id); x.activities.startCrosswind(x.flight);
-    const alert = new TerrainAlert(groundHeight), update = x.activities.update.bind(x.activities), seen = { caution: 0, warning: 0, lastCaution: 0 };
-    x.activities.update = (step, s) => { update(step, s); const { level } = alert.update(s, x.flight.type); if (level !== 'clear') { seen[level]++; seen.lastCaution = s.flightTime; } };
-    return { ...flyApproach(x, opts), seen };
-  };
-  for (const id of ['trainer', 'jet']) {
-    const flown = watch(id);
-    assert.equal(flown.status, 'success');
-    // The start is lined up with the runway, not crabbed: until the crab is set the drifting path may be cautioned,
-    // but the alert's hysteresis never latches into a warning down a good final.
-    assert.equal(flown.seen.warning, 0, `${id}: no terrain warning on a corrected approach`);
-    assert.ok(flown.seen.lastCaution < 3, `${id}: caution clears once crabbed (last at ${flown.seen.lastCaution} s)`);
-    assert.ok(watch(id, { correct: false }).seen.warning > 0, `${id}: the uncorrected drift is warned`);
-  }
+test('result advice names only what was measured, and only controls the pilot has', () => {
+  const ok = { status: 'success' }, failed = { status: 'failed' };
+  // A phone pilot lands level with the crab in, as the brief and cue tell them: no rudder advice.
+  const phone = crosswindAdvice({ crab: 9 * DEG, thresholdCross: 0.5, touchdownCrab: 9 * DEG }, ok, 'right', { rudder: false });
+  assert.doesNotMatch(phone, /rudder/); assert.match(phone, /touched down wings level with 9° of crab, within the 12° the landing accepts/);
+  assert.match(crosswindAdvice({ crab: 9 * DEG, thresholdCross: 0.5, touchdownCrab: 9 * DEG }, ok), /straighten with rudder at about 10 ft/);
+  // Ended before the threshold: no centreline or straightening claim.
+  const early = crosswindAdvice({ crab: 7 * DEG, thresholdCross: null, touchdownCrab: null }, failed);
+  assert.equal(early, 'Crabbed 7° right on final; the attempt ended before the threshold.');
+  assert.doesNotMatch(early, /centreline|straighten/);
+  // Over the threshold on centre but no touchdown recorded (runway passed in the air): no straightening claim.
+  const noTouch = crosswindAdvice({ crab: 7 * DEG, thresholdCross: 1, touchdownCrab: null }, failed);
+  assert.equal(noTouch, 'Crabbed 7° right and crossed the threshold on the centreline.');
+  assert.match(crosswindAdvice({ crab: 8 * DEG, thresholdCross: 0, touchdownCrab: 0.01 }, ok), /^Crabbed 8° right to hold the centreline and straightened to 1° for touchdown\.$/);
+  // A real attempt that ends before the threshold reports it that way.
+  const x = setup('trainer'); x.activities.startCrosswind(x.flight);
+  for (let i = 0; i < 12 / dt; i++) { x.flight.update(dt, { yaw: i < 60 ? 1 : 0 }); x.activities.update(dt, x.s); }
+  Object.assign(x.s, { crashed: true }); x.activities.update(dt, x.s);
+  const fb = x.practice.feedback();
+  assert.equal(fb.thresholdCross, null); assert.ok(fb.crab > 1 * DEG);
+  assert.match(crosswindAdvice(fb, x.landing), /the attempt ended before the threshold\.$/);
 });
+

@@ -118,11 +118,39 @@ export class CrosswindPractice {
   }
 }
 
+/** Height (m above the runway, about 10 ft) at which the brief, the live cue and the test pilot take the crab out. */
+export const STRAIGHTEN_HEIGHT = 3;
+/** Below this height (m) the flare matters more than drift: hold the crab, flare, and wait for STRAIGHTEN_HEIGHT. */
+export const FLARE_HEIGHT = 8;
+
+/**
+ * The live crosswind cue for the landing card, or null when the landing mission's own cue should show (rollout, a
+ * heading more than 12° off the runway). `crab` (heading off the runway) and `drift` (ground track's sideways speed)
+ * are + right; `cross` is metres right of the centreline. `rudder: false` is a fixed-wing phone: the touch yoke has no
+ * rudder, so the cue names a bank and a level-wing touchdown with the crab left in, which the mission's 12° rule allows.
+ */
+export function practiceCue({ height, alignment, crab, drift, cross, side = 'right', rudder = true }) {
+  if (!(alignment <= 12 * DEG)) return null;
+  const into = side === 'right' ? 1 : -1, away = side === 'right' ? 'left' : 'right';
+  const yawInto = into > 0 ? 'E' : 'Q', yawBack = into > 0 ? 'Q' : 'E';
+  const turnInto = rudder ? yawInto : `a gentle ${side} bank`, turnBack = rudder ? yawBack : `a gentle ${away} bank`;
+  if (height < STRAIGHTEN_HEIGHT) {
+    if (!rudder) return 'Wings level · let it settle, the crab can stay in';
+    return Math.abs(crab) > 1 * DEG ? `Straighten now with ${crab > 0 ? 'Q' : 'E'} · hold the flare` : 'Nose lined up · hold the flare and let it settle';
+  }
+  if (height < FLARE_HEIGHT) return rudder ? `Keep the crab · flare gently with S · straighten at 10 ft with ${yawBack}` : 'Keep the crab · level the wings and flare gently';
+  if (drift * into < -1.5) return `Drifting ${away} · turn into the wind with ${turnInto}`;
+  if (drift * into > 1.5) return `Drifting ${side} · ease the crab back with ${turnBack}`;
+  if (Math.abs(cross) > 8) return `${Math.round(Math.abs(cross))} m ${cross > 0 ? 'right' : 'left'} of centre · steer gently back`;
+  return crab * into > 1.5 * DEG ? `Crabbed ${Math.round(Math.abs(crab) / DEG)}° ${side} · tracking the centreline` : `Crab ${side} into the wind with ${turnInto}`;
+}
+
 /**
  * One sentence on the correction for the result panel, in the arcade model's terms: crab into the wind to hold the
- * centreline, straighten with rudder just before the wheels touch, steer the rollout straight.
+ * centreline, straighten with rudder just before the wheels touch (or, without rudder, land level with the crab in).
+ * It names only what was measured: no centreline claim without a threshold crossing.
  */
-export function crosswindAdvice(feedback, mission, side = 'right') {
+export function crosswindAdvice(feedback, mission, side = 'right', { rudder = true } = {}) {
   const deg = r => Math.round(Math.abs(r) / DEG), m = v => Math.round(Math.abs(v));
   const into = side === 'right' ? 1 : -1, crab = feedback.crab, cross = feedback.thresholdCross, td = feedback.touchdownCrab;
   const away = side === 'right' ? 'left' : 'right';
@@ -130,8 +158,12 @@ export function crosswindAdvice(feedback, mission, side = 'right') {
     const drifted = cross !== null ? ` · the wind carried you ${m(cross)} m ${cross < 0 ? 'left' : 'right'} by the threshold` : '';
     return `No crab into the wind on final${drifted}. Turn a few degrees ${side} early and hold it.`;
   }
-  if (cross !== null && Math.abs(cross) > 12) return `Crabbed ${deg(crab)}° ${side}, but crossed the threshold ${m(cross)} m ${cross < 0 ? 'left' : 'right'} of centre: ${cross * into < 0 ? `turn further ${side}` : `ease the crab back toward ${away}`} sooner.`;
-  if (td !== null && Math.abs(td) > 4 * DEG) return `Crabbed ${deg(crab)}° ${side} and held the centreline; you touched down still ${deg(td)}° ${td > 0 ? 'right' : 'left'}: straighten with rudder in the flare.`;
-  if (mission.status === 'success') return `Crabbed ${deg(crab)}° ${side} to hold the centreline and straightened to ${deg(td ?? 0)}° for touchdown.`;
-  return `Crabbed ${deg(crab)}° ${side} and held the centreline${td !== null ? `, straightened to ${deg(td)}°` : ''}.`;
+  if (cross === null) return `Crabbed ${deg(crab)}° ${side} on final; the attempt ended before the threshold.`;
+  if (Math.abs(cross) > 12) return `Crabbed ${deg(crab)}° ${side}, but crossed the threshold ${m(cross)} m ${cross < 0 ? 'left' : 'right'} of centre: ${cross * into < 0 ? `turn further ${side}` : `ease the crab back toward ${away}`} sooner.`;
+  if (td === null) return `Crabbed ${deg(crab)}° ${side} and crossed the threshold on the centreline.`;
+  if (Math.abs(td) > 4 * DEG) return rudder
+    ? `Crabbed ${deg(crab)}° ${side} and held the centreline; you touched down still ${deg(td)}° ${td > 0 ? 'right' : 'left'}: straighten with rudder at about 10 ft.`
+    : `Crabbed ${deg(crab)}° ${side} and held the centreline, then touched down wings level with ${deg(td)}° of crab, within the 12° the landing accepts.`;
+  if (mission.status === 'success') return `Crabbed ${deg(crab)}° ${side} to hold the centreline and straightened to ${deg(td)}° for touchdown.`;
+  return `Crabbed ${deg(crab)}° ${side}, held the centreline and straightened to ${deg(td)}°.`;
 }
