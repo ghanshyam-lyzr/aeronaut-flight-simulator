@@ -5,10 +5,10 @@ import '@fontsource/dm-sans/600.css';
 import '@fontsource/barlow-condensed/400.css';
 import '@fontsource/barlow-condensed/500.css';
 import * as THREE from 'three';
-import { createIcons, Plane, SlidersHorizontal, Maximize, Minimize, VolumeX, Volume2, MapPin, ArrowUpRight, Sun, CloudSun, Cloud, ChevronDown, ChevronsUpDown, Navigation, Video, Camera, Map, Scan, Minus, Plus, CircleDot, RotateCcw, Pause, Play, Keyboard, Move, TriangleAlert, X, Check, Mountain, Compass, Wind, Menu, Maximize2 } from 'lucide';
+import { createIcons, Plane, SlidersHorizontal, Maximize, Minimize, VolumeX, Volume2, MapPin, ArrowUpRight, Sun, CloudSun, Cloud, ChevronDown, ChevronUp, ChevronsUpDown, Navigation, Video, Camera, Map, Scan, Minus, Plus, CircleDot, RotateCcw, Pause, Play, Keyboard, Move, TriangleAlert, X, Check, Mountain, Compass, Wind, Menu, Maximize2 } from 'lucide';
 import { createWorld } from './world.js';
 import { createAircraft, createCockpit } from './aircraft.js';
-import { FlightController, FlightAudio, FollowFrame } from './flight.js';
+import { FlightController, FlightAudio, FollowFrame, hasPitchTrim } from './flight.js';
 import { FLEET, aircraftType } from './fleet.js';
 import { FlightInputs } from './controls.js';
 import { loadFlights, saveFlights as storeFlights, recordFlight, flightTotals, formatFlightDate } from './flight-log.js';
@@ -24,7 +24,7 @@ import { FlightPathMarker } from './flight-path.js';
 import { NavigationMap } from './nav-map.js';
 import { navigationDestination, navigationReadout, bearingDistance, degrees, formatNM, zoomFrom, nearestZoom, FRAMINGS, FRAMING_LABELS, ZOOM_SPANS } from './navigation.js';
 
-const icons = {Plane,SlidersHorizontal,Maximize,Minimize,VolumeX,Volume2,MapPin,ArrowUpRight,Sun,CloudSun,Cloud,ChevronDown,ChevronsUpDown,Navigation,Video,Camera,Map,Scan,Minus,Plus,CircleDot,RotateCcw,Pause,Play,Keyboard,Move,TriangleAlert,X,Check,Mountain,Compass,Wind,Menu,Maximize2};
+const icons = {Plane,SlidersHorizontal,Maximize,Minimize,VolumeX,Volume2,MapPin,ArrowUpRight,Sun,CloudSun,Cloud,ChevronDown,ChevronUp,ChevronsUpDown,Navigation,Video,Camera,Map,Scan,Minus,Plus,CircleDot,RotateCcw,Pause,Play,Keyboard,Move,TriangleAlert,X,Check,Mountain,Compass,Wind,Menu,Maximize2};
 const refreshIcons = () => createIcons({icons,attrs:{'stroke-width':1.6}});
 refreshIcons();
 const $ = id => document.getElementById(id);
@@ -72,23 +72,26 @@ flight.toggleAutopilot();
 const audio = new FlightAudio();
 let paused=false, view=settings.camera, frameTime=0, orbitAngle=0.45, orbitHeight=9, orbitDistance=31;
 const keys=new Set();
-const touch={pitch:0,roll:0,yaw:0,throttle:0,brake:0};
+const touch={pitch:0,roll:0,yaw:0,throttle:0,brake:0,trim:0};
 const mouse={pitch:0,roll:0,active:false};
 const controls=new FlightInputs(performance.now()/1000,settings.response);
 const throttlePointers=new globalThis.Map();
 const yawPointers=new globalThis.Map();
 const brakePointers=new Set();
+const trimPointers=new globalThis.Map();
 // DOM timestamps retain the hold duration when rendering delays delivery of both events.
 function queueControls(now=performance.now()/1000){
  const pressed=(...codes)=>codes.some(code=>keys.has(code))?1:0;
- const inputs={pitch:(pressed('KeyS','ArrowDown')-pressed('KeyW','ArrowUp')+touch.pitch+(mouse.active?mouse.pitch:0))*(settings.invertPitch?-1:1),roll:pressed('KeyD','ArrowRight')-pressed('KeyA','ArrowLeft')+touch.roll+(mouse.active?mouse.roll:0),yaw:pressed('KeyE')-pressed('KeyQ')+touch.yaw,throttle:pressed('ShiftLeft','ShiftRight')-pressed('ControlLeft','ControlRight')+touch.throttle,brake:flight.type.flight.rotorcraft?0:Math.max(pressed('KeyB'),touch.brake)};
+ const inputs={pitch:(pressed('KeyS','ArrowDown')-pressed('KeyW','ArrowUp')+touch.pitch+(mouse.active?mouse.pitch:0))*(settings.invertPitch?-1:1),roll:pressed('KeyD','ArrowRight')-pressed('KeyA','ArrowLeft')+touch.roll+(mouse.active?mouse.roll:0),yaw:pressed('KeyE')-pressed('KeyQ')+touch.yaw,throttle:pressed('ShiftLeft','ShiftRight')-pressed('ControlLeft','ControlRight')+touch.throttle,brake:flight.type.flight.rotorcraft?0:Math.max(pressed('KeyB'),touch.brake),
+  // Pitch trim (src/flight.js): ] turns the wheel nose up, [ nose down. Never inverted, never a reason to drop assist.
+  trim:hasPitchTrim(flight.type)?THREE.MathUtils.clamp(pressed('BracketRight')-pressed('BracketLeft')+touch.trim,-1,1):0};
  // Manual intent disengages assist before the gradual onset, including very short taps.
  if(Math.abs(inputs.pitch)+Math.abs(inputs.roll)+Math.abs(inputs.yaw)>(flight.type.flight.rotorcraft?0.001:0.12)||(flight.type.flight.rotorcraft&&Math.abs(inputs.throttle)>.001))flight.state.autopilot=false;
  controls.set(inputs,now);
 }
 function clearControls(){
- keys.clear();touch.pitch=touch.roll=touch.yaw=touch.throttle=touch.brake=0;mouse.pitch=mouse.roll=0;mouse.active=false;
- throttlePointers.clear();yawPointers.clear();brakePointers.clear();flight.state.brake=0;$('touch-brake').classList.remove('active');$('touch-brake').setAttribute('aria-pressed','false');resetYoke();controls.reset(performance.now()/1000);
+ keys.clear();touch.pitch=touch.roll=touch.yaw=touch.throttle=touch.brake=touch.trim=0;mouse.pitch=mouse.roll=0;mouse.active=false;
+ throttlePointers.clear();yawPointers.clear();brakePointers.clear();trimPointers.clear();for(const id of ['trim-up','trim-down'])$(id).classList.remove('active');flight.state.brake=0;$('touch-brake').classList.remove('active');$('touch-brake').setAttribute('aria-pressed','false');resetYoke();controls.reset(performance.now()/1000);
 }
 const cameraPosition=new THREE.Vector3(),target=new THREE.Vector3(),offset=new THREE.Vector3();
 const horizontalQuat=new THREE.Quaternion(),horizontalEuler=new THREE.Euler();
@@ -123,11 +126,11 @@ function updateAircraftLabels(){
  const t=flight.type,h=!!t.flight.rotorcraft;$('aircraft-name').textContent=t.name;$('aircraft-type').textContent=`${t.type} · ${t.registration}`;$('aircraft-badge').textContent=t.badge;
  $('throttle-label').textContent=h?'Collective':'Throttle';$('throttle-slider').setAttribute('aria-label',h?'Rotor collective':'Engine throttle');
  $('touch-power-label').textContent=h?'Collective':'Power';$('throttle-up').setAttribute('aria-label',h?'Increase collective':'Increase throttle');$('throttle-down').setAttribute('aria-label',h?'Decrease collective':'Decrease throttle');
- $('touch-yaw').hidden=!h;$('touch-brake').hidden=h;$('touch-yoke').setAttribute('aria-label',h?'Touch cyclic: forward, backward, left and right':'Touch flight joystick');
+ $('touch-yaw').hidden=!h;$('touch-brake').hidden=h;$('touch-trim').hidden=!hasPitchTrim(t);$('trim-btn').disabled=!hasPitchTrim(t);$('trim-btn').title=hasPitchTrim(t)?'Pitch trim, + nose up: [ nose down, ] nose up, T or click for neutral':h?'No pitch trim on a helicopter':'Holds any attitude hands-off · no trim needed';lastTrim=null;$('touch-yoke').setAttribute('aria-label',h?'Touch cyclic: forward, backward, left and right':'Touch flight joystick');
  $('gear-btn').disabled=h||!!t.fixedGear;$('flaps-btn').disabled=h||!!t.noFlaps;$('gear-btn').title=h?(wheeled(t)?'Fixed wheeled landing gear · always down':'Fixed landing skids'):t.fixedGear?'Fixed landing gear · always down':'Landing gear (G)';$('flaps-btn').title=h||t.noFlaps?'No flaps on this aircraft':'Flaps (F)';
  $('gear-label').textContent=h&&!wheeled(t)?'Skids':'Gear';$('flaps-label').textContent='Flaps';
- $('world').setAttribute('aria-label',h?'Helicopter world. W/S cyclic forward/backward, A/D lateral cyclic, Q/E yaw, Shift/Control collective, Space hover hold.':'Flight world. Use arrow keys to fly, shift and control for throttle, hold B for wheel brakes on the ground.');
- $('key-hints').innerHTML=h?'<span><kbd>W</kbd><kbd>S</kbd>Cyclic</span><span><kbd>A</kbd><kbd>D</kbd>Lateral</span><span><kbd>Q</kbd><kbd>E</kbd>Yaw</span><span><kbd>⇧</kbd><kbd>Ctrl</kbd>Collective</span><span><kbd>Space</kbd>Hover hold</span>':'<span><kbd>W</kbd><kbd>S</kbd>Pitch</span><span><kbd>A</kbd><kbd>D</kbd>Roll</span><span><kbd>Q</kbd><kbd>E</kbd>Rudder</span><span><kbd>⇧</kbd><kbd>Ctrl</kbd>Throttle</span><span><kbd>B</kbd>Brakes</span><span><kbd>P</kbd>Pause</span>';
+ $('world').setAttribute('aria-label',h?'Helicopter world. W/S cyclic forward/backward, A/D lateral cyclic, Q/E yaw, Shift/Control collective, Space hover hold.':`Flight world. Use arrow keys to fly, shift and control for throttle, hold B for wheel brakes on the ground.${hasPitchTrim(t)?' Hold right bracket to trim nose up, left bracket to trim nose down, T for neutral trim.':''}`);
+ $('key-hints').innerHTML=h?'<span><kbd>W</kbd><kbd>S</kbd>Cyclic</span><span><kbd>A</kbd><kbd>D</kbd>Lateral</span><span><kbd>Q</kbd><kbd>E</kbd>Yaw</span><span><kbd>⇧</kbd><kbd>Ctrl</kbd>Collective</span><span><kbd>Space</kbd>Hover hold</span>':'<span><kbd>W</kbd><kbd>S</kbd>Pitch</span><span><kbd>A</kbd><kbd>D</kbd>Roll</span><span><kbd>Q</kbd><kbd>E</kbd>Rudder</span><span><kbd>⇧</kbd><kbd>Ctrl</kbd>Throttle</span><span><kbd>B</kbd>Brakes</span>'+(hasPitchTrim(t)?'<span><kbd>[</kbd><kbd>]</kbd>Trim</span>':'')+'<span><kbd>P</kbd>Pause</span>';
 }
 // Switching aircraft saves the current flight, then starts the new type fresh in the air with flight assist on.
 function setAircraft(id){
@@ -222,8 +225,21 @@ function placeRestore(){
 }
 function toggleHud(){Object.assign(settings,toggleDisplay(settings));applyDisplay();saveSettings();drawMap();}
 function gear(){if(flight.type.flight.rotorcraft||flight.type.fixedGear){toast(flight.type.fixedGear?'Fixed landing gear · always down':wheeled(flight.type)?'Fixed wheeled landing gear · always down':'Fixed landing skids · always down');return;}sceneDirty=true;flight.toggleGear();toast(`Landing gear ${flight.state.gearDown?'down':'retracted'}`);}
+// Pitch trim survives pauses, dialogs and released keys; restarts, aircraft changes and new starts reset it (flight.reset).
+// Tenths of a degree; the flight deck signs it (+ nose up), the phone column and notices say it in words.
+const trimTenths=r=>Math.round(Math.abs(r)*1800/Math.PI)/10;
+const trimText=r=>{const d=trimTenths(r);return d?`${d.toFixed(1)}° ${r>0?'up':'down'}`:'0.0°';};
+const trimSigned=r=>{const d=trimTenths(r);return d?`${r>0?'+':'−'}${d.toFixed(1)}°`:'0.0°';};
+const trimSpoken=r=>{const d=trimTenths(r);return d?`${d} degrees nose ${r>0?'up':'down'}`:'neutral';};
+function resetTrim(){if(!hasPitchTrim(flight.type)){toast(flight.type.flight.rotorcraft?'No pitch trim on a helicopter':`The ${flight.type.name} holds any attitude hands-off · no trim needed`);return;}flight.state.pitchTrim=0;toast('Pitch trim neutral');}
+let lastTrim=null;
+function updateTrim(){
+ const t=flight.type,on=hasPitchTrim(t),r=flight.state.pitchTrim,key=on?trimText(r):'off';if(key===lastTrim)return;lastTrim=key;
+ $('trim-state').textContent=on?trimSigned(r):'N/A';$('touch-trim-state').textContent=key;$('trim-btn').classList.toggle('active',on&&key!=='0.0°');
+ const label=on?`Pitch trim ${trimSpoken(r)}. Reset to neutral`:'No pitch trim on this aircraft';$('trim-btn').setAttribute('aria-label',label);$('touch-trim-reset').setAttribute('aria-label',label);
+}
 function flaps(){if(flight.type.flight.rotorcraft||flight.type.noFlaps){toast('No flaps on this aircraft');return;}sceneDirty=true;flight.cycleFlaps();toast(`Flaps set to ${flight.state.flaps*15}°`);}
-$('pause-btn').onclick=()=>setPaused(!paused);$('resume-btn').onclick=()=>setPaused(false);$('reset-btn').onclick=()=>restart();$('crash-reset').onclick=()=>restart();$('take-control').onclick=toggleAssist;$('camera-btn').onclick=cycleView;$('map-toggle').onclick=toggleMap;$('map-close').onclick=toggleMap;$('map-framing').onclick=cycleMapFraming;$('map-zoom-in').onclick=()=>zoomMap(1);$('map-zoom-out').onclick=()=>zoomMap(-1);$('map-expand').onclick=()=>showDialog('chart');$('hud-toggle').onclick=toggleHud;$('restore-hud').onclick=toggleHud;$('gear-btn').onclick=gear;$('flaps-btn').onclick=flaps;
+$('pause-btn').onclick=()=>setPaused(!paused);$('resume-btn').onclick=()=>setPaused(false);$('reset-btn').onclick=()=>restart();$('crash-reset').onclick=()=>restart();$('take-control').onclick=toggleAssist;$('camera-btn').onclick=cycleView;$('map-toggle').onclick=toggleMap;$('map-close').onclick=toggleMap;$('map-framing').onclick=cycleMapFraming;$('map-zoom-in').onclick=()=>zoomMap(1);$('map-zoom-out').onclick=()=>zoomMap(-1);$('map-expand').onclick=()=>showDialog('chart');$('hud-toggle').onclick=toggleHud;$('restore-hud').onclick=toggleHud;$('gear-btn').onclick=gear;$('flaps-btn').onclick=flaps;$('trim-btn').onclick=resetTrim;$('touch-trim-reset').onclick=resetTrim;
 $('landing-entry').onclick=()=>showDialog('landing');
 for(const id of ['landing-retry','landing-result-retry'])$(id).onclick=()=>startLanding();
 for(const id of ['landing-cancel','landing-result-exit'])$(id).onclick=()=>cancelLanding(true);
@@ -313,8 +329,8 @@ function showDialog(type){
  +`<h3 class="dialog-section-title">Display</h3>${toggleMarkup('setting-hud','Flight panels','Mission, weather and camera panels. Warnings stay visible; H shows everything.',settings.showHud)}${toggleMarkup('setting-instruments','Instrument strip','Airspeed, altitude, attitude, throttle and pause.',settings.showInstruments)}${toggleMarkup('setting-hints','Key hints','Keyboard reminders and frame rate.',settings.showHints)}${toggleMarkup('setting-crosshair','Crosshair','The centre marker ahead of the aircraft.',settings.showCrosshair)}${toggleMarkup('setting-flight-path','Flight path marker','Where the aircraft is actually travelling, not where the nose points. Off by default; hidden with the flight panels.',settings.showFlightPath)}${toggleMarkup('setting-map','Navigation map','Show your position above the valley.',settings.showMap)}`
  +`<div class="settings-actions"><button class="secondary-btn" id="restore-defaults"><i data-lucide="rotate-ccw"></i>Restore defaults</button><button class="primary-btn" data-close>Back to the skies <i data-lucide="arrow-up-right"></i></button></div><p class="dialog-note">Restoring defaults keeps your aircraft, airfield, flight log and the flight in progress.</p></div>`;
  }else if(type==='controls'){
- const controls=[[heli?'Cyclic forward / backward':'Pitch down / up',['W','S']],[heli?'Cyclic left / right':'Bank left / right',['A','D']],['Alternate flight controls',['←','↑','↓','→']],[heli?'Yaw left / right':'Rudder left / right',['Q','E']],[heli?'Raise / lower collective':'Increase / decrease throttle',['Shift','Ctrl']],...(heli?[]:[['Wheel brakes · hold on the ground',['B']]]),['Change camera',['C']],['Pause / resume',['P']],[heli?'Hover hold':'Flight assist',['Space']],...(!heli&&!flight.type.fixedGear?[['Landing gear',['G']]]:[]),...(!heli&&!flight.type.noFlaps?[['Cycle flaps',['F']]]:[]),['Navigation map',['M']],['Map zoom out / in',['−','+']],['Map framing',['V']],['Navigation chart',['N']],['Hide instruments',['H']],['Restart flight',['R']]];
- content=dialogHead('You have control')+`<div class="dialog-body"><p>${heli?`${hoverPercent(flight.type)}% collective hovers. Tilt forward with W to move; center the cyclic to level. Space brakes into a steady hover.`:'A little input goes a long way. Bank gently into turns and add power to climb.'}</p><div class="controls-list">${controls.map(([label,k])=>`<div class="control-row"><span>${label}</span><span>${k.map(v=>`<kbd>${v}</kbd>`).join('')}</span></div>`).join('')}</div><p class="dialog-note">On a phone, drag the left ${heli?'cyclic':'yoke'} to steer and hold + / − to adjust ${heli?'collective; use the two yaw buttons to turn':'throttle, and hold Brake to slow on the ground'}. In orbit view, drag to look around and scroll to zoom. ${flight.type.name}: ${flight.type.help}</p></div>`;
+ const controls=[[heli?'Cyclic forward / backward':'Pitch down / up',['W','S']],[heli?'Cyclic left / right':'Bank left / right',['A','D']],['Alternate flight controls',['←','↑','↓','→']],[heli?'Yaw left / right':'Rudder left / right',['Q','E']],[heli?'Raise / lower collective':'Increase / decrease throttle',['Shift','Ctrl']],...(heli?[]:[['Wheel brakes · hold on the ground',['B']]]),...(hasPitchTrim(flight.type)?[['Trim nose down / up · hold to adjust',['[',']']],['Neutral trim',['T']]]:[]),['Change camera',['C']],['Pause / resume',['P']],[heli?'Hover hold':'Flight assist',['Space']],...(!heli&&!flight.type.fixedGear?[['Landing gear',['G']]]:[]),...(!heli&&!flight.type.noFlaps?[['Cycle flaps',['F']]]:[]),['Navigation map',['M']],['Map zoom out / in',['−','+']],['Map framing',['V']],['Navigation chart',['N']],['Hide instruments',['H']],['Restart flight',['R']]];
+ content=dialogHead('You have control')+`<div class="dialog-body"><p>${heli?`${hoverPercent(flight.type)}% collective hovers. Tilt forward with W to move; center the cyclic to level. Space brakes into a steady hover.`:'A little input goes a long way. Bank gently into turns and add power to climb.'}</p><div class="controls-list">${controls.map(([label,k])=>`<div class="control-row"><span>${label}</span><span>${k.map(v=>`<kbd>${v}</kbd>`).join('')}</span></div>`).join('')}</div><p class="dialog-note">On a phone, drag the left ${heli?'cyclic':'yoke'} to steer and hold + / − to adjust ${heli?'collective; use the two yaw buttons to turn':`throttle, and hold Brake to slow on the ground${hasPitchTrim(flight.type)?'. Hold the trim arrows to set a hands-off climb or descent; tap the value between them for neutral':''}`}. In orbit view, drag to look around and scroll to zoom. ${flight.type.name}: ${flight.type.help}</p></div>`;
  }else if(type==='landing'){
  const f=selection.field,p=landingProfile(flight.type),h=p.helicopter,fit=missionAvailability(selection.airport,flight.type.id),hdg=headingDegrees(f.heading),name=flight.type.name;
  const caution=[fit.rating==='suitable'?`Tight fit for the ${name}: little runway to spare after the touchdown zone.`:'',f.caution].filter(Boolean).join(' ');
@@ -360,15 +376,15 @@ function showDialog(type){
 document.querySelectorAll('[data-dialog]').forEach(b=>b.onclick=()=>showDialog(b.dataset.dialog));
 dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});
 function formatTime(t){const h=Math.floor(t/3600);return`${h?String(h).padStart(2,'0')+':':''}${String(Math.floor(t/60)%60).padStart(2,'0')}:${String(Math.floor(t)%60).padStart(2,'0')}`;}
-const handledKeys=['KeyB','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','ShiftLeft','ShiftRight','ControlLeft','ControlRight','KeyW','KeyS','KeyA','KeyD','KeyQ','KeyE','KeyP','KeyC','KeyG','KeyF','KeyM','KeyH','KeyR','KeyN','KeyV','Minus','Equal','NumpadSubtract','NumpadAdd'];
+const handledKeys=['KeyB','BracketLeft','BracketRight','KeyT','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','ShiftLeft','ShiftRight','ControlLeft','ControlRight','KeyW','KeyS','KeyA','KeyD','KeyQ','KeyE','KeyP','KeyC','KeyG','KeyF','KeyM','KeyH','KeyR','KeyN','KeyV','Minus','Equal','NumpadSubtract','NumpadAdd'];
 window.addEventListener('keydown',e=>{
  if(dialog.open||e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement)return;
  if(handledKeys.includes(e.code))e.preventDefault();
  if(e.repeat)return;
  if(!paused&&!flight.state.crashed){keys.add(e.code);queueControls(e.timeStamp/1000);}
- ({KeyP:()=>setPaused(!paused),Space:toggleAssist,KeyC:cycleView,KeyG:gear,KeyF:flaps,KeyM:toggleMap,KeyH:toggleHud,KeyR:()=>restart(),KeyN:()=>showDialog('chart'),KeyV:cycleMapFraming,Minus:()=>zoomMap(-1),NumpadSubtract:()=>zoomMap(-1),Equal:()=>zoomMap(1),NumpadAdd:()=>zoomMap(1)})[e.code]?.();
+ ({KeyP:()=>setPaused(!paused),Space:toggleAssist,KeyC:cycleView,KeyG:gear,KeyF:flaps,KeyM:toggleMap,KeyH:toggleHud,KeyR:()=>restart(),KeyT:resetTrim,KeyN:()=>showDialog('chart'),KeyV:cycleMapFraming,Minus:()=>zoomMap(-1),NumpadSubtract:()=>zoomMap(-1),Equal:()=>zoomMap(1),NumpadAdd:()=>zoomMap(1)})[e.code]?.();
 });
-window.addEventListener('keyup',e=>{keys.delete(e.code);queueControls(e.timeStamp/1000);});window.addEventListener('blur',clearControls);
+window.addEventListener('keyup',e=>{const trimming=(e.code==='BracketLeft'||e.code==='BracketRight')&&keys.has(e.code);keys.delete(e.code);queueControls(e.timeStamp/1000);if(trimming&&hasPitchTrim(flight.type))toast(`Pitch trim ${trimText(flight.state.pitchTrim)}`);});window.addEventListener('blur',clearControls);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)clearControls();});
 let orbitDrag=null;
 worldContainer.addEventListener('pointerdown',e=>{if(dialog.open||paused||flight.state.crashed)return;worldContainer.focus();if(view==='orbit'){orbitDrag={x:e.clientX,y:e.clientY};worldContainer.setPointerCapture(e.pointerId);}else if(settings.mouseSteering){mouse.active=true;worldContainer.setPointerCapture(e.pointerId);}});
@@ -400,6 +416,15 @@ for(const [id,v] of [['yaw-left',-1],['yaw-right',1]]){
  b.addEventListener('contextmenu',e=>e.preventDefault());
 }
 
+// Hold-to-trim: a finger on ▲ turns the trim wheel nose up, ▼ nose down, at the trim's fixed rate; lifting, cancelling
+// or losing the pointer stops it where it is. The value between them is the readout and resets to neutral.
+for(const [id,v] of [['trim-up',1],['trim-down',-1]]){
+ const b=$(id),sync=e=>{touch.trim=THREE.MathUtils.clamp([...trimPointers.values()].reduce((a,b)=>a+b,0),-1,1);b.classList.toggle('active',[...trimPointers.values()].includes(v));queueControls(e.timeStamp/1000);};
+ b.onpointerdown=e=>{e.preventDefault();if(paused||dialog.open||flight.state.crashed||!hasPitchTrim(flight.type))return;b.setPointerCapture(e.pointerId);trimPointers.set(e.pointerId,v);sync(e);};
+ for(const event of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(event,e=>{trimPointers.delete(e.pointerId);sync(e);});
+ b.addEventListener('contextmenu',e=>e.preventDefault());
+}
+
 // The navigation map: the world's own height function (as rendering and collisions use), every airport and named
 // region, and the route to the destination, which is the mission's field during a mission and the selected field
 // otherwise (navigationDestination). It points the way; it never steers or moves the aircraft.
@@ -428,7 +453,7 @@ let lastAssist=true,lastUi=0,lastFps=performance.now(),fpsFrames=0;
 function updateUI(time){
  const s=flight.state,h=!!flight.type.flight.rotorcraft;const speed=s.speed*1.94384,alt=s.position.y*3.28084,heading=(s.heading*180/Math.PI+360)%360,vsi=Math.round(s.verticalSpeed*196.85/10)*10;
  $('g-force').textContent=(Math.abs(s.gForce)<0.05?0:s.gForce).toFixed(1);$('g-force-instrument').classList.toggle('overload',s.gForce>6);
- $('speed').textContent=Math.round(speed);$('altitude').textContent=Math.round(alt).toLocaleString();$('agl').textContent=Math.round((s.position.y-world.heightAt(s.position.x,s.position.z))*3.28084).toLocaleString();$('heading').textContent=String(Math.round(heading)%360).padStart(3,'0');$('vertical-speed').textContent=`${vsi>0?'+':''}${vsi}`;$('vertical-state').textContent=Math.abs(vsi)<50?(h&&s.speed<.5?'Hovering':'Level flight'):vsi>0?'Climbing':'Descending';$('heading-cardinal').textContent=['N','NE','E','SE','S','SW','W','NW'][Math.round(heading/45)%8];$('throttle-value').textContent=`${Math.round(s.throttle*100)}%${s.afterburner?' · AB':''}`;$('touch-power-label').textContent=h?`Collective ${Math.round(s.throttle*100)}%`:'Power';$('throttle-slider').value=s.throttle*100;$('gear-state').textContent=h||flight.type.fixedGear?'FIXED':s.gearDown?'DOWN':'UP';$('gear-btn').classList.toggle('active',s.gearDown);$('flaps-state').textContent=h||flight.type.noFlaps?'N/A':`${s.flaps*15}°`;$('flaps-btn').classList.toggle('active',s.flaps>0);$('flight-timer').textContent=formatTime(s.flightTime);$('map-distance').textContent=`${(s.distance/1852).toFixed(1)} NM`;$('speed-marker').style.left=`${Math.min(96,speed/flight.type.speedScale*100)}%`;$('attitude-inner').style.transform=`rotate(${-s.bank*180/Math.PI}deg) translateY(${s.pitch*45}px)`;
+ $('speed').textContent=Math.round(speed);$('altitude').textContent=Math.round(alt).toLocaleString();$('agl').textContent=Math.round((s.position.y-world.heightAt(s.position.x,s.position.z))*3.28084).toLocaleString();$('heading').textContent=String(Math.round(heading)%360).padStart(3,'0');$('vertical-speed').textContent=`${vsi>0?'+':''}${vsi}`;$('vertical-state').textContent=Math.abs(vsi)<50?(h&&s.speed<.5?'Hovering':'Level flight'):vsi>0?'Climbing':'Descending';$('heading-cardinal').textContent=['N','NE','E','SE','S','SW','W','NW'][Math.round(heading/45)%8];$('throttle-value').textContent=`${Math.round(s.throttle*100)}%${s.afterburner?' · AB':''}`;$('touch-power-label').textContent=h?`Collective ${Math.round(s.throttle*100)}%`:'Power';$('throttle-slider').value=s.throttle*100;$('gear-state').textContent=h||flight.type.fixedGear?'FIXED':s.gearDown?'DOWN':'UP';$('gear-btn').classList.toggle('active',s.gearDown);$('flaps-state').textContent=h||flight.type.noFlaps?'N/A':`${s.flaps*15}°`;$('flaps-btn').classList.toggle('active',s.flaps>0);updateTrim();$('flight-timer').textContent=formatTime(s.flightTime);$('map-distance').textContent=`${(s.distance/1852).toFixed(1)} NM`;$('speed-marker').style.left=`${Math.min(96,speed/flight.type.speedScale*100)}%`;$('attitude-inner').style.transform=`rotate(${-s.bank*180/Math.PI}deg) translateY(${s.pitch*45}px)`;
  if(lastAssist!==s.autopilot){lastAssist=s.autopilot;updateAssist();}
  $('gear-warning').hidden=!flight.gearWarning||landing.finished;
  const stalled=s.stalled&&!landing.finished&&!s.grounded&&!s.crashed&&!paused&&!dialog.open;
