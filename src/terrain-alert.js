@@ -13,7 +13,7 @@ import { runwayCoordinates } from './airfield.js';
  * - interval: flight seconds between samples (paused flight is never resampled).
  * - margin: the clearance (above the wheels or skids) the path must keep over ground that rises toward it.
  * - closure: how much the clearance must shrink before a low point counts, so level low flight over flat ground
- *   (clearance unchanged) is harmless.
+ *   (clearance unchanged) is harmless. A point where the path actually meets the ground skips both rules.
  * - warnTime: a conflict this close is a pull-up warning; further out it is a caution.
  * - sinkTime / minSink: descending straight into flat ground warns only when impact is this close.
  * - hysteresis: metres added to the margin while alerting; hold: flight seconds an alert outlives its cause.
@@ -74,7 +74,7 @@ const _v = new THREE.Vector3();
 /**
  * One look-ahead sample. Returns { level, cause, time, clearance, probes } where cause is 'rising' (ground ahead
  * climbs into the path), 'descent' (the path sinks into flat ground) or '' and time is the seconds to the first
- * conflicting probe; `extra` metres widen the margin (the hysteresis while an alert shows). `probes` counts the
+ * conflicting probe (or the interpolated contact, where the path meets the ground); `extra` metres widen the margin (the hysteresis while an alert shows). `probes` counts the
  * height lookups, never more than the profile's probes + 1.
  */
 export function sampleTerrain(state, type, heightAt, { airports = AIRPORTS, extra = 0 } = {}) {
@@ -89,23 +89,33 @@ export function sampleTerrain(state, type, heightAt, { airports = AIRPORTS, extr
   result.clearance = c0;
   const speed = Math.hypot(v.x, v.z), horizon = Math.min(c.horizon, speed > 0 ? c.maxDistance / speed : c.horizon);
   const track = Math.atan2(v.x, -v.z), margin = c.margin + extra, approaching = speed > 1 && v.y < 0 && state.gearDown;
+  const last = { t: 0, clearance: c0 };
   for (let i = 1; i <= c.probes; i++) {
     const t = horizon * i / c.probes, x = p.x + v.x * t, z = p.z + v.z * t, h = ground(x, z), clearance = p.y + v.y * t - h - gear;
     result.clearance = Math.min(result.clearance, clearance);
+    // The path actually meets the ground at this probe: the margin and closure rules only keep near misses quiet
+    // and never hide it. `contact` interpolates between probes to when the clearance reaches zero.
+    const meets = clearance <= 0;
+    const contact = !meets ? t : last.clearance > 0 ? last.t + (t - last.t) * last.clearance / (last.clearance - clearance) : last.t;
+    last.t = t; last.clearance = clearance;
     const relief = approaching ? runwayRelief({ x, z }, track, airports) : null;
     // Meeting the ground on a runway while lined up with it is a landing: nothing beyond that point matters.
     if (relief?.onRunway) { if (clearance <= 0) return result; continue; }
-    if (!(clearance < (relief ? c.approachMargin + extra : margin)) || c0 - clearance < c.closure) continue;
-    if (h - h0 >= c.closure / 2) {
-      result.cause = 'rising'; result.time = t; result.level = t <= c.warnTime ? 'warning' : 'caution';
+    if (!meets && (!(clearance < (relief ? c.approachMargin + extra : margin)) || c0 - clearance < c.closure)) continue;
+    // Rising: the ground climbs into the path, or above the wheels' current height so even level flight meets it.
+    if (h - h0 >= c.closure / 2 || (meets && p.y - h - gear <= 0)) {
+      result.cause = 'rising'; result.time = contact; result.level = contact <= c.warnTime ? 'warning' : 'caution';
       return result;
     }
-    // Flat ground: only a descent close to impact counts, so ordinary low descents stay quiet until late.
-    const sink = -v.y;
-    if (sink > c.minSink && sink > 0 && c0 / sink <= c.sinkTime) {
-      result.cause = 'descent'; result.time = Math.max(0, c0 / sink); result.level = 'warning';
+    // Flat ground: only a descent close to impact counts, so ordinary low descents (and gentle helicopter
+    // settling) stay quiet until late.
+    const sink = -v.y, impact = meets ? contact : c0 / sink;
+    if (sink > c.minSink && sink > 0 && impact <= c.sinkTime) {
+      result.cause = 'descent'; result.time = Math.max(0, impact); result.level = 'warning';
       return result;
     }
+    // Nothing beyond the point where the path meets the ground matters.
+    if (meets) return result;
   }
   return result;
 }
