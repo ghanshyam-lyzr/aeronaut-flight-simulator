@@ -176,7 +176,9 @@ export function crosswindAdvice(feedback, mission, side = 'right', { rudder = tr
   if (faults.length) {
     // Each fix uses only the controls the pilot has: on a phone, gentle banks set the crab and the yoke levels the wings.
     const fixes = [];
-    if (!aligned) fixes.push(rudder ? 'straighten with rudder at about 10 ft' : `hold a modest crab, about ${deg(crab)}°, with gentle banks`);
+    // A final crab already at the limit is never recommended back: ask for less instead.
+    if (!aligned) fixes.push(rudder ? 'straighten with rudder at about 10 ft'
+      : deg(crab) < limit.alignment ? `hold a modest crab, about ${deg(crab)}°, with gentle banks` : `ease the crab to less than ${limit.alignment}° with gentle banks`);
     if (Number.isFinite(bank) && !level) fixes.push('level the wings before the wheels touch');
     if (Number.isFinite(pitch) && Math.abs(pitch) > limit.pitch) fixes.push('flare gently');
     return `Crabbed ${deg(crab)}° ${side} and held the centreline, but ${faults.join(' and ')}: ${fixes.join(' and ')}.`;
