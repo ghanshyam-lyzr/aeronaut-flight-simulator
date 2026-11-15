@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { FLEET, aircraftType, DEFAULT_AIRCRAFT } from './fleet.js';
 import { stepHelicopter } from './helicopter-flight.js';
 import { angularResponse } from './handling.js';
+import { Wind } from './wind.js';
 
 const clamp = THREE.MathUtils.clamp;
 const mix = (value, target, rate, dt) => THREE.MathUtils.lerp(value, target, 1 - Math.exp(-rate * dt));
@@ -12,6 +13,7 @@ const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const ASSIST_RECOVERY_RATE = 1.2;
 const _q = new THREE.Quaternion(), _prev = new THREE.Quaternion(), _euler = new THREE.Euler(0, 0, 0, 'YXZ');
 const _forward = new THREE.Vector3(), _up = new THREE.Vector3(), _right = new THREE.Vector3(), _axis = new THREE.Vector3();
+const _gustBefore = { x: 0, z: 0 }, _windSample = {};
 
 /**
  * Full wheel-brake deceleration in m/s², added to rolling resistance while grounded. Light singles with good brakes
@@ -46,12 +48,34 @@ export function hasPitchTrim(type) {
 /** Vela J8 performance, in metres per second. Speeds are tuned for the valley, not a certified type. */
 export const JET = FLEET.jet.flight;
 
-/** A forgiving, coordinated-turn flight model. All distances are metres. */
+/**
+ * A forgiving, coordinated-turn flight model. All distances are metres.
+ *
+ * Wind (src/wind.js): the controller owns one Wind, advanced only by its own physics steps, so it freezes whenever
+ * update() is not called (pause, dialogs) and restarts from time zero on every reset. Each step samples it once and
+ * keeps that air velocity in state.windVelocity ({x, 0, z}, m/s). Air-relative and ground-relative motion are kept
+ * apart:
+ * - Fixed-wing state.speed is true airspeed in the air: thrust, drag, stall, turn rate and the speed tape use it.
+ *   The aircraft moves at that airspeed along its nose plus the wind, so a crosswind drifts it and a headwind slows
+ *   it over the ground; state.distance and every consumer of groundVelocity() (src/flight-path.js) follow that
+ *   ground travel. A change in the wind along the nose (a gust, a new preset blending in) briefly changes airspeed
+ *   by the opposite amount, as inertia does; a constant wind changes nothing but the ground track, so it adds no
+ *   load factor.
+ * - On the ground the wheels hold the aircraft: no sideways drift, and state.speed is the wheel (ground) speed of the
+ *   existing ground-roll and brake model. Approximation: rotation compares the airspeed (wheel speed plus headwind)
+ *   with the rotate speed, liftoff carries that airspeed into the air, and touchdown turns airspeed back into wheel
+ *   speed along the heading (plus tailwind); the crosswind component simply vanishes on the tyres and returns on
+ *   liftoff. state.airspeed always holds the airspeed for display, on the ground as in the air.
+ * - Helicopters keep state.velocity as their ground velocity; rotor drag acts on the velocity through the air, so
+ *   a level disc drifts with the wind, and hover hold leans into it to keep its ground-fixed point.
+ * setWind(config) changes the wind smoothly and returns the previous configuration (see Wind.set).
+ */
 export class FlightController {
   constructor(heightAt = () => 0, aircraft = DEFAULT_AIRCRAFT) {
     this.heightAt = heightAt;
     this.type = aircraftType(aircraft);
-    this.state = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), velocity: new THREE.Vector3() };
+    this.wind = new Wind();
+    this.state = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), velocity: new THREE.Vector3(), windVelocity: new THREE.Vector3() };
     this.holdPosition = new THREE.Vector3();
     this.attitude = new THREE.Euler(0, 0, 0, 'YXZ');
     this.previousVelocity = new THREE.Vector3();
@@ -95,6 +119,10 @@ export class FlightController {
     this.pitchRate = 0;
     this.rollRate = 0;
     this.yawRate = 0;
+    // A fresh start replays the wind from time zero (the configuration is kept).
+    this.wind.reset();
+    this.sampleWindNow();
+    s.airspeed = s.speed;
     s.velocity.set(0, 0, f.rotorcraft ? 0 : -s.speed);
     this.holdPosition.copy(s.position);
     this.holdAltitude = s.position.y;
@@ -120,6 +148,38 @@ export class FlightController {
     this.holdHeading = heading;
     this.setQuaternion();
     return s;
+  }
+
+  /**
+   * Sets the wind (a preset id or a configuration; see src/wind.js normalizeWind) and returns the previous
+   * configuration. By default the new wind blends in over a few simulation seconds; { immediate: true } applies it at
+   * once, for a start or an activity's setup. An activity applies its own wind and restores the pilot's afterwards:
+   *   const previous = flight.setWind(practiceWind, { immediate: true }); … flight.setWind(previous);
+   */
+  setWind(config, options) {
+    const previous = this.wind.set(config, options);
+    if (options?.immediate) this.sampleWindNow();
+    return previous;
+  }
+
+  /** A frozen summary of the wind now (configuration, clock, air velocity, speed, direction, gust factor). */
+  windSnapshot() { return this.wind.snapshot(); }
+
+  /** The wind at the controller's current wind time (read-only for callers; see src/wind.js Wind.sample). */
+  sampleWind(target = {}) { return this.wind.sample(this.wind.time, target); }
+
+  sampleWindNow() {
+    const w = this.wind.sample(this.wind.time, _windSample);
+    this.state.windVelocity.set(w.x, 0, w.z);
+  }
+
+  /** Moves the wind clock by one physics step and samples it at the step's midpoint; returns state.windVelocity. */
+  advanceWind(dt) {
+    const w = this.state.windVelocity;
+    _gustBefore.x = w.x; _gustBefore.z = w.z;
+    this.wind.sample(this.wind.time + dt / 2, _windSample);
+    this.wind.advance(dt);
+    return w.set(_windSample.x, 0, _windSample.z);
   }
 
   groundAt(x, z) {
@@ -179,11 +239,34 @@ export class FlightController {
   }
 
   step(dt, controls) {
-    if (this.type.flight.rotorcraft) return stepHelicopter(this, dt, controls);
+    if (this.type.flight.rotorcraft) stepHelicopter(this, dt, controls);
+    else this.stepFixedWing(dt, controls);
+    const s = this.state, w = s.windVelocity;
+    if (this.type.flight.rotorcraft) s.airspeed = s.grounded ? Math.hypot(w.x, w.z) : s.speed;
+    else s.airspeed = s.grounded ? Math.max(0, s.speed - this.alongWind(w)) : s.speed;
+  }
+
+  /** The wind's component (m/s) along the horizontal heading: positive is a tailwind. */
+  alongWind(w, heading = this.state.heading) {
+    return w.x * Math.sin(heading) - w.z * Math.cos(heading);
+  }
+
+  stepFixedWing(dt, controls) {
     const s = this.state;
     const f = this.type.flight;
+    // Inertial velocity before the step: air-relative plus the wind that carried the last step.
     this.previousVelocity.set(0, 0, -s.speed).applyQuaternion(s.quaternion);
     this.previousVelocity.y = s.verticalSpeed;
+    this.previousVelocity.x += s.windVelocity.x;
+    this.previousVelocity.z += s.windVelocity.z;
+    const wind = this.advanceWind(dt);
+    // Inertia: a change in the wind along the flight path changes airspeed by the opposite amount (a headwind gust
+    // raises it). A constant wind changes nothing here.
+    if (!s.grounded) {
+      const cp = Math.cos(s.pitch);
+      const along = ((wind.x - _gustBefore.x) * Math.sin(s.heading) - (wind.z - _gustBefore.z) * Math.cos(s.heading)) * cp;
+      if (along) s.speed = Math.max(0, s.speed - along);
+    }
     s.flightTime += dt;
     // Wheel brakes act only through the tyres: never in the air, never as a speed brake.
     s.brake = 0;
@@ -276,10 +359,11 @@ export class FlightController {
       const forward = _forward.set(0, 0, -1).applyQuaternion(s.quaternion);
       const turnSink = Math.abs(Math.sin(s.bank)) * 0.9;
       s.verticalSpeed = mix(s.verticalSpeed, forward.y * s.speed - idleSink - lowSpeedSink - turnSink, 8, dt);
-      s.position.x += forward.x * s.speed * dt;
-      s.position.z += forward.z * s.speed * dt;
+      const dx = forward.x * s.speed * dt + wind.x * dt, dz = forward.z * s.speed * dt + wind.z * dt;
+      s.position.x += dx;
+      s.position.z += dz;
       s.position.y += s.verticalSpeed * dt;
-      s.distance += Math.hypot(forward.x, forward.z) * s.speed * dt;
+      s.distance += wind.x || wind.z ? Math.hypot(dx, dz) : Math.hypot(forward.x, forward.z) * s.speed * dt;
     } else {
       // Banking produces a coordinated turn; yaw adds a small rudder correction.
       const turnRate = GRAVITY * Math.tan(s.bank) / Math.max(s.speed, 24);
@@ -289,10 +373,11 @@ export class FlightController {
       s.verticalSpeed = mix(s.verticalSpeed, targetVerticalSpeed, 2.1, dt);
 
       const distance = Math.cos(s.pitch) * s.speed * dt;
-      s.position.x += Math.sin(s.heading) * distance;
-      s.position.z -= Math.cos(s.heading) * distance;
+      const dx = Math.sin(s.heading) * distance + wind.x * dt, dz = -Math.cos(s.heading) * distance + wind.z * dt;
+      s.position.x += dx;
+      s.position.z += dz;
       s.position.y += s.verticalSpeed * dt;
-      s.distance += distance;
+      s.distance += wind.x || wind.z ? Math.hypot(dx, dz) : distance;
     }
 
     if (!free) this.setQuaternion();
@@ -300,6 +385,8 @@ export class FlightController {
     // Quaternion axes stay continuous through vertical, knife-edge and inverted flight.
     this.acceleration.set(0, 0, -s.speed).applyQuaternion(s.quaternion);
     this.acceleration.y = s.verticalSpeed;
+    this.acceleration.x += wind.x;
+    this.acceleration.z += wind.z;
     this.acceleration.sub(this.previousVelocity).divideScalar(dt);
     this.acceleration.y += GRAVITY;
     this.aircraftUp.set(0, 1, 0).applyQuaternion(s.quaternion);
@@ -312,6 +399,8 @@ export class FlightController {
       const landable = this.heightAt(s.position.x, s.position.z) > 10.2 && s.gearDown && Math.abs(s.verticalSpeed) < f.maxTouchdownSink && s.speed < f.maxTouchdownSpeed && Math.abs(s.bank) < 0.3;
       if (landable) {
         s.grounded = true;
+        // The tyres take the ground speed along the heading; the crosswind component stops at the wheels.
+        if (wind.x || wind.z) s.speed = Math.max(0, s.speed + this.alongWind(wind));
         s.gForce = 1;
         s.stalled = false;
         s.verticalSpeed = 0;
@@ -355,8 +444,11 @@ export class FlightController {
     s.position.z -= Math.cos(s.heading) * distance;
     s.position.y = this.groundAt(s.position.x, s.position.z) + (this.type.groundClearance ?? 2.8);
     s.distance += distance;
-    if (s.speed > f.rotateSpeed - s.flaps * f.flapStallGain && controls.pitch > 0.15) {
+    // Rotation is by airspeed: wheel speed plus any headwind along the runway.
+    const airspeed = s.speed - this.alongWind(s.windVelocity);
+    if (airspeed > f.rotateSpeed - s.flaps * f.flapStallGain && controls.pitch > 0.15) {
       s.grounded = false;
+      s.speed = Math.max(0, airspeed);
       // A free-attitude aircraft keeps the nose where the rotation put it; the Vela J8 resets to its climb angle.
       s.pitch = f.aerobatic ? Math.max(s.pitch, 0.10) : 0.10;
       s.verticalSpeed = 2.5;

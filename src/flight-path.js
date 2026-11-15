@@ -1,22 +1,29 @@
 // The flight-path marker: where the aircraft is actually travelling, drawn where that direction meets the screen.
 // Everything here is read-only. Fixed-wing state.velocity is only seeded at resets and is not kept up to date in
-// flight, so the fixed-wing velocity is rebuilt from the same terms FlightController.step moves the position with.
+// flight, so the fixed-wing velocity is rebuilt from the same terms FlightController.step moves the position with,
+// wind included. groundVelocity is the one authoritative ground velocity: consumers (the marker, the terrain
+// look-ahead, navigation timing, the wind activities) use it rather than adding the wind themselves.
 import * as THREE from 'three';
 
 /** Shown from 2 m/s and kept down to 1 m/s, so a hover or a stop does not flicker it. Margin in CSS pixels. */
 export const FLIGHT_PATH = Object.freeze({ showSpeed: 2, hideSpeed: 1, margin: 20 });
 
-const _forward = new THREE.Vector3(), _inverse = new THREE.Quaternion(), _clip = new THREE.Vector4();
+const _forward = new THREE.Vector3(), _ground = new THREE.Vector3(), _inverse = new THREE.Quaternion(), _clip = new THREE.Vector4();
 
 /**
- * World-space velocity in m/s, matching the last flight step's displacement over its time step, or null when the
- * aircraft is not moving under its own model (crashed) or the state is not finite.
- * - Helicopters integrate state.velocity directly, including sideways and backwards travel (zeroed on the ground).
- * - Fixed-wing ground rolls move along the heading at state.speed.
- * - Free-attitude (aerobatic) types move along the nose horizontally, with the lagging state.verticalSpeed vertically.
- * - Other fixed-wing types move along the heading at cos(pitch) · speed, with state.verticalSpeed vertically.
+ * World-space ground velocity in m/s, matching the last flight step's displacement over its time step, or null when
+ * the aircraft is not moving under its own model (crashed) or the state is not finite.
+ * - Helicopters integrate state.velocity directly (already ground-relative, wind drift included), including sideways
+ *   and backwards travel (zeroed on the ground).
+ * - Fixed-wing ground rolls move along the heading at state.speed: the wheels never drift with the wind.
+ * - Free-attitude (aerobatic) types move along the nose horizontally at airspeed, with the lagging
+ *   state.verticalSpeed vertically, plus the wind.
+ * - Other fixed-wing types move along the heading at cos(pitch) · airspeed, with state.verticalSpeed vertically,
+ *   plus the wind.
+ * The wind is state.windVelocity, the air velocity the last step used; a state without one (older saved or hand-made
+ * test states) is still air, so their result is unchanged.
  */
-export function flightPathVelocity(state, type, target = new THREE.Vector3()) {
+export function groundVelocity(state, type, target = new THREE.Vector3()) {
   if (!state || state.crashed) return null;
   const f = type.flight;
   if (f.rotorcraft) {
@@ -24,14 +31,29 @@ export function flightPathVelocity(state, type, target = new THREE.Vector3()) {
     else target.copy(state.velocity);
   } else if (state.grounded) {
     target.set(Math.sin(state.heading) * state.speed, 0, -Math.cos(state.heading) * state.speed);
-  } else if (f.aerobatic) {
-    const forward = _forward.set(0, 0, -1).applyQuaternion(state.quaternion);
-    target.set(forward.x * state.speed, state.verticalSpeed, forward.z * state.speed);
   } else {
-    const horizontal = Math.cos(state.pitch) * state.speed;
-    target.set(Math.sin(state.heading) * horizontal, state.verticalSpeed, -Math.cos(state.heading) * horizontal);
+    if (f.aerobatic) {
+      const forward = _forward.set(0, 0, -1).applyQuaternion(state.quaternion);
+      target.set(forward.x * state.speed, state.verticalSpeed, forward.z * state.speed);
+    } else {
+      const horizontal = Math.cos(state.pitch) * state.speed;
+      target.set(Math.sin(state.heading) * horizontal, state.verticalSpeed, -Math.cos(state.heading) * horizontal);
+    }
+    const w = state.windVelocity;
+    if (w) { target.x += w.x; target.z += w.z; }
   }
   return Number.isFinite(target.x) && Number.isFinite(target.y) && Number.isFinite(target.z) ? target : null;
+}
+
+/** The marker's name for the same vector: actual travel is the ground velocity. */
+export const flightPathVelocity = groundVelocity;
+
+/** Horizontal ground speed (m/s) and track (radians true, the direction of travel), or null as groundVelocity. */
+export function groundTrack(state, type) {
+  const v = groundVelocity(state, type, _ground);
+  if (!v) return null;
+  const speed = Math.hypot(v.x, v.z);
+  return { speed, track: speed > 1e-6 ? ((Math.atan2(v.x, -v.z) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) : state.heading ?? 0 };
 }
 
 /**

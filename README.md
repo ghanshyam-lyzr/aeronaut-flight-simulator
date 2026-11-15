@@ -58,7 +58,7 @@ The mission uses the existing arcade flight and ground-roll model, including rol
 
 Clear, golden-hour, and overcast presets affect the sky, sunlight, fog, clouds, and water. Graphics quality controls render resolution, terrain detail, tree density, clouds, and shadows. High quality works best with a hardware-accelerated WebGL 2 browser. The flight log and preferences are saved locally in the current browser.
 
-All scenery, aircraft geometry, textures, and sound are generated in code. The world is inspired by the Swiss Alps; it is not a real geospatial dataset. The original Vela, Arolla and 737 cockpit face textures are decorative; the newer fleet aircraft, helicopter panels and HUD carry live flight data. Weather presets are simulated. No external imagery or model assets are used.
+All scenery, aircraft geometry, textures, and sound are generated in code. The world is inspired by the Swiss Alps; it is not a real geospatial dataset. The original Vela, Arolla and 737 cockpit face textures are decorative; the newer fleet aircraft, helicopter panels and HUD carry live flight data. Weather presets are simulated; wind (Calm, Breeze or Gusts, chosen in the Weather dialog) moves the aircraft over the ground, see docs/wind-model.md. No external imagery or model assets are used.
 
 
 ## Boeing 737-800

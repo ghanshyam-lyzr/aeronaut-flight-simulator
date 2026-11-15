@@ -5,6 +5,9 @@ import { groundHeight, groundShader, fbm, valleyCurve, westValleyCurve, calmeCur
 import { WORLD, CORE, SHAPES, REGIONS, ROUTES, LANDMARKS, VILLAGES, AIRPORT_SITES, WATER_LEVEL, regionAt } from './regions.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { windsockYaw, windsockDroop, WINDSOCK } from './wind.js';
+
+const CALM_SOCK = Object.freeze({ x: 0, z: 0, speed: 0, time: 0 });
 
 const smooth = (a, b, x) => { const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 let randomSeed = 784391;
@@ -523,10 +526,23 @@ function batchStatic(group) {
   }
 }
 
+/**
+ * Points a sock downwind and extends it with the wind's strength, from one shared sample (src/wind.js): hanging in calm
+ * air, straight out from 15 kt, with a flutter that grows with the wind and runs on the wind's own (pausable) clock.
+ * The yaw is a world yaw, so the airport group's own rotation is undone. Transforms only: nothing is rebuilt.
+ */
+function updateWindsock(sock, wind, i) {
+  const yaw = windsockYaw(wind);
+  if (yaw !== null) sock.rotation.y = yaw - sock.parent.rotation.y;
+  const strength = Math.min(1, wind.speed / WINDSOCK.fullSpeed);
+  sock.rotation.z = windsockDroop(wind.speed) + Math.sin(wind.time * 2.7 + i * 1.3) * .035 * strength;
+}
+
 // A fully procedural windsock, readable during a low approach.
 function windsock(group, x, z, materials) {
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(.18, .22, 13, 6), materials.stripe); pole.position.set(x, 6.5, z); group.add(pole);
-  const sock = new THREE.Group(); sock.position.set(x, 13, z); sock.rotation.z = -.14; group.add(sock);
+  // The tail streams along the sock's local +x; updateWindsock turns and droops it with the wind.
+  const sock = new THREE.Group(); sock.position.set(x, 13, z); sock.rotation.z = WINDSOCK.hang; group.add(sock);
   for (let i = 0; i < 5; i++) {
     const part = new THREE.Mesh(new THREE.CylinderGeometry(.9 - i * .1, .8 - i * .1, 1.15, 10, 1, true), new THREE.MeshStandardMaterial({ color: i % 2 ? 0xf4eee3 : 0xed6d40, side: THREE.DoubleSide }));
     part.rotation.z = Math.PI / 2; part.position.x = i * 1.15; sock.add(part);
@@ -651,7 +667,7 @@ function networkField(scene, airport, materials) {
   }
   // The windsock stands opposite the apron, by the primary threshold.
   const sock = windsock(group, -side * (W / 2 + 25), at(160), materials);
-  // Every sock shows the same wind as Alpine Field's.
+  // Until the first wind, every sock faces the same world direction as Alpine Field's (undoing the group's yaw).
   sock.rotation.y = airport.heading;
   batchStatic(group);
   return { ...airport, position: new THREE.Vector3(airport.x, airport.elevation, airport.z), windsock: sock };
@@ -917,7 +933,7 @@ export function createWorld(scene, renderer) {
       outerStands.set(key, mesh);
     }
   }
-  function update(dt, time, position) {
+  function update(dt, time, position, wind = CALM_SOCK) {
     lake.material.uniforms.time.value = time * .48;
     if (position) {
       sun.target.position.copy(position); sun.position.copy(position).addScaledVector(sunDirection, 7000);
@@ -926,7 +942,7 @@ export function createWorld(scene, renderer) {
     }
     clouds.forEach((cloud, i) => { cloud.position.x = cloud.userData.baseX + Math.sin(time * .007 + i) * 85; });
     boats.forEach((boat, i) => { boat.rotation.z = Math.sin(time * .72 + i) * .018; boat.position.y = 11 + Math.sin(time * .9 + i) * .12; });
-    fields.forEach((field, i) => { field.windsock.rotation.z = -.15 + Math.sin(time * 2.7 + i * 1.3) * .035; });
+    fields.forEach((field, i) => updateWindsock(field.windsock, wind, i));
   }
   setWeather('clear');
   setQuality('high');
