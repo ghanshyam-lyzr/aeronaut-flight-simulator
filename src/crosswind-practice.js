@@ -9,6 +9,7 @@
 import { KNOT, normalizeWind, sampleWind, windComponents, windText } from './wind.js';
 import { missionAvailability, resolveAirport } from './airport-selection.js';
 import { runwayCoordinates } from './airfield.js';
+import { TOUCHDOWN_ATTITUDE } from './landing-mission.js';
 
 const DEG = Math.PI / 180;
 const angle = a => Math.atan2(Math.sin(a), Math.cos(a));
@@ -105,11 +106,14 @@ export class CrosswindPractice {
     return { crab, drift, crosswind: wind.crosswind, headwind: wind.headwind };
   }
 
-  /** What the attempt showed about the correction: mean crab on final (+ right), offset at the threshold (+ right). */
+  /**
+   * What the attempt showed about the correction: mean crab on final (+ right), offset at the threshold (+ right),
+   * and the recorded touchdown's crab, bank (+ right wing low) and pitch (+ nose up), or null without a touchdown.
+   */
   feedback() {
     const t = this.landing.touchdown;
     return { crab: this.crabTime > 1 ? this.crabSum / this.crabTime : null, thresholdCross: this.thresholdCross,
-      touchdownCrab: t ? angle(t.heading - this.field.heading) : null };
+      touchdownCrab: t ? angle(t.heading - this.field.heading) : null, touchdownBank: t ? t.bank : null, touchdownPitch: t ? t.pitch : null };
   }
 
   snapshot() {
@@ -148,7 +152,8 @@ export function practiceCue({ height, alignment, crab, drift, cross, side = 'rig
 /**
  * One sentence on the correction for the result panel, in the arcade model's terms: crab into the wind to hold the
  * centreline, straighten with rudder just before the wheels touch (or, without rudder, land level with the crab in).
- * It names only what was measured: no centreline claim without a threshold crossing.
+ * It names only what was measured: no centreline claim without a threshold crossing, and no alignment or wings-level
+ * claim the recorded touchdown and the landing mission's TOUCHDOWN_ATTITUDE limits do not bear out.
  */
 export function crosswindAdvice(feedback, mission, side = 'right', { rudder = true } = {}) {
   const deg = r => Math.round(Math.abs(r) / DEG), m = v => Math.round(Math.abs(v));
@@ -161,9 +166,26 @@ export function crosswindAdvice(feedback, mission, side = 'right', { rudder = tr
   if (cross === null) return `Crabbed ${deg(crab)}° ${side} on final; the attempt ended before the threshold.`;
   if (Math.abs(cross) > 12) return `Crabbed ${deg(crab)}° ${side}, but crossed the threshold ${m(cross)} m ${cross < 0 ? 'left' : 'right'} of centre: ${cross * into < 0 ? `turn further ${side}` : `ease the crab back toward ${away}`} sooner.`;
   if (td === null) return `Crabbed ${deg(crab)}° ${side} and crossed the threshold on the centreline.`;
+  // The recorded touchdown against the mission's own limits; an unrecorded bank or pitch is never called level.
+  const bank = feedback.touchdownBank, pitch = feedback.touchdownPitch, limit = TOUCHDOWN_ATTITUDE;
+  const aligned = Math.abs(td) / DEG <= limit.alignment, level = Number.isFinite(bank) && Math.abs(bank) <= limit.bank;
+  const faults = [];
+  if (!aligned) faults.push(`the nose was ${deg(td)}° ${td > 0 ? 'right' : 'left'} of the runway at touchdown, past the ${limit.alignment}° the landing accepts`);
+  if (Number.isFinite(bank) && !level) faults.push(`the wings were banked ${deg(bank)}° ${bank > 0 ? 'right' : 'left'}, past the ${deg(limit.bank)}° the landing accepts`);
+  if (Number.isFinite(pitch) && Math.abs(pitch) > limit.pitch) faults.push(`the nose was ${deg(pitch)}° ${pitch > 0 ? 'high' : 'low'}, past the ${deg(limit.pitch)}° the landing accepts`);
+  if (faults.length) {
+    // Each fix uses only the controls the pilot has: on a phone, gentle banks set the crab and the yoke levels the wings.
+    const fixes = [];
+    // A final crab already at the limit is never recommended back: ask for less instead.
+    if (!aligned) fixes.push(rudder ? 'straighten with rudder at about 10 ft'
+      : deg(crab) < limit.alignment ? `hold a modest crab, about ${deg(crab)}°, with gentle banks` : `ease the crab to less than ${limit.alignment}° with gentle banks`);
+    if (Number.isFinite(bank) && !level) fixes.push('level the wings before the wheels touch');
+    if (Number.isFinite(pitch) && Math.abs(pitch) > limit.pitch) fixes.push('flare gently');
+    return `Crabbed ${deg(crab)}° ${side} and held the centreline, but ${faults.join(' and ')}: ${fixes.join(' and ')}.`;
+  }
   if (Math.abs(td) > 4 * DEG) return rudder
     ? `Crabbed ${deg(crab)}° ${side} and held the centreline; you touched down still ${deg(td)}° ${td > 0 ? 'right' : 'left'}: straighten with rudder at about 10 ft.`
-    : `Crabbed ${deg(crab)}° ${side} and held the centreline, then touched down wings level with ${deg(td)}° of crab, within the 12° the landing accepts.`;
+    : `Crabbed ${deg(crab)}° ${side} and held the centreline, then touched down ${level ? 'wings level ' : ''}with ${deg(td)}° of crab, within the ${limit.alignment}° the landing accepts.`;
   if (mission.status === 'success') return `Crabbed ${deg(crab)}° ${side} to hold the centreline and straightened to ${deg(td)}° for touchdown.`;
   return `Crabbed ${deg(crab)}° ${side}, held the centreline and straightened to ${deg(td)}°.`;
 }

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { FlightController } from '../src/flight.js';
 import { FLEET } from '../src/fleet.js';
 import { LandingMission } from '../src/landing-mission.js';
+import { runwayPoint } from '../src/airfield.js';
 import { CheckpointCourse } from '../src/checkpoint-course.js';
 import { Activities } from '../src/activities.js';
 import { AirportSelection } from '../src/airport-selection.js';
@@ -172,6 +173,9 @@ test('touch yoke alone (no rudder on fixed-wing phones): bank to crab, level win
     assert.equal(r.status, 'success', `${id}: ${r.reason}`);
     assert.ok(r.feedback.crab > 3 * DEG && Math.abs(r.feedback.thresholdCross) < 8, `${id}: crab ${r.feedback.crab / DEG}°, ${r.feedback.thresholdCross} m`);
     assert.ok(Math.abs(r.touchdown.bank) < 0.05 && r.touchdown.alignment < 12);
+    const advice = crosswindAdvice(r.feedback, x.landing, 'right', { rudder: false });
+    assert.doesNotMatch(advice, /rudder|past the/, `${id}: ${advice}`);
+    if (Math.abs(r.feedback.touchdownCrab) > 4 * DEG) assert.match(advice, /touched down wings level with \d+° of crab, within the 12° the landing accepts\.$/);
   }
 });
 
@@ -249,7 +253,7 @@ test('the live cue: drift, offset, crab, flare and straighten in order of height
 test('result advice names only what was measured, and only controls the pilot has', () => {
   const ok = { status: 'success' }, failed = { status: 'failed' };
   // A phone pilot lands level with the crab in, as the brief and cue tell them: no rudder advice.
-  const phone = crosswindAdvice({ crab: 9 * DEG, thresholdCross: 0.5, touchdownCrab: 9 * DEG }, ok, 'right', { rudder: false });
+  const phone = crosswindAdvice({ crab: 9 * DEG, thresholdCross: 0.5, touchdownCrab: 9 * DEG, touchdownBank: 0.02, touchdownPitch: 0.05 }, ok, 'right', { rudder: false });
   assert.doesNotMatch(phone, /rudder/); assert.match(phone, /touched down wings level with 9° of crab, within the 12° the landing accepts/);
   assert.match(crosswindAdvice({ crab: 9 * DEG, thresholdCross: 0.5, touchdownCrab: 9 * DEG }, ok), /straighten with rudder at about 10 ft/);
   // Ended before the threshold: no centreline or straightening claim.
@@ -269,3 +273,52 @@ test('result advice names only what was measured, and only controls the pilot ha
   assert.match(crosswindAdvice(fb, x.landing), /the attempt ended before the threshold\.$/);
 });
 
+
+// A centreline approach crabbed 9° right on final, then one recorded touchdown processed by the real landing mission.
+function recordedTouchdown({ crab = 0, bank = 0, pitch = 0.04, finalCrab = 9 * DEG } = {}) {
+  const x = setup('trainer'); x.activities.startCrosswind(x.flight);
+  const field = practiceField(), p = x.landing.profile, at = runwayPoint(200, 0, field);
+  Object.assign(x.practice, { crabSum: finalCrab * 10, crabTime: 10, thresholdCross: 0 });
+  const telemetry = { position: { ...at, y: field.elevation + p.clearance }, speed: x.flight.type.landing.speed - 4, sink: 1,
+    heading: field.heading + crab, bank, pitch, gearDown: true, flaps: p.flaps, stalled: false, time: 30 };
+  x.s.position.set(telemetry.position.x, telemetry.position.y, telemetry.position.z);
+  Object.assign(x.s, { touchdown: telemetry, grounded: true, speed: telemetry.speed, flightTime: 30 });
+  x.landing.update(dt, x.s); x.practice.update(dt, x.s);
+  return { landing: x.landing, feedback: x.practice.feedback() };
+}
+
+test('phone result advice never calls a failed touchdown level or accepted: it names what the mission refused', () => {
+  const phone = r => crosswindAdvice(r.feedback, r.landing, 'right', { rudder: false });
+  // 20° of crab with level wings: the mission refuses the alignment, so the advice cannot call it within 12°.
+  const crabbed = recordedTouchdown({ crab: 20 * DEG });
+  assert.equal(crabbed.landing.status, 'failed'); assert.equal(crabbed.landing.reason, 'Touch down level and aligned with runway 36');
+  assert.equal(crabbed.feedback.crab.toFixed(6), (9 * DEG).toFixed(6)); assert.equal(crabbed.feedback.thresholdCross, 0);
+  const a = phone(crabbed);
+  assert.equal(a, 'Crabbed 9° right and held the centreline, but the nose was 20° right of the runway at touchdown, past the 12° the landing accepts: hold a modest crab, about 9°, with gentle banks.');
+  assert.doesNotMatch(a, /rudder|wings level|within/);
+  // 9° of crab is fine, but 0.25 rad of bank is not: the advice names the bank, not "wings level".
+  const banked = recordedTouchdown({ crab: 9 * DEG, bank: 0.25 });
+  assert.equal(banked.landing.status, 'failed'); assert.equal(banked.landing.reason, 'Touch down level and aligned with runway 36');
+  const b = phone(banked);
+  assert.equal(b, 'Crabbed 9° right and held the centreline, but the wings were banked 14° right, past the 10° the landing accepts: level the wings before the wheels touch.');
+  assert.doesNotMatch(b, /rudder|wings level|within/);
+  // Left wing low reads as left; both faults together are named together.
+  assert.match(phone(recordedTouchdown({ crab: 20 * DEG, bank: -0.25 })), /20° right of the runway at touchdown, past the 12° the landing accepts and the wings were banked 14° left, past the 10°/);
+  // With rudder, the same failed crabbed touchdown keeps the rudder fix but no acceptance claim.
+  const desk = crosswindAdvice(crabbed.feedback, crabbed.landing);
+  assert.match(desk, /20° right of the runway at touchdown, past the 12° the landing accepts: straighten with rudder at about 10 ft\.$/);
+  // A final crab already past the limit is described as measured, never recommended back to the pilot.
+  const wide = recordedTouchdown({ crab: 20 * DEG, pitch: 0, finalCrab: 20 * DEG });
+  assert.equal(wide.landing.status, 'failed'); assert.equal(wide.landing.reason, 'Touch down level and aligned with runway 36');
+  const w = phone(wide);
+  assert.equal(w, 'Crabbed 20° right and held the centreline, but the nose was 20° right of the runway at touchdown, past the 12° the landing accepts: ease the crab to less than 12° with gentle banks.');
+  assert.doesNotMatch(w, /about 20°|rudder|wings level|within/);
+  assert.match(phone(recordedTouchdown({ crab: 20 * DEG, bank: -0.25, finalCrab: 20 * DEG })), /banked 14° left, past the 10° the landing accepts: ease the crab to less than 12° with gentle banks and level the wings before the wheels touch\.$/);
+  assert.match(crosswindAdvice(wide.feedback, wide.landing), /: straighten with rudder at about 10 ft\.$/);
+  // An accepted phone landing, level with 9° of crab, still gets the useful wings-level advice.
+  const good = recordedTouchdown({ crab: 9 * DEG, bank: 0.03 });
+  assert.equal(good.landing.status, 'flying'); assert.equal(good.landing.phase, 'rollout');
+  assert.equal(phone(good), 'Crabbed 9° right and held the centreline, then touched down wings level with 9° of crab, within the 12° the landing accepts.');
+  // No recorded bank: alignment only, never "wings level".
+  assert.doesNotMatch(crosswindAdvice({ crab: 9 * DEG, thresholdCross: 0, touchdownCrab: 9 * DEG }, { status: 'success' }, 'right', { rudder: false }), /wings level/);
+});
