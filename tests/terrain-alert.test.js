@@ -105,6 +105,56 @@ test('level low flight over flat ground is harmless; a descent into it warns onl
   assert.ok(impact <= TERRAIN_ALERT.fixedWing.sinkTime && impact > TERRAIN_ALERT.fixedWing.sinkTime - 1, `warned ${impact.toFixed(1)} s from impact`);
 });
 
+/** A jet 2 m above its wheels' ground (FLAT) at 100 m/s heading north, set directly as in the reproductions. */
+function skimming(heightAt, { pitch = 0, verticalSpeed = 0 } = {}) {
+  const f = new FlightController(heightAt, 'jet'), s = f.state, gear = f.type.flight.groundClearance ?? f.type.groundClearance ?? 2.8;
+  s.position.set(0, FLAT + gear + 2, 0);
+  Object.assign(s, { speed: 100, heading: 0, pitch, verticalSpeed, grounded: false, crashed: false });
+  f.setQuaternion();
+  return { f, s, gear };
+}
+/** Flies until contact with the alert at its own cadence; returns when (and how high) the warning first showed. */
+function untilContact(f, heightAt, gear) {
+  const s = f.state, alert = new TerrainAlert(heightAt, []);
+  let warned = null;
+  for (let i = 0; i < 120 * 10 && !s.crashed; i++) {
+    f.update(1 / 120, {});
+    if (s.crashed) break;
+    if (alert.update(s, f.type).level === 'warning' && warned === null) warned = { at: s.flightTime, clearance: s.position.y - heightAt(s.position.x, s.position.z) - gear };
+  }
+  return { warned, crashed: s.crashed, contact: s.flightTime, samples: alert.samples };
+}
+
+test('an actual intersection with the path warns even when the clearance shrinks less than the closure', () => {
+  // An 8 m rise 500 m ahead (5 s at 100 m/s): under the 15 m closure, but above the wheels' current height.
+  const rise = (x, z) => z <= -500 ? FLAT + 8 : FLAT;
+  const a = skimming(rise), r = sampleTerrain(a.s, a.f.type, rise, { airports: [] });
+  assert.equal(r.level, 'warning'); assert.equal(r.cause, 'rising');
+  assert.ok(r.time > 3.7 && r.time <= 5, `contact ${r.time.toFixed(2)} s ahead`);
+  assert.ok(r.probes <= TERRAIN_ALERT.fixedWing.probes + 1);
+  const flown = untilContact(skimming(rise).f, rise, a.gear);
+  assert.ok(flown.crashed, 'flown on, the jet meets the rise');
+  assert.ok(flown.warned && flown.warned.clearance > 0, 'warned while still airborne');
+  assert.ok(flown.contact - flown.warned.at >= 4.5, `pull-up ${(flown.contact - flown.warned.at).toFixed(1)} s before contact`);
+
+  // A shallow 0.5 m/s descent from 2 m over flat ground: contact in about 4 s, inside the 6 s descent window.
+  const b = skimming(flat, { pitch: -0.005, verticalSpeed: -0.5 }), d = sampleTerrain(b.s, b.f.type, flat, { airports: [] });
+  assert.equal(d.level, 'warning'); assert.equal(d.cause, 'descent');
+  assert.ok(Math.abs(d.time - 4) < 0.3, `contact ${d.time.toFixed(2)} s ahead`);
+  const sank = untilContact(skimming(flat, { pitch: -0.005, verticalSpeed: -0.5 }).f, flat, b.gear);
+  assert.ok(sank.crashed, 'gear up, the shallow descent ends on the ground');
+  assert.ok(sank.warned && sank.warned.clearance > 0, 'warned while still airborne');
+  assert.ok(sank.contact - sank.warned.at >= 3.5, `warned ${(sank.contact - sank.warned.at).toFixed(1)} s before contact`);
+  assert.ok(sank.samples <= Math.floor(sank.contact / TERRAIN_ALERT.fixedWing.interval) + 1, 'at the usual cadence');
+
+  // The same skim with nothing rising and no sink stays quiet: clearance never reaches zero.
+  const level = skimming(flat);
+  assert.equal(sampleTerrain(level.s, level.f.type, flat, { airports: [] }).level, 'clear');
+  // A rise smaller than the wheels' clearance is passed over, not an intersection.
+  const bump = (x, z) => z <= -500 ? FLAT + 1.5 : FLAT, over = skimming(bump);
+  assert.equal(sampleTerrain(over.s, over.f.type, bump, { airports: [] }).level, 'clear');
+});
+
 test('helicopters: translation into a cliff warns, hovering beside it or settling gently does not', () => {
   // A cliff 120 m east (sideways for a north-facing helicopter), 60 m tall; the helicopter is 15 m up.
   const cliff = (x) => x >= 120 ? FLAT + 60 : FLAT;
@@ -126,6 +176,9 @@ test('helicopters: translation into a cliff warns, hovering beside it or settlin
 
   // Settling at 1.5 m/s onto flat ground (an ordinary off-field landing) never warns; dropping at 5 m/s does.
   s.position.set(0, FLAT + 10, 0); s.velocity.set(0, -1.5, 0);
+  assert.equal(sampleTerrain(s, f.type, flat, { airports: [] }).level, 'clear');
+  // Settling just as gently while drifting forward, so the path itself meets the ground, stays quiet too.
+  s.position.set(0, FLAT + 3, 0); s.velocity.set(0, -1.5, -4);
   assert.equal(sampleTerrain(s, f.type, flat, { airports: [] }).level, 'clear');
   s.velocity.set(0, -5, 0);
   const drop = sampleTerrain(s, f.type, flat, { airports: [] });

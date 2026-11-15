@@ -52,6 +52,10 @@ Land inside the outlined touchdown zone, level and within 12° of runway heading
 
 The mission uses the existing arcade flight and ground-roll model, including rolling resistance rather than wheel brakes or reverse thrust. These are gameplay targets for the procedural runway, not real aircraft landing procedures. `npm test` includes deterministic approach/flare/rollout scenarios using normal flight inputs for every aircraft in the fleet, plus failure and lifecycle regressions.
 
+## Checkpoint course
+
+**Lake Azure gates** is one timed course of six gates up Lake Azure, past Alpine Field: choose **Fly the Lake Azure gates** on the flight card or **Checkpoint course** in **Explore** (phones: Menu → Explore). The brief recommends the Mira T2 and offers a switch, but the course is flown in the aircraft you choose; helicopters are refused by name. Fly each gate's opening front to back, in order; the chartreuse gate is next. Pausing or opening a dialog stops the clock, R or Retry starts again, and a landing mission and the course never run together. See [docs/checkpoint-course.md](docs/checkpoint-course.md).
+
 ## Environment
 
 Clear, golden-hour, and overcast presets affect the sky, sunlight, fog, clouds, and water. Graphics quality controls render resolution, terrain detail, tree density, clouds, and shadows. High quality works best with a hardware-accelerated WebGL 2 browser. The flight log and preferences are saved locally in the current browser.
