@@ -239,6 +239,26 @@ dialog.chart-dialog{width:min(1060px,calc(100% - 32px))}
 .scene-label{top:345px}@media(max-width:800px){.scene-label{top:322px}}
 /* Phones keep the free-flight card at its old height; the course starts from Menu → Explore there. */
 @media(max-width:550px){#course-entry{display:none}}
+/* Runway wind advice (src/runway-wind.js): text first, chartreuse headwind, coral tailwind, ivory otherwise. */
+.wind-headwind{color:var(--accent)}.wind-tailwind{color:var(--danger)}.wind-neutral{color:var(--foreground)}
+.wind-arrow{width:13px;height:13px;flex-shrink:0;color:var(--foreground);transition:transform .16s}
+.runway-wind{margin-top:10px;padding:11px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface-raised);font-size:12px;line-height:1.55}
+.runway-wind-head{display:flex;gap:10px;align-items:center;margin-bottom:6px}
+.runway-wind-head strong{display:block;font-weight:500}.runway-wind-head span{display:block;color:var(--muted);font-size:11px}
+.runway-wind.switch .runway-wind-head strong{color:var(--danger)}.runway-wind.into-wind .runway-wind-head strong{color:var(--accent)}
+.runway-wind-diagram{position:relative;width:30px;height:30px;flex-shrink:0;border:1px solid var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center}
+.runway-wind-diagram i{position:absolute;left:50%;top:5px;bottom:5px;width:4px;margin-left:-2px;border-radius:1px;background:var(--subtle)}
+.runway-wind-diagram .wind-arrow{position:relative;width:18px;height:18px}
+.runway-wind>p{margin:0}.runway-wind>p b{font-family:var(--numbers);font-weight:500;font-size:13px;margin-right:4px}
+.runway-wind .runway-wind-gust{color:var(--muted);font-size:11px;margin-top:4px}
+.runway-wind .secondary-btn{margin-top:10px;background:var(--surface);border:1px solid var(--border);color:var(--accent)}
+.map-wind{display:flex;align-items:center;gap:7px;padding:6px 12px 0;font-family:var(--numbers);font-size:14px;white-space:nowrap;overflow:hidden}
+.map-wind-runway{color:var(--muted)}
+.map-wind .wind-arrow.calm{opacity:0}
+.landing-guidance .landing-wind{font-size:11px;margin-bottom:8px}.landing-wind>span:first-child{color:var(--muted)}
+@media(max-width:550px){.map-wind{padding:4px 8px 0;gap:4px;font-size:12px}.map-wind-runway{display:none}.map-wind .wind-arrow{width:10px;height:10px}.landing-guidance .landing-wind{margin-bottom:4px}}
+@media(prefers-reduced-motion:reduce){.wind-arrow{transition:none}}
+.landing-brief>.runway-wind{margin:0 0 14px}
 /* Phones: the course card is one compact block above the first gate's projected opening (y ≈ 225 px in the chase view at 390×844).
    The title gives way to the phase line, the readings share a row with Retry / Free flight, and the rules line lives in the brief. */
 .course-best{display:none}
