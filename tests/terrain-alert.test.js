@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { FlightController } from '../src/flight.js';
 import { FlightInputs } from '../src/controls.js';
 import { LandingMission } from '../src/landing-mission.js';
-import { AIRFIELD } from '../src/airfield.js';
+import { AIRFIELD, runwayCoordinates, runwayPoint } from '../src/airfield.js';
 import { airportById, runwayDirection } from '../src/airports.js';
+import { groundVelocity } from '../src/flight-path.js';
 import { groundHeight } from '../src/world.js';
 import { WATER_LEVEL } from '../src/regions.js';
 import { TERRAIN_ALERT, TerrainAlert, sampleTerrain, landingRunway, terrainNotice } from '../src/terrain-alert.js';
@@ -221,6 +222,109 @@ test('normal aligned approaches to real runways stay quiet all the way to touchd
   }
 });
 
+/** Recorded Vela J8 final: crabbed into the wind, tracking the centreline on a roughly 3-degree descent. */
+function correctedFinal() {
+  const f = new FlightController(groundHeight, 'jet'), s = f.state;
+  s.position.set(899.164091336778, 123.58111693305365, -620.3000581377879);
+  s.quaternion.set(-0.024025949980435023, -0.04771270595822365, -0.001147983042098355, 0.9985714463936053);
+  s.windVelocity.set(-5.278578811598676, 0, 1.0481732296174961);
+  Object.assign(s, { heading: 0.09548930342816941, pitch: -0.04811136043764029, bank: 0,
+    speed: 56.08226131237409, verticalSpeed: -2.6925574431560553, gearDown: true,
+    grounded: false, crashed: false, flightTime: 8.575 });
+  return f;
+}
+
+test('a corrected real final stays clear with an active-alert margin through runway contact', () => {
+  const f = correctedFinal(), s = f.state, start = s.position.clone(), v = groundVelocity(s, f.type);
+  const c = TERRAIN_ALERT.fixedWing, gear = f.type.flight.groundClearance ?? f.type.groundClearance ?? 2.8;
+  const contact = (start.y - AIRFIELD.elevation - gear) / -v.y;
+  assert.ok(Math.abs(v.x) < 0.1, 'the crab cancels the crosswind');
+  // Independent constant-velocity trajectory, matching the look-ahead's premise. Main falsely warned at 8.75 s
+  // with 19.96 m remaining under the wheels; the actual contact is on the runway about 15.9 s later.
+  for (let t = 0; t < contact; t += c.interval / 2) {
+    s.position.copy(start).addScaledVector(v, t);
+    assert.ok(s.position.y - groundHeight(s.position.x, s.position.z) - gear > 0, `airborne at ${t}`);
+    for (const extra of [0, c.hysteresis]) {
+      assert.equal(sampleTerrain(s, f.type, groundHeight, { extra }).level, 'clear', `at ${t} s, extra ${extra}`);
+    }
+  }
+  s.position.copy(start).addScaledVector(v, contact);
+  const at = runwayCoordinates(s.position);
+  assert.ok(at.along > 60 && at.along < 440 && Math.abs(at.cross) < 1, 'contact inside the runway touchdown zone');
+  assert.equal(sampleTerrain(s, f.type, groundHeight, { extra: c.hysteresis }).level, 'clear', 'runway contact is a landing');
+});
+
+test('a prior caution clears after correcting onto final, without escalating or waiting for touchdown', () => {
+  const f = correctedFinal(), s = f.state, heading = s.heading, c = TERRAIN_ALERT.fixedWing;
+  const alert = new TerrainAlert(groundHeight), start = s.position.clone(), v = groundVelocity(s, f.type);
+  // Before the crab, the wind takes this north-facing aircraft beside the runway: the caution is justified.
+  s.heading = 0; f.setQuaternion();
+  assert.equal(alert.update(s, f.type).level, 'caution');
+  const raised = s.flightTime;
+  s.heading = heading; f.setQuaternion();
+  for (let i = 1; i <= 8; i++) {
+    const elapsed = i * c.interval;
+    s.flightTime = raised + elapsed;
+    s.position.copy(start).addScaledVector(v, elapsed);
+    const level = alert.update(s, f.type).level;
+    assert.equal(level, elapsed < c.hold ? 'caution' : 'clear', `after ${elapsed} s of corrected flight`);
+  }
+  assert.equal(alert.samples, 9, 'correction keeps the normal sampling cadence');
+  assert.equal(s.grounded, false, 'cleared while still airborne');
+});
+
+test('off-centre and uncorrected real approaches still raise terrain alerts', () => {
+  for (const [offset, heading, level] of [[0, 0, 'caution'], [100, null, 'warning'], [0, -0.1, 'warning']]) {
+    const f = correctedFinal(), s = f.state;
+    s.position.x += offset;
+    if (heading !== null) { s.heading = heading; f.setQuaternion(); }
+    for (const extra of [0, TERRAIN_ALERT.fixedWing.hysteresis]) {
+      const r = sampleTerrain(s, f.type, groundHeight, { extra });
+      assert.equal(r.level, level, `offset ${offset}, heading ${heading}, extra ${extra}`);
+      assert.equal(r.cause, 'rising');
+    }
+  }
+});
+
+test('rising ground inside an approach corridor still uses the aircraft approach margin', () => {
+  for (const id of ['jet', 'helicopter']) {
+    const f = new FlightController(flat, id), mission = new LandingMission(FIELD), s = mission.start(f);
+    const c = f.type.flight.rotorcraft ? TERRAIN_ALERT.rotorcraft : TERRAIN_ALERT.fixedWing;
+    const point = runwayPoint(-800, 0, FIELD), gear = mission.profile.clearance;
+    s.position.set(point.x, FLAT + gear + 60, point.z);
+    Object.assign(s, { heading: 0, pitch: -Math.atan(0.05), speed: 50, verticalSpeed: -2.5 });
+    s.velocity.set(0, -2.5, -50); f.setQuaternion();
+    const v = groundVelocity(s, f.type), t = 5, z = s.position.z + v.z * t;
+    // A narrow bank at the five-second probe, before the runway's undershoot allowance, with no actual contact.
+    for (const clearance of [c.approachMargin * 0.75, c.approachMargin + 0.5]) {
+      const bankHeight = s.position.y + v.y * t - gear - clearance;
+      const bank = (x, pz) => Math.abs(pz - z) < 10 ? bankHeight : FLAT;
+      for (const extra of [0, c.hysteresis]) {
+        const r = sampleTerrain(s, f.type, bank, { airports: [FIELD], extra });
+        const conflict = clearance < c.approachMargin;
+        assert.equal(r.level, conflict ? (t <= c.warnTime ? 'warning' : 'caution') : 'clear', `${id}: ${clearance} m, extra ${extra}`);
+        if (conflict) { assert.equal(r.cause, 'rising'); assert.equal(r.time, t); }
+        assert.ok(r.clearance > 0, 'a near miss rather than an actual intersection');
+      }
+    }
+  }
+});
+
+test('approach relief cannot hide a real intersection with a small bank before the runway', () => {
+  const bank = (x, z) => z <= 900 && z >= 800 ? FLAT + 8 : FLAT;
+  // Centreline, near the splayed corridor edge, and just outside it. The 8 m rise is below the 15 m closure.
+  for (const cross of [0, 70, 90]) {
+    const { f, s } = skimming(bank, { pitch: -0.001, verticalSpeed: -0.1 });
+    Object.assign(s.position, runwayPoint(-800, cross, FIELD)); s.gearDown = true;
+    for (const extra of [0, TERRAIN_ALERT.fixedWing.hysteresis]) {
+      const r = sampleTerrain(s, f.type, bank, { airports: [FIELD], extra });
+      assert.equal(r.level, 'warning', `cross ${cross}, extra ${extra}`);
+      assert.equal(r.cause, 'rising');
+      assert.ok(r.time > 3.75 && r.time <= 5, `contact ${r.time} s before reaching the runway`);
+    }
+  }
+});
+
 test('an active landing mission still warns of a ridge between the aircraft and the runway', () => {
   // A 120 m bank 700 m short of the threshold, across the extended centreline.
   const blocked = (x, z) => z > 1250 && z < 1350 ? FLAT + 120 : FLAT;
@@ -295,6 +399,23 @@ test('resets, aircraft changes and hysteresis', () => {
   k.state.position.y = 110 + g2 + 50; k.holdAltitude = k.state.position.y;
   assert.equal(sampleTerrain(k.state, k.type, skim, { airports: [] }).level, 'clear', 'outside the margin');
   assert.notEqual(sampleTerrain(k.state, k.type, skim, { airports: [], extra: TERRAIN_ALERT.fixedWing.hysteresis }).level, 'clear', 'inside it while alerting');
+
+  // After a closer pass raises a caution, 50 m of open-ground clearance keeps it active beyond the hold.
+  const retained = new TerrainAlert(skim, []), c = TERRAIN_ALERT.fixedWing;
+  k.state.position.y -= 10; k.state.flightTime = 0;
+  assert.equal(retained.update(k.state, k.type).level, 'caution');
+  k.state.position.y += 10;
+  for (let i = 1; i <= 8; i++) {
+    k.state.flightTime = i * c.interval;
+    assert.equal(retained.update(k.state, k.type).level, 'caution', 'open-ground hysteresis still retains the caution');
+  }
+  // Clear the widened margin too: only the normal one-second hold remains.
+  k.state.position.y += 11;
+  const raised = k.state.flightTime;
+  for (let i = 1; i <= 4; i++) {
+    k.state.flightTime = raised + i * c.interval;
+    assert.equal(retained.update(k.state, k.type).level, i * c.interval < c.hold ? 'caution' : 'clear');
+  }
 });
 
 test('probes and cadence are strictly bounded', () => {
