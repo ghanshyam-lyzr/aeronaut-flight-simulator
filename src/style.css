@@ -277,3 +277,36 @@ dialog.chart-dialog{width:min(1060px,calc(100% - 32px))}
  #course-guidance .landing-actions button{min-height:34px}
  #course-cue{margin:0;padding:2px 0 10px}#course-objective{display:none}
 }
+
+/* Heading select — the heading bug on the heading instrument and its compact selector above the strip. */
+.heading-label-row{display:flex;align-items:center;justify-content:space-between;gap:6px;min-width:0}
+.heading-bug{display:inline-flex;align-items:center;gap:4px;height:22px;margin:-4px -6px -4px 0;padding:0 6px;border-radius:6px;border:1px solid var(--border);font-size:11px;color:var(--muted);white-space:nowrap}
+.heading-bug:hover,.heading-bug[aria-expanded="true"]{background:var(--surface-raised)}
+.heading-bug b{font-family:var(--numbers);font-weight:500;font-size:14px;color:var(--foreground);font-variant-numeric:tabular-nums}
+.heading-bug .bug-mark{width:7px;height:7px;border-radius:50%;border:1.5px solid var(--subtle)}
+.heading-bug.selected .bug-mark{border-color:var(--foreground)}
+.heading-bug.active{border-color:var(--accent)}
+.heading-bug.active .bug-mark{background:var(--accent);border-color:var(--accent)}
+.heading-bug.active b{color:var(--accent)}
+.heading-select{position:absolute;bottom:calc(100% + 8px);left:0;width:268px;padding:12px 14px 14px;z-index:6;box-shadow:0 8px 24px var(--shadow)}
+.heading-select-head{display:flex;align-items:center;justify-content:space-between;font-size:12px;font-weight:500;margin:-4px -6px 10px 0}
+.heading-stepper{display:grid;grid-template-columns:repeat(2,36px) 1fr repeat(2,36px);gap:5px}
+.heading-stepper>button{height:36px;border-radius:6px;border:1px solid var(--border);background:var(--surface);font-family:var(--numbers);font-size:15px;color:var(--muted);touch-action:manipulation}
+.heading-stepper>button:hover{background:var(--surface-raised)}
+.heading-entry{display:flex;align-items:center;justify-content:center;gap:1px;height:36px;border-radius:6px;border:1px solid var(--border);background:var(--background);font-family:var(--numbers);font-size:22px;color:var(--muted)}
+.heading-entry:focus-within{border-color:var(--accent)}
+.heading-entry input{width:44px;border:0;background:none;color:var(--foreground);font-family:var(--numbers);font-size:22px;font-weight:500;font-variant-numeric:tabular-nums;text-align:right;padding:0;outline:none}
+.heading-entry.invalid{border-color:var(--danger)}
+.heading-select-status{font-size:11px;color:var(--muted);margin:9px 0 10px;min-height:15px}
+.heading-select-status.error{color:var(--danger)}
+.heading-select-actions{display:grid;grid-template-columns:1fr 1.3fr;gap:6px}
+.heading-select-actions button{height:34px;border-radius:6px;font-size:12px;font-weight:500}
+.heading-sync{background:var(--surface-raised)}
+.heading-hold{background:var(--foreground);color:var(--background)}
+.heading-hold:hover{color:var(--background)}
+.heading-hold.active{background:var(--accent);color:var(--accent-dark)}
+.heading-hold:disabled{opacity:.4}
+@media(hover:none),(pointer:coarse){.heading-bug{height:30px}.heading-stepper>button,.heading-entry{height:42px}.heading-select-actions button{height:40px}}
+@media(max-width:550px){.heading-select{left:0;right:0;width:auto}.heading-bug .bug-label{display:none}.heading-bug{gap:3px;padding:0 4px;margin-right:0}}
+.rotorcraft-heading .heading-bug{display:none}
+.heading-select:focus{outline:none}

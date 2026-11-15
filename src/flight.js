@@ -52,6 +52,21 @@ export function hasPitchTrim(type) {
 export const JET = FLEET.jet.flight;
 
 /**
+ * A pilot-selected heading in whole degrees, 0–359 (360 reads as 000), or null for anything that is not a finite
+ * number: an empty field, text, NaN, Infinity, a boolean or an object. Negative and over-360 values wrap.
+ */
+export function normalizeHeadingTarget(value) {
+  if (typeof value === 'string') value = value.trim() === '' ? NaN : Number(value);
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  return ((Math.round(value) % 360) + 360) % 360;
+}
+
+/** Whether a type has the selectable heading bug: every fixed-wing type; helicopters keep their hover hold. */
+export function hasHeadingSelect(type) {
+  return !type.flight.rotorcraft;
+}
+
+/**
  * A forgiving, coordinated-turn flight model. All distances are metres.
  *
  * Wind (src/wind.js): the controller owns one Wind, advanced only by its own physics steps, so it freezes whenever
@@ -118,6 +133,9 @@ export class FlightController {
       flightTime: 0,
       distance: 0,
       autopilot: false,
+      // The heading bug: a selected heading in degrees (null until chosen), held only while headingHold is on.
+      selectedHeading: null,
+      headingHold: false,
       crashReason: '',
       touchdown: null,
       bodyRates: { pitch: 0, roll: 0, yaw: 0 },
@@ -230,12 +248,51 @@ export class FlightController {
   toggleAutopilot() {
     if (this.state.crashed || this.state.grounded) return false;
     this.state.autopilot = !this.state.autopilot;
+    // Space and the assist switch capture the current heading, never the bug; the selection stays, inactive.
+    this.state.headingHold = false;
     this.holdAltitude = this.state.position.y;
     this.holdHeading = this.state.heading;
     this.holdPosition.copy(this.state.position);
     // From a free attitude, assist first returns to level flight, then holds what it has there.
     this.recovering = this.state.autopilot && this.type.flight.aerobatic;
     return this.state.autopilot;
+  }
+
+  /**
+   * Selects a heading for flight assist (any value normalizeHeadingTarget accepts) and returns it, or null when the
+   * value is invalid or the type has no heading bug, leaving the selection unchanged. Choosing a value never steers
+   * or engages assist; while assist is already on it retargets the held heading and keeps the held altitude.
+   */
+  setHeadingTarget(value) {
+    const heading = normalizeHeadingTarget(value);
+    if (heading === null || !hasHeadingSelect(this.type)) return null;
+    const s = this.state;
+    s.selectedHeading = heading;
+    if (s.autopilot) {
+      s.headingHold = true;
+      // A free-attitude recovery keeps levelling; it takes up the selection once level (see steerFree).
+      if (!this.recovering) this.holdHeading = heading * Math.PI / 180;
+    }
+    return heading;
+  }
+
+  /**
+   * Engages flight assist on the selected heading, holding the current altitude. Refused (false) without a
+   * selection, on the ground, after a crash or in a helicopter. Free-attitude types level out first.
+   */
+  holdSelectedHeading() {
+    const s = this.state;
+    if (s.selectedHeading === null || s.crashed || s.grounded || !hasHeadingSelect(this.type)) return false;
+    if (!s.autopilot) this.toggleAutopilot();
+    return this.setHeadingTarget(s.selectedHeading) !== null && s.autopilot;
+  }
+
+  /** Forgets the selection. A heading hold in progress becomes an ordinary hold of the heading flown now. */
+  clearHeadingTarget() {
+    const s = this.state;
+    if (s.headingHold && !this.recovering) this.holdHeading = s.heading;
+    s.selectedHeading = null;
+    s.headingHold = false;
   }
 
   toggleGear() {
@@ -268,6 +325,8 @@ export class FlightController {
       this.state.autopilot = false;
     }
     for (let i = 0; i < steps && !this.state.crashed; i++) this.step(elapsed / steps, controls);
+    // Whatever ended assist (manual input, a stall, touchdown, a crash) also ends the heading hold.
+    if (!this.state.autopilot) this.state.headingHold = false;
     return this.state;
   }
 
@@ -528,7 +587,8 @@ export class FlightController {
       if (this.recovering && angle < 0.05) {
         this.recovering = false;
         this.holdAltitude = s.position.y;
-        this.holdHeading = s.heading;
+        // A heading chosen during the recovery is honoured once level, not overwritten by the levelled heading.
+        this.holdHeading = s.headingHold ? s.selectedHeading * Math.PI / 180 : s.heading;
       }
       q.rotateTowards(_q, Math.min(angle * (1 - Math.exp(-(this.recovering ? 3 : 1) * dt)), ASSIST_RECOVERY_RATE * dt));
       this.pitchRate = mix(this.pitchRate, 0, 5, dt);

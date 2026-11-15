@@ -16,7 +16,7 @@ import { runwayCoordinates } from './airfield.js';
  *   (clearance unchanged) is harmless. A point where the path actually meets the ground skips both rules.
  * - warnTime: a conflict this close is a pull-up warning; further out it is a caution.
  * - sinkTime / minSink: descending straight into flat ground warns only when impact is this close.
- * - hysteresis: metres added to the margin while alerting; hold: flight seconds an alert outlives its cause.
+ * - hysteresis: metres added to the open-ground margin while alerting; hold: flight seconds an alert outlives its cause.
  */
 export const TERRAIN_ALERT = Object.freeze({
   fixedWing: Object.freeze({ horizon: 20, maxDistance: 4000, probes: 16, interval: 0.25, margin: 45, closure: 15,
@@ -75,8 +75,8 @@ const _v = new THREE.Vector3();
  * One look-ahead sample. Returns { level, cause, time, clearance, probes } where cause is 'rising' (ground ahead
  * climbs into the path), 'descent' (the path sinks into flat ground) or '' and time is the seconds to the first
  * conflicting probe (or to the interpolated contact, where the path meets the ground); `extra` metres widen the
- * margin (the hysteresis while an alert shows). `probes` counts the height lookups, never more than the profile's
- * probes + 1.
+ * open-ground margin (the hysteresis while an alert shows). `probes` counts the height lookups, never more than the
+ * profile's probes + 1.
  */
 export function sampleTerrain(state, type, heightAt, { airports = AIRPORTS, extra = 0 } = {}) {
   const rotorcraft = !!type.flight.rotorcraft, c = rotorcraft ? TERRAIN_ALERT.rotorcraft : TERRAIN_ALERT.fixedWing;
@@ -102,7 +102,8 @@ export function sampleTerrain(state, type, heightAt, { airports = AIRPORTS, extr
     const relief = approaching ? runwayRelief({ x, z }, track, airports) : null;
     // Meeting the ground on a runway while lined up with it is a landing: nothing beyond that point matters.
     if (relief?.onRunway) { if (clearance <= 0) return result; continue; }
-    if (!meets && (!(clearance < (relief ? c.approachMargin + extra : margin)) || c0 - clearance < c.closure)) continue;
+    // Widening the corridor's small margin can latch a prior caution onto an otherwise clear glide path.
+    if (!meets && (!(clearance < (relief ? c.approachMargin : margin)) || c0 - clearance < c.closure)) continue;
     // Rising: the ground climbs into the path, or above the wheels' current height so even level flight meets it.
     if (h - h0 >= c.closure / 2 || (meets && p.y - h - gear <= 0)) {
       result.cause = 'rising'; result.time = contact; result.level = contact <= c.warnTime ? 'warning' : 'caution';
