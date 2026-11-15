@@ -27,7 +27,7 @@ The panel shows the real preset, for example `18°C / Wind 260° 14G24 kt` or `W
 Import from `src/wind.js` and `src/flight-path.js`. Do not re-implement any wind physics.
 
 - `flight.setWind(config, { immediate })` sets the wind and **returns the previous configuration**. `config` is a preset id (`'breeze'`) or `{ direction, speed, gust, veer, seed }`. Without `immediate`, the change blends in over 6 simulation seconds (smoothstep).
-- `flight.windSnapshot()` returns a frozen `{ config, time, transitioning, x, z, speed, direction, gust }`. `flight.sampleWind(target)` returns the wind now. `state.windVelocity` (`{x, 0, z}`) is the air velocity the last physics step used.
+- `flight.windSnapshot()` returns a frozen `{ config, time, transitioning, x, z, speed, direction, gust }`. `flight.sampleWind(target)` returns the wind at the current clock endpoint. `state.windVelocity` (`{x, 0, z}`) is the midpoint air velocity used for the last physics interval's displacement. These contracts, including setter return values and activity restoration, are unchanged.
 - `groundVelocity(state, type)` and `groundTrack(state, type)` (`src/flight-path.js`) give the **authoritative ground velocity**, and the ground speed and track. `flightPathVelocity` is the same function. A state without `windVelocity` (a hand-made legacy test state) is treated as still air.
 - `windComponents(sample, heading)` returns `{ headwind, crosswind }`: headwind is positive into the nose, crosswind is positive from the right. `windText`, `sampleText`, `windsockYaw` and `windsockDroop` are also exported.
 - **An activity that needs its own wind** applies it when it starts and restores the pilot's afterwards:
@@ -42,7 +42,9 @@ Import from `src/wind.js` and `src/flight-path.js`. Do not re-implement any wind
 
 ## How the physics works
 
-**Wind time.** The controller owns one `Wind`. It moves forward only inside `FlightController.step`, and each step samples the wind once, at the middle of the step. So the wind freezes whenever the flight is not updated (pause, any dialog, a finished mission, a crash). `reset()` keeps the configuration but restarts the clock at zero. Every restart, retry and new start therefore gets the same gusts, and any blend still under way finishes at once.
+**Wind time and sampling.** The controller owns one `Wind`. For an interval `[t, t + dt]`, it samples the midpoint `t + dt/2` for displacement and the endpoint `t + dt` for inertia and load factor. The previous endpoint sample is already available at `t`; the wind change therefore spans exactly `dt`, even when adjacent input slices have different lengths. Both samples are taken before advancing the clock, because advancing can retire a completed preset transition. The clock advances exactly once by `dt`, only inside `FlightController.step`.
+
+The wind freezes whenever the flight is not updated (pause, any dialog, a finished mission, a crash). `reset()` keeps the configuration but restarts the clock and load measurements at zero. Every restart, retry and new start therefore gets the same gusts, and any blend still under way finishes at once. Applying an immediate activity wind also starts a fresh load measurement, so setup/restoration is not interpreted as an airborne impulse.
 
 **Fixed-wing aircraft, airborne**
 - `state.speed` stays true airspeed. Thrust, drag, stall, turn rate, assist and the speed tape all use it unchanged.
@@ -50,6 +52,8 @@ Import from `src/wind.js` and `src/flight-path.js`. Do not re-implement any wind
 - `state.distance` (distance flown, the flight log), the flight-path marker, the terrain look-ahead and the navigation time en route all follow this ground travel.
 - A constant wind changes nothing else. Load factor comes from the change in inertial (ground) velocity, and a constant wind adds the same vector before and after each step, so it creates no load-factor spikes. The tests check this to 1e−9 g.
 - When the wind along the flight path changes (a gust, or a preset blending in), airspeed changes by the opposite amount, as inertia does. A headwind gust raises it, and the existing thrust and drag model then brings it back. That makes the speed tape move a few knots in Gusts.
+
+**Load measurement resolution.** Endpoint ground velocity is air-relative velocity plus endpoint wind. Specific force is its change over the same elapsed interval, plus gravity, projected onto the aircraft's up axis. Ordinary slices use their own velocity difference. Below 1 microsecond, subtracting nearly equal velocities and dividing by the tiny remainder amplifies floating-point roundoff. Such slices still apply controls, inertia, displacement, distance and both clocks; their accelerometer difference spans the preceding resolved interval plus the new elapsed time. Consecutive short slices accumulate until they provide another resolved interval. A fresh flight keeps its initial load until that first interval is available. No load is clamped, and real positive/negative manoeuvre loads are retained. Ground roll and immediate wind setup clear this measurement history.
 
 **Fixed-wing aircraft, on the ground.** The existing ground-roll and wheel-brake model is kept. The tyres hold the aircraft, so it never drifts sideways, and `state.speed` on the ground is still wheel (ground) speed. The documented approximations are:
 - Rotation compares **airspeed** (wheel speed plus headwind) with the rotate speed, so a headwind shortens the takeoff roll. At liftoff that airspeed carries into the air.
@@ -68,7 +72,7 @@ Import from `src/wind.js` and `src/flight-path.js`. Do not re-implement any wind
 
 ## Measurements
 
-These are reproducible with `node scripts/measure-wind.js`. It flies through the real input pipeline (`FlightInputs`) at 60 fps, using ordinary key presses.
+These are reproducible with `node scripts/measure-wind.js`. It flies through the real input pipeline (`FlightInputs`), using ordinary key presses, and records every physics slice rather than only the final slice of each rendered frame.
 
 **Mira T2, calm versus wind.** The sequence is 90 s of key presses: 30 s hands-off heading north, D held for 6 s (a turn to about 174°), 30 s hands-off, then ½ s taps of W and of S.
 
@@ -83,6 +87,27 @@ These are reproducible with `node scripts/measure-wind.js`. It flies through the
 With the same key presses, the steady winds leave airspeed, heading and the load-factor range identical to calm. Only the ground track changes: a westerly adds exactly 900 m east over 90 s, and a northerly adds 900 m south. Gusts add a few knots of airspeed variation.
 
 **Frame rate.** Gusts with the same key presses end within **0.15 m** of the 144 fps run at 30, 60 and 120 fps. `FlightInputs` already slices to 1/120 s, and the wind is sampled at the middle of each slice. The unit test also checks 30, 60 and 144 fps with direct updates: within 3 m after 40 s.
+
+### Input-remainder stability correction
+
+Before this correction (`0a2f419`), ordinary 60 fps inputs could report approximately **−9.91×10¹¹ to +1.85×10¹² g** in a landing turn. The reproduction is a trainer on flat terrain (`() => 40`), immediate Gusts, `new LandingMission().start(flight)`, and `input.set({ roll: 0.3 }, 0.1)`, advanced with `input.advance(frame / 60, (dt, controls) => flight.update(dt, controls))` for 600 frames. Collect `state.gForce` inside that callback to see every sample. The measurement script includes this exact sequence.
+
+`FlightInputs` naturally emits positive frame remainders as short as `6.94×10⁻¹⁸ s` here. Previously, changing from a normal slice to a remainder compared two midpoint wind samples separated by about half the normal slice, then divided that wind change by only the tiny new `dt`. This also applied too much airspeed inertia to a short slice. Endpoint wind differences correct the time contract; resolved accelerometer intervals also remove the remaining subtraction roundoff, which occurred in Calm too.
+
+Corrected ten-second measurements below include every physics slice. Bank means the trainer's normal airborne start with roll 0.3 pressed at 0.1 s; landing turn is the reproduction above. Descent uses the landing start and a −0.4 pitch / trim-up tap at 0.013–0.113 s. Transition means Calm blending to Gusts over six seconds, beginning after the start/reset.
+
+| Flight | Wind | 30 fps g range | 60 fps g range | 144 fps g range | Largest endpoint difference from 144 fps |
+|---|---|---|---|---|---|
+| Bank | Gusts | 0.965765–2.146565 | 0.965765–2.146565 | 0.965755–2.146544 | 0.122407 m |
+| Bank | Transition | 0.998052–2.142574 | 0.998052–2.142574 | 0.998054–2.142575 | 0.119935 m |
+| Descent | Gusts | 0.999381–1.011485 | 0.999381–1.011485 | 0.999353–1.011486 | 0.002147 m |
+| Descent | Transition | 0.999337–1.011408 | 0.999337–1.011408 | 0.999316–1.011409 | 0.001107 m |
+| Landing turn | Gusts | 0.967930–2.119588 | 0.967930–2.119588 | 0.967923–2.119539 | 0.092349 m |
+| Landing turn | Transition | 0.999337–2.145296 | 0.999337–2.145296 | 0.999316–2.145284 | 0.085514 m |
+
+Adding an explicit positive 1 ns partial after each frame changes these endpoints by at most **1.760×10⁻⁷ m** and the load-range extrema by **7.665×10⁻¹¹ g**. Flight and wind clocks both finish at exactly 10 s in those runs. The 90 s flight above still agrees within 0.14 m across cadences, and its rounded speed, drift and load figures are unchanged.
+
+`tests/wind-stability.test.js` covers these cadences, non-frame-aligned press/release events, standalone `update(1e-9)` calls, a fresh run made entirely of 1 ns slices, endpoint acceleration versus load, displacement versus `groundVelocity`, real fighter loads above +6 / below −6 g, deterministic landing retries, and pause/resume with the input clock rebased. The full suite retains coverage of all 21 aircraft, hover hold, brakes, trim, heading assist, warnings and landing/course activities.
 
 **Takeoff roll, Mira T2, full power, stick back.**
 

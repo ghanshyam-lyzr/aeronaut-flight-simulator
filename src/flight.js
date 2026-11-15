@@ -8,6 +8,9 @@ const clamp = THREE.MathUtils.clamp;
 const mix = (value, target, rate, dt) => THREE.MathUtils.lerp(value, target, 1 - Math.exp(-rate * dt));
 const TAU = Math.PI * 2;
 const GRAVITY = 9.81;
+// Velocity differences need a resolved interval. Shorter input slices still move the aircraft and wind clock;
+// their load measurement spans the preceding resolved interval instead of amplifying subtraction roundoff.
+const LOAD_SAMPLE_INTERVAL = 1e-6;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 // Flight assist turns a free-attitude aircraft back to level no faster than this, in rad/s.
 const ASSIST_RECOVERY_RATE = 1.2;
@@ -67,9 +70,9 @@ export function hasHeadingSelect(type) {
  * A forgiving, coordinated-turn flight model. All distances are metres.
  *
  * Wind (src/wind.js): the controller owns one Wind, advanced only by its own physics steps, so it freezes whenever
- * update() is not called (pause, dialogs) and restarts from time zero on every reset. Each step samples it once and
- * keeps that air velocity in state.windVelocity ({x, 0, z}, m/s). Air-relative and ground-relative motion are kept
- * apart:
+ * update() is not called (pause, dialogs) and restarts from time zero on every reset. state.windVelocity ({x, 0, z},
+ * m/s) is the midpoint wind used for displacement; endpoint samples measure the change over this step for inertia
+ * and load factor. Air-relative and ground-relative motion are kept apart:
  * - Fixed-wing state.speed is true airspeed in the air: thrust, drag, stall, turn rate and the speed tape use it.
  *   The aircraft moves at that airspeed along its nose plus the wind, so a crosswind drifts it and a headwind slows
  *   it over the ground; state.distance and every consumer of groundVelocity() (src/flight-path.js) follow that
@@ -91,9 +94,12 @@ export class FlightController {
     this.type = aircraftType(aircraft);
     this.wind = new Wind();
     this.state = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), velocity: new THREE.Vector3(), windVelocity: new THREE.Vector3() };
+    this.windEndpoint = new THREE.Vector3();
     this.holdPosition = new THREE.Vector3();
     this.attitude = new THREE.Euler(0, 0, 0, 'YXZ');
     this.previousVelocity = new THREE.Vector3();
+    this.loadVelocity = new THREE.Vector3();
+    this.loadPreviousVelocity = new THREE.Vector3();
     this.acceleration = new THREE.Vector3();
     this.aircraftUp = new THREE.Vector3();
     this.rotationStep = new THREE.Vector3();
@@ -137,6 +143,7 @@ export class FlightController {
     this.pitchRate = 0;
     this.rollRate = 0;
     this.yawRate = 0;
+    this.resetLoadSample();
     // A fresh start replays the wind from time zero (the configuration is kept).
     this.wind.reset();
     this.sampleWindNow();
@@ -176,7 +183,7 @@ export class FlightController {
    */
   setWind(config, options) {
     const previous = this.wind.set(config, options);
-    if (options?.immediate) this.sampleWindNow();
+    if (options?.immediate) { this.sampleWindNow(); this.resetLoadSample(); }
     return previous;
   }
 
@@ -189,15 +196,41 @@ export class FlightController {
   sampleWindNow() {
     const w = this.wind.sample(this.wind.time, _windSample);
     this.state.windVelocity.set(w.x, 0, w.z);
+    this.windEndpoint.copy(this.state.windVelocity);
   }
 
-  /** Moves the wind clock by one physics step and samples it at the step's midpoint; returns state.windVelocity. */
+  /** Midpoint wind carries this interval; endpoint differences span exactly dt, including a tiny partial slice. */
   advanceWind(dt) {
     const w = this.state.windVelocity;
-    _gustBefore.x = w.x; _gustBefore.z = w.z;
+    _gustBefore.x = this.windEndpoint.x; _gustBefore.z = this.windEndpoint.z;
     this.wind.sample(this.wind.time + dt / 2, _windSample);
+    w.set(_windSample.x, 0, _windSample.z);
+    this.wind.sample(this.wind.time + dt, _windSample);
+    this.windEndpoint.set(_windSample.x, 0, _windSample.z);
     this.wind.advance(dt);
-    return w.set(_windSample.x, 0, _windSample.z);
+    return w;
+  }
+
+  resetLoadSample() { this.loadElapsed = 0; this.loadPreviousElapsed = 0; }
+
+  /** Consumes the new endpoint velocity in this.acceleration and reports specific force along the aircraft's up axis. */
+  sampleLoadFactor(dt) {
+    if (this.loadElapsed === 0) this.loadVelocity.copy(this.previousVelocity);
+    this.loadElapsed += dt;
+    const resolved = this.loadElapsed >= LOAD_SAMPLE_INTERVAL;
+    if (resolved || this.loadPreviousElapsed > 0) {
+      // Include the preceding interval until the current one spans enough time to resolve its own velocity change.
+      const elapsed = resolved ? this.loadElapsed : this.loadPreviousElapsed + this.loadElapsed;
+      this.acceleration.sub(resolved ? this.loadVelocity : this.loadPreviousVelocity).divideScalar(elapsed);
+      this.acceleration.y += GRAVITY;
+      this.aircraftUp.set(0, 1, 0).applyQuaternion(this.state.quaternion);
+      this.state.gForce = this.acceleration.dot(this.aircraftUp) / GRAVITY;
+    }
+    if (resolved) {
+      this.loadPreviousVelocity.copy(this.loadVelocity);
+      this.loadPreviousElapsed = this.loadElapsed;
+      this.loadElapsed = 0;
+    }
   }
 
   groundAt(x, z) {
@@ -313,17 +346,17 @@ export class FlightController {
   stepFixedWing(dt, controls) {
     const s = this.state;
     const f = this.type.flight;
-    // Inertial velocity before the step: air-relative plus the wind that carried the last step.
+    // Inertial velocity at this step's start, using wind at the same endpoint as the air-relative velocity.
     this.previousVelocity.set(0, 0, -s.speed).applyQuaternion(s.quaternion);
     this.previousVelocity.y = s.verticalSpeed;
-    this.previousVelocity.x += s.windVelocity.x;
-    this.previousVelocity.z += s.windVelocity.z;
+    this.previousVelocity.x += this.windEndpoint.x;
+    this.previousVelocity.z += this.windEndpoint.z;
     const wind = this.advanceWind(dt);
     // Inertia: a change in the wind along the flight path changes airspeed by the opposite amount (a headwind gust
     // raises it). A constant wind changes nothing here.
     if (!s.grounded) {
       const cp = Math.cos(s.pitch);
-      const along = ((wind.x - _gustBefore.x) * Math.sin(s.heading) - (wind.z - _gustBefore.z) * Math.cos(s.heading)) * cp;
+      const along = ((this.windEndpoint.x - _gustBefore.x) * Math.sin(s.heading) - (this.windEndpoint.z - _gustBefore.z) * Math.cos(s.heading)) * cp;
       if (along) s.speed = Math.max(0, s.speed - along);
     }
     s.flightTime += dt;
@@ -444,12 +477,9 @@ export class FlightController {
     // Quaternion axes stay continuous through vertical, knife-edge and inverted flight.
     this.acceleration.set(0, 0, -s.speed).applyQuaternion(s.quaternion);
     this.acceleration.y = s.verticalSpeed;
-    this.acceleration.x += wind.x;
-    this.acceleration.z += wind.z;
-    this.acceleration.sub(this.previousVelocity).divideScalar(dt);
-    this.acceleration.y += GRAVITY;
-    this.aircraftUp.set(0, 1, 0).applyQuaternion(s.quaternion);
-    s.gForce = this.acceleration.dot(this.aircraftUp) / GRAVITY;
+    this.acceleration.x += this.windEndpoint.x;
+    this.acceleration.z += this.windEndpoint.z;
+    this.sampleLoadFactor(dt);
 
     const ground = this.groundAt(s.position.x, s.position.z) + (this.type.groundClearance ?? 2.8);
     if (s.position.y <= ground) {
@@ -488,6 +518,7 @@ export class FlightController {
     const s = this.state;
     const f = this.type.flight;
     s.gForce = 1;
+    this.resetLoadSample();
     // Rolling resistance stops an idle aircraft. Full power allows a takeoff roll.
     const targetSpeed = s.spool > 0.2 ? (s.spool - 0.2) * f.groundThrust + burner : 0;
     const nextSpeed = mix(s.speed, targetSpeed, s.spool < 0.2 ? 0.35 : f.groundRate, dt);

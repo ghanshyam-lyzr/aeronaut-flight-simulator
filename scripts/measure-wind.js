@@ -4,6 +4,7 @@ import { FlightController } from '../src/flight.js';
 import { FlightInputs } from '../src/controls.js';
 import { groundTrack } from '../src/flight-path.js';
 import { KNOT } from '../src/wind.js';
+import { windFlight, inputFlight } from '../tests/wind-stability-pilot.js';
 
 const RATE = 60, flat = () => 40, kt = v => (v / KNOT).toFixed(1), deg = r => (((r * 180 / Math.PI) % 360) + 360) % 360;
 
@@ -17,11 +18,12 @@ function trainerFlight(wind, rate = RATE) {
   const start = s.position.clone();
   const script = [[0, {}], [30, { roll: 1 }], [36, {}], [66, { pitch: -1 }], [66.5, {}], [76, { pitch: 1 }], [76.5, {}], [86, {}]];
   for (const [t, c] of script) input.set(c, t);
-  let t = 0, minSpeed = Infinity, maxSpeed = -Infinity, minG = Infinity, maxG = -Infinity;
-  while (t < 90 - 1e-9) {
-    t += 1 / rate; input.advance(t, (dt, c) => f.update(dt, c));
-    if (t > 2) { minSpeed = Math.min(minSpeed, s.speed); maxSpeed = Math.max(maxSpeed, s.speed); minG = Math.min(minG, s.gForce); maxG = Math.max(maxG, s.gForce); }
-  }
+  let minSpeed = Infinity, maxSpeed = -Infinity, minG = Infinity, maxG = -Infinity;
+  for (let frame = 1; frame <= 90 * rate; frame++) input.advance(frame / rate, (dt, c) => {
+    f.update(dt, c);
+    // Inspect every physics slice, including event boundaries and floating-point frame remainders.
+    if (s.flightTime > 2) { minSpeed = Math.min(minSpeed, s.speed); maxSpeed = Math.max(maxSpeed, s.speed); minG = Math.min(minG, s.gForce); maxG = Math.max(maxG, s.gForce); }
+  });
   const g = groundTrack(s, f.type);
   return { east: s.position.x - start.x, north: start.z - s.position.z, distance: s.distance, heading: deg(s.heading), track: deg(g.track),
     airspeed: s.speed, groundSpeed: g.speed, minSpeed, maxSpeed, minG, maxG, position: s.position.clone() };
@@ -61,3 +63,28 @@ console.table(Object.entries({ calm: 'calm', 'headwind 8 m/s': { direction: 0, s
 console.log('Laret H4, 60 s');
 console.table(['calm', 'breeze', 'gusts'].flatMap(w => [true, false].map(hold => { const r = hover(w, hold); return { wind: w, mode: hold ? 'hover hold' : 'hands-off',
   'offset m': r.offset.toFixed(1), 'ground speed kt': kt(r.groundSpeed), 'airspeed kt': kt(r.airspeed) }; })));
+
+console.log('Ten-second input-slice stability: every load sample, including the original landing-turn reproduction');
+const stability = [];
+let partialPosition = 0, partialLoad = 0, maxClockError = 0;
+for (const mode of ['bank', 'descent', 'landing turn']) for (const wind of ['gusts', 'transition']) {
+  const runs = [30, 60, 144].map(rate => {
+    const run = partials => {
+      const setup = windFlight({ landing: mode !== 'bank', wind });
+      if (mode === 'descent') {
+        setup.input.set({ pitch: -0.4, trim: 1 }, 0.013); setup.input.set({}, 0.113);
+      } else setup.input.set({ roll: 0.3 }, 0.1);
+      return inputFlight(setup, { rate, partials });
+    };
+    const r = run(false), partial = run(true);
+    partialPosition = Math.max(partialPosition, r.position.distanceTo(partial.position));
+    partialLoad = Math.max(partialLoad, Math.abs(r.minG - partial.minG), Math.abs(r.maxG - partial.maxG));
+    maxClockError = Math.max(maxClockError, Math.abs(partial.flightTime - 10), Math.abs(partial.windTime - 10));
+    return { ...r, rate };
+  });
+  for (const r of runs) stability.push({ mode, wind, fps: r.rate, 'g range': `${r.minG.toFixed(6)}–${r.maxG.toFixed(6)}`,
+    'vs 144 fps m': r.position.distanceTo(runs.at(-1).position).toFixed(6), 'airspeed m/s': r.speed.toFixed(6),
+    'tiny slices': r.tinySteps, 'smallest slice s': r.minStep.toExponential(2) });
+}
+console.table(stability);
+console.log(`Adding a positive 1 ns partial after each frame: max position difference ${partialPosition.toExponential(3)} m; max load-range change ${partialLoad.toExponential(3)} g; max flight/wind clock error ${maxClockError.toExponential(3)} s.`);
