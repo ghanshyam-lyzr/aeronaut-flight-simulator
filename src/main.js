@@ -23,11 +23,14 @@ import { createLandingGuidance } from './landing-guidance.js';
 import { createGlideLights } from './glide-lights.js';
 import { CheckpointCourse, courseAvailability, formatCourseTime, RECOMMENDED_AIRCRAFT } from './checkpoint-course.js';
 import { Activities } from './activities.js';
+import { CrosswindPractice, PRACTICE, practiceAvailability, practiceBrief, practiceCue, crosswindAdvice } from './crosswind-practice.js';
 import { createCourseGates } from './course-gates.js';
 import { FlightPathMarker, groundTrack } from './flight-path.js';
-import { WIND_PRESETS, windText, sampleText } from './wind.js';
+import { WIND_PRESETS, windText, sampleText, KNOT } from './wind.js';
+import { adviseRunway, componentText, windReadout, readoutField, applyAdvice } from './runway-wind.js';
 import { AirspeedMonitor, airspeedEnvelope, tapeLayout, AIRSPEED_LABELS, OVERSPEED_NOTICE } from './airspeed-envelope.js';
 import { TerrainAlert, terrainNotice } from './terrain-alert.js';
+import { TouchdownDetector, touchdownResponse, touchdownOutputs, impulseShape } from './touchdown.js';
 import { NavigationMap } from './nav-map.js';
 import { navigationDestination, navigationReadout, bearingDistance, degrees, formatNM, zoomFrom, nearestZoom, FRAMINGS, FRAMING_LABELS, ZOOM_SPANS } from './navigation.js';
 
@@ -71,8 +74,8 @@ const flight = new FlightController(world.heightAt, settings.aircraft);
 // Wind (src/wind.js) is its own choice, calm unless the pilot picked one; it carries over resets and aircraft changes.
 flight.setWind(settings.wind,{immediate:true});
 const landing = new LandingMission(selection.field);
-// The checkpoint course and the landing mission never run together (src/activities.js).
-const course = new CheckpointCourse(), activities = new Activities(landing, course);
+// The checkpoint course, the landing mission and crosswind practice (a landing mission in its own wind) never run together (src/activities.js).
+const course = new CheckpointCourse(), practice = new CrosswindPractice(landing), activities = new Activities(landing, course, practice);
 const signalProbe=document.createElement('span');signalProbe.style.color='var(--accent)';document.body.appendChild(signalProbe);
 const signalColor=getComputedStyle(signalProbe).color;signalProbe.remove();
 let landingCues = createLandingGuidance(scene,landing.field,signalColor);
@@ -85,6 +88,18 @@ const glideLights=createGlideLights(scene);
 function updateGlideLights(){const s=flight.state;glideLights.setField(landing.status==='idle'?selection.field:landing.field);glideLights.update(s.position,landingProfile(flight.type),{grounded:s.grounded,crashed:s.crashed||activities.finished});}
 flight.toggleAutopilot();
 const audio = new FlightAudio();
+// Touchdown feedback (src/touchdown.js): each new wheel or skid contact once, as a short sound and a camera-local settle.
+// Read-only on the flight; resets, retries, runway starts and aircraft changes resynchronise it without an event.
+const touchdown=new TouchdownDetector(flight.state),reducedMotion=globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');
+let settle=null,lastTouchdown=null;const settleOffset=new THREE.Vector3();
+function resetTouchdown(){touchdown.sync(flight.state);settle=null;}
+function updateTouchdown(){
+ const record=touchdown.update(flight.state);if(!record)return;
+ const r=touchdownResponse(record,flight.type),out=touchdownOutputs({paused,dialogOpen:dialog.open,hidden:document.hidden,soundOn:audio.enabled,audioRunning:audio.context?.state==='running',reducedMotion:!!reducedMotion?.matches});
+ const sound=out.sound&&audio.playTouchdown(r.sound);
+ settle=out.motion?{start:frameTime,duration:r.impulse.duration,cockpit:r.impulse.cockpit,outside:r.impulse.outside}:null;
+ lastTouchdown={kind:r.kind,contact:r.contact,level:r.level,severity:r.severity,sink:r.sink,speed:r.speed,gain:sound?audio.touchdownVoice?.gain??r.sound.gain:0,impulse:out.motion?{...r.impulse}:null,sound,motion:out.motion,time:record.time,count:(lastTouchdown?.count??0)+1};
+}
 let paused=false, view=settings.camera, frameTime=0, orbitAngle=0.45, orbitHeight=9, orbitDistance=31;
 const keys=new Set();
 const touch={pitch:0,roll:0,yaw:0,throttle:0,brake:0,trim:0};
@@ -116,8 +131,10 @@ let initialCamera=true, cockpit=createCockpit(settings.aircraft), toastTimeout, 
 camera.add(cockpit);cockpit.visible=false;
 const weatherData={clear:{label:'Clear skies',icon:'sun',temperature:'18°C',time:'14:32'},golden:{label:'Golden hour',icon:'cloud-sun',temperature:'16°C',time:'18:45'},overcast:{label:'Cloud cover',icon:'cloud',temperature:'12°C',time:'11:20'}};
 const windChoices={calm:{label:'Calm',description:'Still air, as before.'},breeze:{label:'Breeze',description:'A steady wind; it drifts you off track.'},gusts:{label:'Gusts',description:'Stronger, gusting and veering wind.'}};
-const windReport=()=>{const t=windText(WIND_PRESETS[settings.wind]);return t==='Calm'?'Wind calm':`Wind ${t}`;};
-function updateWeatherPanel(){const w=weatherData[settings.weather];$('weather-description').innerHTML=`${w.temperature} <span class="separator">/</span> ${windReport()}`;}
+const windReport=()=>{const t=windText(flight.wind.config);return t==='Calm'?'Wind calm':`Wind ${t}`;};
+// It reads the wind blowing (crosswind practice's while it owns it), so the activity UI refreshes it; it only writes on a change.
+let weatherText='';
+function updateWeatherPanel(){const w=weatherData[settings.weather],html=`${w.temperature} <span class="separator">/</span> ${windReport()}`;if(html!==weatherText)$('weather-description').innerHTML=weatherText=html;}
 function setWeather(value,notify=true){
  settings.weather=value;world.setWeather(value);sceneDirty=true;const w=weatherData[value];
  $('weather-label').textContent=w.label;updateWeatherPanel();$('world-time').textContent=w.time;
@@ -125,7 +142,10 @@ function setWeather(value,notify=true){
 }
 // The wind blends in over a few flight seconds (src/wind.js), so a change never jolts the aircraft; the light is separate.
 function setWind(value,notify=true){
- if(!windChoices[value])return false;settings.wind=value;flight.setWind(value);sceneDirty=true;updateWeatherPanel();saveSettings();
+ if(!windChoices[value])return false;
+ // Crosswind practice owns the wind for its attempt: the new choice is saved and is what the practice hands back.
+ if(practice.holdPilotChoice(value)){settings.wind=value;saveSettings();updateWeatherPanel();if(notify)toast(`${windChoices[value].label} saved · it returns when crosswind practice ends`);return true;}
+ settings.wind=value;flight.setWind(value);sceneDirty=true;updateWeatherPanel();saveSettings();
  if(notify)toast(value==='calm'?'Calm air selected':`${windChoices[value].label} selected · ${windText(WIND_PRESETS[value])}`);return true;
 }
 function setQuality(value){settings.quality=value;renderer.setPixelRatio(Math.min(devicePixelRatio,value==='high'?1.75:value==='medium'?1.2:.85));renderer.shadowMap.enabled=value!=='low';world.setQuality?.(value);miniMap?.setQuality(value);chartMap?.setQuality(value);sceneDirty=true;$('quality-label').textContent=value.charAt(0).toUpperCase()+value.slice(1);saveSettings();}
@@ -141,7 +161,7 @@ function setPaused(value){
 }
 function saveFlight(){const s=flight.state;if(s.flightTime<10)return;const entry={date:new Date().toISOString(),time:s.flightTime,distance:s.distance,maxAltitude:flightMaxAlt,aircraft:s.aircraft};savedFlights=recordFlight(savedFlights,entry);storeFlights(savedFlights);}
 let flightMaxAlt=flight.state.position.y;
-function restart(notify=true){closeHeadingSelect();if(landing.status!=='idle'){startLanding();return;}if(course.status!=='idle'){startCourse();return;}saveFlight();flight.reset();flight.toggleAutopilot();flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);sceneDirty=true;paused=false;lastCrash=false;initialCamera=true;clearControls();$('pause-overlay').hidden=true;$('crash-overlay').hidden=true;$('sim-status').textContent='Live simulation';iconButton('pause-btn','pause');updateAssist();if(notify)toast('A fresh start. You have the skies.');}
+function restart(notify=true){closeHeadingSelect();if(activities.kind==='crosswind'){startCrosswind();return;}if(landing.status!=='idle'){startLanding();return;}if(course.status!=='idle'){startCourse();return;}saveFlight();flight.reset();flight.toggleAutopilot();resetTouchdown();flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);sceneDirty=true;paused=false;lastCrash=false;initialCamera=true;clearControls();$('pause-overlay').hidden=true;$('crash-overlay').hidden=true;$('sim-status').textContent='Live simulation';iconButton('pause-btn','pause');updateAssist();if(notify)toast('A fresh start. You have the skies.');}
 // Every label that names the aircraft reads from the active fleet type.
 // Rotorcraft land on fixed skids unless their type has fixed wheels; hover collective is per type.
 const wheeled=t=>t.landingGear==='wheels',hoverPercent=t=>Math.round(t.flight.hoverCollective*100),capital=w=>w[0].toUpperCase()+w.slice(1);
@@ -158,10 +178,10 @@ function updateAircraftLabels(){
 // Switching aircraft saves the current flight, then starts the new type fresh in the air with flight assist on.
 function setAircraft(id){
  const type=aircraftType(id);if(type.id===flight.type.id)return false;
- const wasCourse=course.status!=='idle';cancelLanding(false);saveFlight();flight.setAircraft(type.id);settings.aircraft=type.id;saveSettings();
+ const was=activities.kind;cancelLanding(false);saveFlight();flight.setAircraft(type.id);settings.aircraft=type.id;saveSettings();
  scene.remove(aircraft.group);aircraft.dispose?.();aircraft=createAircraft(type.id);scene.add(aircraft.group);world.reflectSky(aircraft.group);aircraft.setCockpit(view==='cockpit');
  camera.remove(cockpit);disposeObject(cockpit);cockpit=createCockpit(type.id);camera.add(cockpit);cockpit.visible=view==='cockpit';
- restart(false);updateAircraftLabels();toast(`${type.name} ready · ${wasCourse?'course cancelled · ':''}a fresh start in the air`);return true;
+ restart(false);updateAircraftLabels();toast(`${type.name} ready · ${was==='course'?'course cancelled · ':was==='crosswind'?'crosswind practice ended · ':''}a fresh start in the air`);return true;
 }
 // ?airport=<id>&runway=<nn> selects a field as the picker does; &start=runway or &start=approach begins there.
 // Selected airport and mission field for other views (the navigation map): airportState() here, window.aeronaut.getAirport(),
@@ -175,22 +195,22 @@ const query=new URLSearchParams(location.search);
 if(query.has('airport'))selection.select(query.get('airport'),query.get('runway')||undefined);
 const surfaceName=f=>f.surface==='grass'?'grass':'paved';
 // A free-flight start on a 3° final, placed as the landing mission places it; no mission runs.
-function approachStart(field=selection.field){cancelLanding(false);saveFlight();const m=new LandingMission(field);m.start(flight);m.cancel();flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);paused=false;lastCrash=false;initialCamera=true;sceneDirty=true;clearControls();$('pause-overlay').hidden=$('crash-overlay').hidden=true;updateAssist();toast(`${field.name} · final for runway ${field.runway}`);}
+function approachStart(field=selection.field){cancelLanding(false);saveFlight();const m=new LandingMission(field);m.start(flight);m.cancel();resetTouchdown();flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);paused=false;lastCrash=false;initialCamera=true;sceneDirty=true;clearControls();$('pause-overlay').hidden=$('crash-overlay').hidden=true;updateAssist();toast(`${field.name} · final for runway ${field.runway}`);}
 // A fresh departure: any aircraft may try any field in free flight; a poor fit is named, not refused.
 function runwayStart(field=selection.field){
- cancelLanding(false);restart(false);const p=runwayPoint(100,0,field);flight.runwayStart(p.x,world.heightAt(p.x,p.z)+(flight.type.groundClearance??2.8),p.z,field.heading);trailOrigin.copy(flight.state.position);updateAssist();initialCamera=true;sceneDirty=true;
+ cancelLanding(false);restart(false);const p=runwayPoint(100,0,field);flight.runwayStart(p.x,world.heightAt(p.x,p.z)+(flight.type.groundClearance??2.8),p.z,field.heading);resetTouchdown();trailOrigin.copy(flight.state.position);updateAssist();initialCamera=true;sceneDirty=true;
  const fit=suitability(field,flight.type.id),hint=flight.type.runwayHint;
  toast(fit.rating==='unsuitable'?`${flight.type.name}: ${fit.reason.toLowerCase()} · ${field.name} has ${field.runwayLength.toLocaleString('en')} m ${surfaceName(field)}`:/^Runway \d+/.test(hint)?hint.replace(/^Runway \d+/,`${field.name} · runway ${field.runway}`):`${field.name} · ${hint}`);
 }
 // Starts a scored mission at a field (default: retry the current mission's field). Unsuited aircraft get the brief instead.
 function startLanding(field=landing.field){
  if(!missionAvailability(field,flight.type.id).available){cancelLanding(false);showDialog('landing');return false;}
- saveFlight();activities.startLanding(flight,field);setMissionCues(field);flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);trailClock=0;
+ saveFlight();activities.startLanding(flight,field);resetTouchdown();setMissionCues(field);flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);trailClock=0;
  paused=false;lastCrash=false;initialCamera=true;sceneDirty=true;missionResultShown=false;clearControls();
  $('pause-overlay').hidden=$('crash-overlay').hidden=$('landing-result').hidden=true;
  $('pause-btn').setAttribute('aria-label','Pause flight');iconButton('pause-btn','pause');
  settings.showHud=true;applyDisplay();saveSettings();
- document.querySelector('.mission-panel').classList.remove('collapsed');
+ setMissionCollapsed(false);
  updateAssist();updateLandingUI();announceAirport();toast(landing.profile.helicopter?'You have control · gently lower collective to settle in the box':`You have control · follow runway ${field.runway}, then flare and idle power`);return true;
 }
 // Ends whichever activity is underway (landing mission or checkpoint course): every caller wants free flight next.
@@ -201,23 +221,42 @@ function cancelLanding(fresh=false){
 // Starts (or retries) the checkpoint course in the current aircraft; an aircraft the course is not built for gets the brief.
 function startCourse(){
  if(!courseAvailability(flight.type).available){cancelLanding(false);showDialog('course');return false;}
- saveFlight();activities.startCourse(flight);flight.toggleAutopilot();flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);trailClock=0;
+ saveFlight();activities.startCourse(flight);flight.toggleAutopilot();resetTouchdown();flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);trailClock=0;
  paused=false;lastCrash=false;initialCamera=true;sceneDirty=true;missionResultShown=false;lastCourseEvent=null;clearControls();
  $('pause-overlay').hidden=$('crash-overlay').hidden=$('landing-result').hidden=true;
  $('pause-btn').setAttribute('aria-label','Pause flight');iconButton('pause-btn','pause');
  settings.showHud=true;applyDisplay();saveSettings();
- document.querySelector('.mission-panel').classList.remove('collapsed');
+ setMissionCollapsed(false);
  updateAssist();updateLandingUI();announceAirport();toast('Assist holds you level toward gate 1 · steer to take control');return true;
 }
+// Starts (or retries) crosswind practice in the current aircraft: the landing mission at Alpine Field 36 in its own wind.
+// The selected airport is untouched; an aircraft the practice is not built for gets the brief instead.
+function startCrosswind(){
+ if(!practiceAvailability(flight.type).available){cancelLanding(false);showDialog('crosswind');return false;}
+ saveFlight();activities.startCrosswind(flight);resetTouchdown();setMissionCues(landing.field);flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);trailClock=0;
+ paused=false;lastCrash=false;initialCamera=true;sceneDirty=true;missionResultShown=false;clearControls();
+ $('pause-overlay').hidden=$('crash-overlay').hidden=$('landing-result').hidden=true;
+ $('pause-btn').setAttribute('aria-label','Pause flight');iconButton('pause-btn','pause');
+ settings.showHud=true;applyDisplay();saveSettings();
+ setMissionCollapsed(false);
+ const b=practiceBrief(flight.type);
+ updateAssist();updateLandingUI();announceAirport();toast(`You have control · wind ${b.report} · crab ${b.side} into it`);return true;
+}
+// Crosswind practice words: whole degrees and knots, and the side a crab or offset is on.
+const knots=v=>Math.round(Math.abs(v)*1.94384),wholeDegrees=r=>Math.round(Math.abs(r)*180/Math.PI);
+// Fixed-wing phones fly with the touch yoke alone: no rudder buttons, so crosswind words name a bank.
+const touchYoke=()=>$('touch-yoke').offsetParent!==null;
 function updateLandingUI(){
- const underway=landing.status!=='idle',s=flight.state,f=landing.field,racing=course.status!=='idle';
+ const underway=landing.status!=='idle',s=flight.state,f=landing.field,racing=course.status!=='idle',practicing=activities.kind==='crosswind';
+ updateWeatherPanel();
  // landing-mode is the mission card layout, shared by the landing mission and the checkpoint course.
  document.body.classList.toggle('landing-mode',underway||racing);
+ document.body.classList.toggle('course-mode',racing);
  document.body.classList.toggle('landing-finished',activities.finished);
- $('flight-mode').textContent=underway?'Landing mission':racing?'Checkpoint course':'Free flight';
- document.querySelector('.map-explore').textContent=underway?`Landing · runway ${f.runway}`:racing?'Checkpoint course':'Free exploration';
+ $('flight-mode').textContent=practicing?'Crosswind practice':underway?'Landing mission':racing?'Checkpoint course':'Free flight';
+ document.querySelector('.map-explore').textContent=practicing?`Crosswind · runway ${f.runway}`:underway?`Landing · runway ${f.runway}`:racing?'Checkpoint course':'Free exploration';
  $('mission-title').textContent=underway?`${f.name} · ${f.runway}`:racing?course.course.name:'The Swiss Alps';
- $('landing-guidance').hidden=!underway;$('course-guidance').hidden=!racing;$('landing-entry').hidden=$('course-entry').hidden=underway||racing;
+ $('landing-guidance').hidden=!underway;$('course-guidance').hidden=!racing;$('landing-entry').hidden=$('course-entry').hidden=$('crosswind-entry').hidden=underway||racing;
  landingCues.show(landing.active,landing.profile?.helicopter,landing.profile?.clearance);
  courseGates.update(racing,course.next);
  if(racing)return updateCourseUI();
@@ -231,19 +270,26 @@ function updateLandingUI(){
  if(!rollout&&Math.abs(g.cross)>8)cue=`${Math.round(Math.abs(g.cross))} m ${g.cross>0?'right':'left'} of centre · correct gently`;
  else if(!rollout&&g.alignment>12)cue=`Align with runway ${f.runway} · heading ${headingDegrees(f.heading)}°`;
  else if(!rollout&&!h&&(s.speed<p.speedMin||s.speed>p.speedMax))cue=s.speed>p.speedMax?'Too fast · ease power down with Ctrl':'Too slow · add power with Shift';
+ if(practicing&&!rollout&&!landing.finished){
+  // Crosswind cues come from the actual drift over the ground (the flight-path marker's track), not from a model of it;
+  // fixed-wing phones (touch yoke, no rudder buttons) get bank and wings-level wording (src/crosswind-practice.js).
+  const x=practice.guidance(s,groundTrack(s,flight.type));
+  cue=practiceCue({height:g.height,alignment:g.alignment*Math.PI/180,crab:x.crab,drift:x.drift,cross:g.cross,side:practiceBrief(flight.type).side,rudder:!touchYoke()})??cue;
+ }
  $('landing-cue').textContent=cue;
  $('landing-objective').textContent=rollout?`Stay on runway · ${h?`collective <${Math.round(p.settlePower*100)}%`:'power <20%'} · settle 2 sec (${Math.min(2,landing.stableTime).toFixed(1)}/2)`:`${h?`${capital(p.contact)} fixed`:`${flight.type.fixedGear?'Gear fixed':`Gear ${s.gearDown?'down':'UP'}`} · ${flight.type.noFlaps?'no flaps':`flaps ${s.flaps*15}°`}`} · sink <${Math.round(p.maxSink*196.85)} fpm · alignment ≤12°`;
  if(landing.finished&&!missionResultShown){
   missionResultShown=true;clearControls();clearTimeout(toastTimeout);$('toast').classList.remove('visible');$('pause-overlay').hidden=$('crash-overlay').hidden=true;
   const success=landing.status==='success',t=landing.touchdown;
   $('sim-status').textContent=success?'Landing complete':'Mission ended';
-  $('landing-result-status').textContent=success?'Mission complete':'Try the approach again';
-  $('landing-result-title').textContent=success?`Welcome to ${f.name}.`:'Landing not completed.';
-  $('landing-result-reason').textContent=success?(h?`${capital(p.contact)} settled safely in the target box.`:`Safe touchdown and controlled rollout on runway ${f.runway}.`):landing.reason;
+  $('landing-result-status').textContent=practicing?(success?'Crosswind practice complete':'Crosswind practice'):success?'Mission complete':'Try the approach again';
+  $('landing-result-title').textContent=success?(practicing?'A crosswind landing.':`Welcome to ${f.name}.`):'Landing not completed.';
+  $('landing-result-reason').textContent=(success?(h?`${capital(p.contact)} settled safely in the target box.`:`Safe touchdown and controlled rollout on runway ${f.runway}.`):practicing?`${landing.reason}.`:landing.reason)+(practicing?` ${crosswindAdvice(practice.feedback(),landing,practiceBrief(flight.type).side,{rudder:!touchYoke()})}`:'');
   $('landing-result-metrics').innerHTML=t?`<div><dt>Touchdown sink</dt><dd>${Math.round(t.sink*196.85)} <small>fpm</small></dd></div><div><dt>Alignment</dt><dd>${t.alignment.toFixed(1)}<small>°</small></dd></div><div><dt>Touchdown speed</dt><dd>${Math.round(t.speed*1.94384)} <small>kt</small></dd></div><div><dt>Centreline offset</dt><dd>${Math.abs(t.cross).toFixed(1)} <small>m</small></dd></div>`:'<p>No runway touchdown recorded.</p>';
-  $('landing-result-retry').innerHTML='Retry landing <i data-lucide="rotate-ccw"></i>';refreshIcons();
+  if(practicing){const c=practice.feedback().crab,b=practiceBrief(flight.type);$('landing-result-metrics').insertAdjacentHTML('beforeend',`<div><dt>Crab on final</dt><dd>${c===null?'—':`${wholeDegrees(c)}<small>°${wholeDegrees(c)?` ${c>=0?'right':'left'}`:''}</small>`}</dd></div><div><dt>Crosswind</dt><dd>${knots(b.crosswind)} <small>kt from the ${b.side}</small></dd></div>`);}
+  $('landing-result-retry').innerHTML=`${practicing?'Retry crosswind practice':'Retry landing'} <i data-lucide="rotate-ccw"></i>`;refreshIcons();
   $('landing-result').hidden=false;$('landing-result-retry').focus();sceneDirty=true;announceAirport();
- }else if(!landing.finished)$('sim-status').textContent=paused?'Simulation paused':'Landing mission · live';
+ }else if(!landing.finished)$('sim-status').textContent=paused?'Simulation paused':practicing?'Crosswind practice · live':'Landing mission · live';
 }
 // The course card: compact progress and time, the next gate's cue, and a short note when a pass did not count.
 let lastCourseEvent=null,courseEventUntil=0,courseEventText='';
@@ -266,6 +312,7 @@ function updateCourseUI(){
   else cue=`Gate ${g.number} straight ahead · hold it steady`;}
  if(now<courseEventUntil)cue=courseEventText;
  $('course-cue').textContent=cue;
+ $('course-best-reading').hidden=course.best===null;if(course.best!==null)$('course-best').textContent=formatCourseTime(course.best);
  $('course-objective').textContent=`Gates in order, front to back · pause stops the clock${course.best!==null?` · best ${formatCourseTime(course.best)}`:''}`;
  if(course.finished&&!missionResultShown){
   missionResultShown=true;clearControls();clearTimeout(toastTimeout);$('toast').classList.remove('visible');$('pause-overlay').hidden=$('crash-overlay').hidden=true;
@@ -334,7 +381,10 @@ function updateHeadingBug(force=false){
  const hold=$('heading-hold');hold.disabled=!active&&blocked;hold.classList.toggle('active',active);hold.setAttribute('aria-pressed',active);hold.textContent=active?`Holding ${bugText(sel)}°`:'Hold heading';
  if(String(active)!==was)updateAssist();
 }
-headingBug.addEventListener('pointerdown',e=>{bugPointer=e.pointerType;});headingBug.addEventListener('keydown',()=>{bugPointer='';});
+headingBug.addEventListener('pointerdown',e=>{bugPointer=e.pointerType;});// Space and Enter on the focused chip activate it natively (Space on its keyup) and stop here, so they never reach the
+// window's Space = assist shortcut or its preventDefault; the key release still passes. Other flight keys behave as on
+// any focused button.
+headingBug.addEventListener('keydown',e=>{bugPointer='';if(e.code==='Space'||e.key===' '||e.key==='Enter')e.stopPropagation();});
 headingBug.onclick=()=>headingSelect.hidden?openHeadingSelect():closeHeadingSelect(true);
 $('heading-select-close').onclick=()=>closeHeadingSelect(true);$('heading-sync').onclick=()=>selectHeading(currentHeading());$('heading-hold').onclick=holdHeading;
 headingSelect.querySelectorAll('[data-heading-step]').forEach(b=>b.onclick=()=>stepHeading(Number(b.dataset.headingStep)));
@@ -384,11 +434,13 @@ function updateTrim(){
 }
 function flaps(){if(flight.type.flight.rotorcraft||flight.type.noFlaps){toast('No flaps on this aircraft');return;}sceneDirty=true;flight.cycleFlaps();toast(`Flaps set to ${flight.state.flaps*15}°`);}
 $('pause-btn').onclick=()=>setPaused(!paused);$('resume-btn').onclick=()=>setPaused(false);$('reset-btn').onclick=()=>restart();$('crash-reset').onclick=()=>restart();$('take-control').onclick=toggleAssist;$('camera-btn').onclick=cycleView;$('map-toggle').onclick=toggleMap;$('map-close').onclick=toggleMap;$('map-framing').onclick=cycleMapFraming;$('map-zoom-in').onclick=()=>zoomMap(1);$('map-zoom-out').onclick=()=>zoomMap(-1);$('map-expand').onclick=()=>showDialog('chart');$('hud-toggle').onclick=toggleHud;$('restore-hud').onclick=toggleHud;$('gear-btn').onclick=gear;$('flaps-btn').onclick=flaps;$('trim-btn').onclick=resetTrim;$('touch-trim-reset').onclick=resetTrim;
-$('landing-entry').onclick=()=>showDialog('landing');$('course-entry').onclick=()=>showDialog('course');
+$('landing-entry').onclick=()=>showDialog('landing');$('course-entry').onclick=()=>showDialog('course');$('crosswind-entry').onclick=()=>showDialog('crosswind');
 $('course-retry').onclick=()=>startCourse();$('course-cancel').onclick=()=>cancelLanding(true);
-$('landing-retry').onclick=()=>startLanding();$('landing-result-retry').onclick=()=>course.status!=='idle'?startCourse():startLanding();
+$('landing-retry').onclick=()=>activities.kind==='crosswind'?startCrosswind():startLanding();$('landing-result-retry').onclick=()=>({course:startCourse,crosswind:startCrosswind})[activities.kind]?.()??startLanding();
 for(const id of ['landing-cancel','landing-result-exit'])$(id).onclick=()=>cancelLanding(true);
-$('collapse-mission').onclick=()=>{const c=document.querySelector('.mission-panel');c.classList.toggle('collapsed');iconButton('collapse-mission',c.classList.contains('collapsed')?'plus':'minus');};
+// A new landing or course run always opens the card expanded, with its button saying so.
+function setMissionCollapsed(collapsed){document.querySelector('.mission-panel').classList.toggle('collapsed',collapsed);iconButton('collapse-mission',collapsed?'plus':'minus');$('collapse-mission').setAttribute('aria-label',collapsed?'Expand flight details':'Collapse flight details');$('collapse-mission').setAttribute('aria-expanded',String(!collapsed));}
+$('collapse-mission').onclick=()=>setMissionCollapsed(!document.querySelector('.mission-panel').classList.contains('collapsed'));
 $('throttle-slider').addEventListener('input',e=>{flight.state.throttle=Number(e.target.value)/100;if(flight.type.flight.rotorcraft)flight.state.autopilot=false;});
 // One audio context, unlocked by a gesture as browsers require. Sound starts off, as before; once the pilot turns
 // it on, that choice is saved and resumes at the first tap or key press after a reload.
@@ -409,11 +461,26 @@ const toggleMarkup=(id,label,desc,value)=>`<div class="settings-row"><div><stron
 function radioKeys(selector){dialog.querySelectorAll(selector).forEach(b=>b.onkeydown=e=>{const items=[...dialog.querySelectorAll(selector)],i=items.indexOf(b),next={ArrowDown:(i+1)%items.length,ArrowRight:(i+1)%items.length,ArrowUp:(i+items.length-1)%items.length,ArrowLeft:(i+items.length-1)%items.length,Home:0,End:items.length-1}[e.key];if(next===undefined)return;e.preventDefault();const key=Object.keys(items[next].dataset)[0],value=items[next].dataset[key];items[next].click();const target=dialog.querySelector(`[data-${key}="${value}"]`);target?.focus({preventScroll:true});target?.scrollIntoView({block:'nearest'});});}
 // Re-render Explore after a choice, keeping the roster scroll, dialog scroll and focus.
 function rerenderExplore(focus){const scroll=dialog.querySelector('.aircraft-options')?.scrollTop??0,top=dialog.scrollTop;showDialog('explore');dialog.querySelector('.aircraft-options').scrollTop=scroll;dialog.scrollTop=top;dialog.querySelector(focus)?.focus({preventScroll:true});}
+// Runway wind advice (src/runway-wind.js) from the wind the flight is in, for the selected field and runway. The
+// band from the last look at the same runway gives the suggestion its hysteresis. Only the pilot's button applies it.
+const adviceBands={};
+function runwayAdvice(airport=selection.airport,runway=selection.runway){const key=`${airport.id}|${runway}`,a=adviseRunway(airport,runway,practice.pilotWind(flight.windSnapshot().config),flight.type.id,adviceBands[key]);adviceBands[key]=a.band;return a;}
+const windArrow=(rotation,cls='')=>`<svg class="wind-arrow ${cls}" viewBox="0 0 16 16" aria-hidden="true" style="transform:rotate(${rotation}rad)"><path d="M8 14.5v-11M4.5 7 8 3l3.5 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+function runwayWindMarkup(a){
+ const w=a.wind,report=windText(practice.pilotWind(flight.windSnapshot().config)),sel=componentText(a.selected),oth=componentText(a.other),kt=v=>Math.round(Math.abs(v)/KNOT);
+ // The diagram is runway-up: a vertical runway bar and the arrow of where the reported wind goes, relative to it.
+ const diagram=`<span class="runway-wind-diagram" aria-hidden="true"><i></i>${w.calm?'':windArrow(w.direction+Math.PI-a.heading)}</span>`;
+ const lines=w.calm?'<p>No wind: either direction lands and departs the same.</p>':`<p><b>Runway ${a.runway}</b> <span class="wind-${sel.tone}">${sel.text}</span></p><p><b>Runway ${a.reciprocal}</b> <span class="wind-${oth.tone}">${oth.text}</span></p>`;
+ const g=a.gust,gust=g&&!w.calm?`<p class="runway-wind-gust">Gusts to ${kt(w.peak)} kt: crosswind up to ${kt(g.crosswind)} kt${g.tailwind>=KNOT?`, tailwind up to ${kt(g.tailwind)} kt`:''} on ${a.runway}.</p>`:'';
+ const offer=a.recommended?(a.canApply?`<button class="secondary-btn" data-apply-runway="${a.recommended}">Use runway ${a.recommended} · into wind <i data-lucide="arrow-up-right"></i></button>`:`<p class="runway-wind-gust">The ${flight.type.name} does not suit ${selection.airport.name}, so no runway is suggested here.</p>`):'';
+ const strong=a.strong&&!w.calm?'<p class="runway-wind-gust">Strong crosswind: expect to crab on final and drift on the rollout.</p>':'';
+ return`<div class="runway-wind ${a.verdict}" role="group" aria-label="Wind for runway ${a.runway}"><div class="runway-wind-head">${diagram}<div><strong>${a.headline}</strong><span>Reported wind ${report==='Calm'?'calm':report} · advice uses the steady wind</span></div></div>${lines}${gust}${strong}${offer}</div>`;
+}
 const fitText=fit=>fit.rating==='recommended'?fit.reason:fit.rating==='suitable'?'Tight fit · little runway margin':`Not suited · ${fit.reason.toLowerCase()}`;
 function airportOption(a){const fit=suitability(a,flight.type.id),on=a.id===selection.id;return`<button class="weather-option airport-option ${on?'selected':''}" role="radio" tabindex="${on?0:-1}" aria-checked="${on}" data-airport="${a.id}"><i data-lucide="map-pin"></i><div><strong>${a.name} <small>${a.ident}</small></strong><span>${region(a.region).name} · ${a.runwayLength.toLocaleString('en')} m ${surfaceName(a)} · ${a.elevation.toLocaleString('en')} m elev.</span><span class="airport-fit ${fit.rating}">${fitText(fit)}</span></div><span></span></button>`;}
 function airportDetail(){
- const a=selection.airport,mission=landing.status!=='idle'&&(landing.field.id!==a.id||landing.field.runway!==selection.runway)?`Your landing at ${landing.field.name} ${landing.field.runway} continues. `:'';
- return`<div class="airport-detail"><div class="airport-runways" role="radiogroup" aria-label="Runway at ${a.name}">${a.runways.map(r=>{const on=r.designator===selection.runway;return`<button role="radio" aria-checked="${on}" tabindex="${on?0:-1}" data-runway="${r.designator}">Runway ${r.designator} <small>${headingDegrees(r.heading)}°</small></button>`;}).join('')}</div><p>${a.summary} ${a.runwayLength.toLocaleString('en')} × ${a.runwayWidth} m. ${a.caution}</p><p class="dialog-note">${mission}Choosing a field moves nothing: departures and new landing missions start there.</p></div>`;
+ const a=selection.airport,mission=landing.status!=='idle'&&(landing.field.id!==a.id||landing.field.runway!==selection.runway)?`Your ${activities.kind==='crosswind'?'crosswind practice':'landing'} at ${landing.field.name} ${landing.field.runway} continues. `:'';
+ return`<div class="airport-detail"><div class="airport-runways" role="radiogroup" aria-label="Runway at ${a.name}">${a.runways.map(r=>{const on=r.designator===selection.runway;return`<button role="radio" aria-checked="${on}" tabindex="${on?0:-1}" data-runway="${r.designator}">Runway ${r.designator} <small>${headingDegrees(r.heading)}°</small></button>`;}).join('')}</div>${runwayWindMarkup(runwayAdvice())}<p>${a.summary} ${a.runwayLength.toLocaleString('en')} × ${a.runwayWidth} m. ${a.caution}</p><p class="dialog-note">${mission}Choosing a field moves nothing: departures and new landing missions start there.</p></div>`;
 }
 // The navigation chart: a larger map in a dialog (the flight pauses while it is open, as with every dialog).
 function chartAirport(a){const on=a.id===navigationDestination(airportState())?.id,sel=a.id===selection.id,{bearing,distance}=bearingDistance(flight.state.position,a);return`<button class="chart-airport ${on?'selected':''}" role="radio" aria-checked="${sel}" tabindex="${sel?0:-1}" data-airport="${a.id}"><span class="chart-ident">${a.ident}</span><span class="chart-name">${a.name}<small>${region(a.region).name}</small></span><span class="chart-vector">${degrees(bearing)}° <small>${formatNM(distance)}</small></span></button>`;}
@@ -464,7 +531,7 @@ function showDialog(type){
  const heli=!!flight.type.flight.rotorcraft;
  let content='';
  if(type==='menu'){content=dialogHead('Flight deck')+`<div class="dialog-body"><button class="menu-link" data-next-dialog="explore">Explore the Alps <i data-lucide="arrow-up-right"></i></button><button class="menu-link" data-next-dialog="chart">Navigation chart <i data-lucide="arrow-up-right"></i></button><button class="menu-link" data-next-dialog="logbook">Flight log <i data-lucide="arrow-up-right"></i></button><button class="menu-link" data-next-dialog="controls">Flight controls <i data-lucide="arrow-up-right"></i></button><button class="menu-link" data-next-dialog="environment">Weather <i data-lucide="arrow-up-right"></i></button></div>`;}else if(type==='environment'){
- content=dialogHead('A change of atmosphere')+`<div class="dialog-body"><p>Find your favorite light. Weather presets change the atmosphere, sunlight, visibility, and water.</p><div class="weather-options">${Object.entries(weatherData).map(([id,w])=>`<button class="weather-option ${settings.weather===id?'selected':''}" data-weather="${id}"><i data-lucide="${w.icon}"></i><div><strong>${w.label}</strong><span>${id==='clear'?'Blue skies. Endless visibility.':id==='golden'?'Warm light across the mountains.':'A moody sky above the valley.'}</span></div><span></span></button>`).join('')}</div><h3 class="dialog-section-title">Wind</h3><div class="settings-row wind-row"><div><strong>${settings.wind==='calm'?'Calm air':`${windChoices[settings.wind].label} · ${windText(WIND_PRESETS[settings.wind])}`}</strong><p id="wind-now">${windChoices[settings.wind].description} ${flight.windSnapshot().transitioning?'Blends in over a few flight seconds.':`${sampleText(flight.sampleWind())}.`}</p></div><div class="segmented" role="radiogroup" aria-label="Wind">${Object.entries(windChoices).map(([id,w])=>`<button role="radio" data-wind="${id}" aria-checked="${settings.wind===id}" tabindex="${settings.wind===id?0:-1}">${w.label}</button>`).join('')}</div></div><p class="dialog-note">Simulated weather presets. This is a procedural alpine world. Wind is chosen apart from the light: it moves the aircraft over the ground and the windsocks show it, while airspeed stays airspeed.</p></div>`;
+ content=dialogHead('A change of atmosphere')+`<div class="dialog-body"><p>Find your favorite light. Weather presets change the atmosphere, sunlight, visibility, and water.</p><div class="weather-options">${Object.entries(weatherData).map(([id,w])=>`<button class="weather-option ${settings.weather===id?'selected':''}" data-weather="${id}"><i data-lucide="${w.icon}"></i><div><strong>${w.label}</strong><span>${id==='clear'?'Blue skies. Endless visibility.':id==='golden'?'Warm light across the mountains.':'A moody sky above the valley.'}</span></div><span></span></button>`).join('')}</div><h3 class="dialog-section-title">Wind</h3><div class="settings-row wind-row"><div><strong>${settings.wind==='calm'?'Calm air':`${windChoices[settings.wind].label} · ${windText(WIND_PRESETS[settings.wind])}`}</strong><p id="wind-now">${practice.owning?`Crosswind practice holds ${windText(PRACTICE.wind)} for its attempt; this choice returns when it ends.`:`${windChoices[settings.wind].description} ${flight.windSnapshot().transitioning?'Blends in over a few flight seconds.':`${sampleText(flight.sampleWind())}.`}`}</p></div><div class="segmented" role="radiogroup" aria-label="Wind">${Object.entries(windChoices).map(([id,w])=>`<button role="radio" data-wind="${id}" aria-checked="${settings.wind===id}" tabindex="${settings.wind===id?0:-1}">${w.label}</button>`).join('')}</div></div><p class="dialog-note">Simulated weather presets. This is a procedural alpine world. Wind is chosen apart from the light: it moves the aircraft over the ground and the windsocks show it, while airspeed stays airspeed.</p></div>`;
  }else if(type==='settings'){
  const responseLabels=heli?['Cyclic fore / aft','Cyclic left / right','Yaw pedals','Collective']:['Pitch','Roll','Rudder','Throttle'];
  content=dialogHead('Make it your flight')+`<div class="dialog-body settings-body"><h3 class="dialog-section-title">Flight</h3><div class="settings-row"><div><strong>Graphics quality</strong><p>Balance detail with a smooth flight.</p></div><select id="graphics-quality" aria-label="Graphics quality"><option value="high" ${settings.quality==='high'?'selected':''}>High</option><option value="medium" ${settings.quality==='medium'?'selected':''}>Balanced</option><option value="low" ${settings.quality==='low'?'selected':''}>Performance</option></select></div>${toggleMarkup('setting-assist','Flight assist',heli?'Brakes to a hover; holds position, altitude and heading.':'Holds your heading and altitude.',flight.state.autopilot)}${toggleMarkup('setting-invert','Invert pitch','Swap the up and down flight controls.',settings.invertPitch)}${toggleMarkup('setting-mouse','Mouse steering','Drag across the world to pitch and bank.',settings.mouseSteering)}`
@@ -479,7 +546,7 @@ function showDialog(type){
  }else if(type==='landing'){
  const f=selection.field,p=landingProfile(flight.type),h=p.helicopter,fit=missionAvailability(selection.airport,flight.type.id),hdg=headingDegrees(f.heading),name=flight.type.name;
  const caution=[fit.rating==='suitable'?`Tight fit for the ${name}: little runway to spare after the touchdown zone.`:'',f.caution].filter(Boolean).join(' ');
- content=dialogHead(`Land at ${f.name}`)+`<div class="dialog-body landing-brief"><span class="landing-eyebrow">Landing mission · runway ${f.runway} · heading ${hdg}° · ${f.elevation.toLocaleString('en')} m</span><h3>${name}</h3>`+(fit.available?`<p>${h?`Begin in a hover 46 ft above the marked ${p.contact==='wheels'?'landing':'skid'} box. Ease down with collective; keep the cyclic centred and use Q / E to face ${hdg}°.`:`Begin on a short final for runway ${f.runway}, heading ${hdg}°, with ${flight.type.fixedGear?'fixed gear': 'gear down'} and ${flight.type.noFlaps?'no flaps':'full flaps'}. Follow the three chartreuse approach cues to the outlined touchdown zone.`}</p>${h?'':'<p>Four glide-path lights beside the touchdown zone show the same path: two white and two red is on path, more white is high, more red is low. A simplified training aid, not a certified PAPI.</p>'}${caution?`<p class="mission-caution"><i data-lucide="triangle-alert"></i><span>${caution}</span></p>`:''}<ol><li>${h?`Land inside the small chartreuse box, level and below ${Math.round(p.maxSpeed*1.94384)} kt.`:`Hold ${Math.round(p.speed*1.94384)} kt on approach. W / S adjusts pitch; Shift / Ctrl adjusts power.`}</li><li>${h?`Start at ${Math.round(p.throttle*100)}% collective in a hover. Lower toward ${Math.round(p.throttle*100)-3}% with short taps to descend.`:'Near 25 ft above the runway, gently raise the nose with S to soften the descent. Reduce power with Ctrl.'}</li><li>Touch down below ${Math.round(p.maxSink*196.85)} ft/min, aligned within 12°. ${h?`Keep collective below ${Math.round(p.settlePower*100)}% and settle for 2 seconds.`:'Keep straight with Q / E, set power below 20% and hold B (or Brake) to slow below 6 kt for 2 seconds.'}</li></ol><p class="dialog-note">Manual control from the start. Assist remains available. ${h?(p.contact==='wheels'?'Wheeled landing gear is fixed; nothing to lower and no flaps.':'Skids are fixed; no gear or flaps required.'):'Use the first chartreuse zone; leaving the runway or overrunning ends the attempt.'} R retries this mission. Weather is visual; aircraft and runway performance use the existing arcade model.</p><button class="primary-btn" id="start-landing">${h?'Start precision landing':'Start final approach'} <i data-lucide="arrow-up-right"></i></button>`
+ content=dialogHead(`Land at ${f.name}`)+`<div class="dialog-body landing-brief"><span class="landing-eyebrow">Landing mission · runway ${f.runway} · heading ${hdg}° · ${f.elevation.toLocaleString('en')} m</span><h3>${name}</h3>${runwayWindMarkup(runwayAdvice())}`+(fit.available?`<p>${h?`Begin in a hover 46 ft above the marked ${p.contact==='wheels'?'landing':'skid'} box. Ease down with collective; keep the cyclic centred and use Q / E to face ${hdg}°.`:`Begin on a short final for runway ${f.runway}, heading ${hdg}°, with ${flight.type.fixedGear?'fixed gear': 'gear down'} and ${flight.type.noFlaps?'no flaps':'full flaps'}. Follow the three chartreuse approach cues to the outlined touchdown zone.`}</p>${h?'':'<p>Four glide-path lights beside the touchdown zone show the same path: two white and two red is on path, more white is high, more red is low. A simplified training aid, not a certified PAPI.</p>'}${caution?`<p class="mission-caution"><i data-lucide="triangle-alert"></i><span>${caution}</span></p>`:''}<ol><li>${h?`Land inside the small chartreuse box, level and below ${Math.round(p.maxSpeed*1.94384)} kt.`:`Hold ${Math.round(p.speed*1.94384)} kt on approach. W / S adjusts pitch; Shift / Ctrl adjusts power.`}</li><li>${h?`Start at ${Math.round(p.throttle*100)}% collective in a hover. Lower toward ${Math.round(p.throttle*100)-3}% with short taps to descend.`:'Near 25 ft above the runway, gently raise the nose with S to soften the descent. Reduce power with Ctrl.'}</li><li>Touch down below ${Math.round(p.maxSink*196.85)} ft/min, aligned within 12°. ${h?`Keep collective below ${Math.round(p.settlePower*100)}% and settle for 2 seconds.`:'Keep straight with Q / E, set power below 20% and hold B (or Brake) to slow below 6 kt for 2 seconds.'}</li></ol><p class="dialog-note">Manual control from the start. Assist remains available. ${h?(p.contact==='wheels'?'Wheeled landing gear is fixed; nothing to lower and no flaps.':'Skids are fixed; no gear or flaps required.'):'Use the first chartreuse zone; leaving the runway or overrunning ends the attempt.'} R retries this mission. Weather is visual; aircraft and runway performance use the existing arcade model.</p><button class="primary-btn" id="start-landing">${h?'Start precision landing':'Start final approach'} <i data-lucide="arrow-up-right"></i></button>`
  :`<p class="mission-caution unavailable" role="note"><i data-lucide="triangle-alert"></i><span>No scored landing here: the ${name} ${fit.reason.toLowerCase()}, and ${f.name} has ${f.runwayLength.toLocaleString('en')} × ${f.runwayWidth} m ${surfaceName(f)}.</span></p><p>Fly this mission at a field that suits it, or choose a lighter aircraft in Explore. You can still depart from ${f.name} in free flight.</p>${fit.alternatives.map(id=>{const a=AIRPORTS.find(x=>x.id===id);return`<button class="secondary-btn" data-mission-airport="${id}">Land at ${a.name} instead <i data-lucide="arrow-up-right"></i></button>`;}).join('')}<button class="primary-btn" data-next-dialog="explore">Choose another aircraft or field <i data-lucide="arrow-up-right"></i></button>`)+`</div>`;
  }else if(type==='course'){
  const c=course.course,fit=courseAvailability(flight.type),name=flight.type.name,rec=aircraftType(RECOMMENDED_AIRCRAFT),cruise=Math.round(flight.type.flight.cruiseSpeed*1.94384);
@@ -487,9 +554,15 @@ function showDialog(type){
  const fast=fit.available&&cruise>210?`<p class="mission-caution"><i data-lucide="triangle-alert"></i><span>The ${name} cruises at ${cruise} kt. Ease power to below 210 kt (Ctrl) to make the turns between gates.</span></p>`:'';
  content=dialogHead(c.name)+`<div class="dialog-body landing-brief"><span class="landing-eyebrow">Checkpoint course · ${c.gates.length} gates · ${(c.length/1000).toFixed(1)} km · ${region(c.region).name}</span><h3>${name}</h3>`+(fit.available?`<p>Begin in the air at the south end of Lake Azure, lined up with gate 1, with flight assist holding you level. Fly the ${c.gates.length} gates north up the lake, past Alpine Field. The next gate is chartreuse; later ones are ivory.</p>${recommend}${fast}<ol><li>Fly through each gate's opening from the front. Around, over, under or backwards does not count.</li><li>Gates count only in order. The card names the next gate, its distance and which way to turn.</li><li>The clock runs on flight time: pausing or opening a dialog stops it. A crash ends the run; R or Retry starts again from the beginning.</li></ol><p class="dialog-note">Your best time is kept for this session only. Starting a landing mission ends the course; landing missions keep their own starts and scoring. Changing aircraft cancels the run.</p><button class="primary-btn" id="start-course">Start the course <i data-lucide="arrow-up-right"></i></button>`
  :`<p class="mission-caution unavailable" role="note"><i data-lucide="triangle-alert"></i><span>No course run in the ${name}: ${fit.reason.toLowerCase()}.</span></p><p>Choose a fixed-wing aircraft to fly the gates. Your helicopter stays selected until you change it.</p><button class="secondary-btn" data-course-aircraft="${rec.id}">Switch to the ${rec.name} <i data-lucide="plane"></i></button><button class="primary-btn" data-next-dialog="explore">Choose another aircraft <i data-lucide="arrow-up-right"></i></button>`)+`</div>`;
+ }else if(type==='crosswind'){
+ const fit=practiceAvailability(flight.type),b=practiceBrief(flight.type),f=b.field,name=flight.type.name,rec=aircraftType(PRACTICE.recommended);
+ const into=b.side==='right'?'E':'Q',back=b.side==='right'?'Q':'E',bank=b.side==='right'?'D':'A',away=b.side==='right'?'left':'right';
+ const recommend=flight.type.id===PRACTICE.recommended?`<p>The ${rec.name} is the recommended aircraft: slow, so the crab is easy to see and there is time to set it.</p>`:`<p class="mission-caution"><i data-lucide="plane"></i><span>Recommended for a first try: the ${rec.name}, slow enough to see the crab and set it. You fly the ${name} unless you switch.</span></p><button class="secondary-btn" data-crosswind-aircraft="${rec.id}">Switch to the ${rec.name} <i data-lucide="plane"></i></button>`;
+ content=dialogHead(PRACTICE.name)+`<div class="dialog-body landing-brief"><span class="landing-eyebrow">Crosswind practice · ${f.name} · runway ${f.runway} · heading ${headingDegrees(f.heading)}°</span><h3>${name}</h3>`+(fit.available?`<p>The landing mission's approach to runway ${f.runway}, in a fixed wind set for the attempt. Begin lined up on a 3° final 1.1 km out with ${flight.type.fixedGear?'fixed gear':'gear down'}${flight.type.noFlaps?'':' and full flaps'}; touchdown and rollout are scored exactly as in the landing mission. Your own wind choice and destination return when the practice ends.</p><dl class="landing-metrics crosswind-brief"><div><dt>Wind</dt><dd>${b.report.replace(' kt','')} <small>kt</small></dd></div><div><dt>Crosswind</dt><dd>${knots(b.crosswind)} <small>kt from the ${b.side}, gusts ${knots(b.gustCrosswind)}</small></dd></div><div><dt>Headwind</dt><dd>${knots(b.headwind)} <small>kt</small></dd></div><div><dt>Crab at ${knots(b.speed)} kt</dt><dd>${wholeDegrees(b.crab)}<small>° ${b.side}</small></dd></div></dl>${recommend}<ol><li>Crab into the wind. Left alone, the wind carries you ${away} of the centreline. Turn about ${wholeDegrees(b.crab)}° ${b.side} with ${into}, or a gentle bank with ${bank} or the touch yoke, until the runway stops sliding sideways: the nose points ${b.side} of the runway while you track straight down it. The card shows which way you drift; the flight-path marker (Settings) shows where you are really going.</li><li>Flare, then straighten. Flare as in the landing mission with the crab still in; about 10 ft up, press ${back} to yaw the nose in line with the runway and hold the flare. In this simplified model the drift stops when the wheels touch, so straighten late and quickly. Touch down with wings level, within 12° of the runway: on a phone, without rudder, level the wings and flare with the crab still in.</li><li>Roll out as in the landing mission: idle power, hold B or Brake, and steer straight with Q / E or the yoke. Pausing or a dialog freezes the wind and the clock; R or Retry flies the same approach in the same gusts.</li></ol><p class="dialog-note">Simplified arcade wind, not real aircraft limits. Starting a landing mission or the checkpoint course, changing aircraft, or Free flight ends the practice.</p><button class="primary-btn" id="start-crosswind">Start crosswind practice <i data-lucide="arrow-up-right"></i></button>`
+ :`<p class="mission-caution unavailable" role="note"><i data-lucide="triangle-alert"></i><span>No crosswind practice in the ${name}: ${fit.reason.charAt(0).toLowerCase()+fit.reason.slice(1)}.</span></p><p>Choose a fixed-wing aircraft that suits ${f.name}. The ${name} stays selected until you change it.</p><button class="secondary-btn" data-crosswind-aircraft="${rec.id}">Switch to the ${rec.name} <i data-lucide="plane"></i></button><button class="primary-btn" data-next-dialog="explore">Choose another aircraft <i data-lucide="arrow-up-right"></i></button>`)+`</div>`;
  }else if(type==='explore'){
  const sel=selection.airport;
- content=dialogHead('A world above it all')+`<div class="dialog-body"><div class="explore-hero"><svg viewBox="0 0 420 140" aria-label="Alpine mountains"><rect width="420" height="140" fill="hsl(197 30% 66%)"/><path d="M0 98 65 25 92 56 155 9 212 88 270 17 352 102 390 48 420 85v55H0" fill="hsl(205 17% 44%)"/><path d="m65 25-27 30 18-5 11 9 8-18 17 15Zm90-16-39 48 29-14 17 9 14-13 36 49Zm115 8-26 32 17-4 12 13 12-10 25 15Z" fill="hsl(195 20% 91%)"/><path d="M0 109 91 69 177 123 271 72 420 112v28H0" fill="hsl(162 18% 29%)"/><path d="M0 140 168 113 252 117 342 140" fill="hsl(182 42% 42%)"/></svg></div><div class="explore-name"><h3>The Swiss Alps</h3><span>FREE FLIGHT</span></div><p class="explore-description">A winding turquoise lake. Snow-covered ridgelines. Quiet villages tucked into the mountains. Explore our original world inspired by Switzerland's Bernese Oberland.</p><h3 class="dialog-section-title fleet-heading">Aircraft <span>${Object.keys(FLEET).length} to fly · scroll to explore</span></h3><div class="weather-options aircraft-options" role="radiogroup" aria-label="Aircraft">${Object.values(FLEET).map(t=>`<button class="weather-option ${t.id===flight.type.id?'selected':''}" role="radio" tabindex="${t.id===flight.type.id?0:-1}" aria-checked="${t.id===flight.type.id}" data-aircraft="${t.id}"><i data-lucide="plane"></i><div><strong>${t.name} <small>${t.badge}</small></strong><span>${t.choice}</span></div><span></span></button>`).join('')}</div><p class="dialog-note">Changing aircraft saves this flight and starts the new one in the air.</p><h3 class="dialog-section-title fleet-heading" id="airport-heading">Airfield <span>${AIRPORTS.length} fields · fit for the ${flight.type.name}</span></h3><div class="weather-options airport-options" role="radiogroup" aria-labelledby="airport-heading">${AIRPORTS.map(airportOption).join('')}</div>${airportDetail()}<button class="primary-btn" id="explore-landing">Land at ${sel.name} · ${selection.runway} <i data-lucide="arrow-up-right"></i></button><button class="primary-btn" id="explore-start">Start in the air <i data-lucide="arrow-up-right"></i></button><button class="secondary-btn" id="explore-course">Checkpoint course · ${course.course.name} <i data-lucide="arrow-up-right"></i></button><button class="secondary-btn" id="runway-start">${heli?'Lift off from':'Depart'} ${sel.name} · runway ${selection.runway} <i data-lucide="plane"></i></button><button class="secondary-btn" data-next-dialog="chart">See ${sel.name} on the navigation chart <i data-lucide="map"></i></button><p class="dialog-note">Original procedural scenery and aircraft. An accessible flight experience with an arcade flight model.</p></div>`;
+ content=dialogHead('A world above it all')+`<div class="dialog-body"><div class="explore-hero"><svg viewBox="0 0 420 140" aria-label="Alpine mountains"><rect width="420" height="140" fill="hsl(197 30% 66%)"/><path d="M0 98 65 25 92 56 155 9 212 88 270 17 352 102 390 48 420 85v55H0" fill="hsl(205 17% 44%)"/><path d="m65 25-27 30 18-5 11 9 8-18 17 15Zm90-16-39 48 29-14 17 9 14-13 36 49Zm115 8-26 32 17-4 12 13 12-10 25 15Z" fill="hsl(195 20% 91%)"/><path d="M0 109 91 69 177 123 271 72 420 112v28H0" fill="hsl(162 18% 29%)"/><path d="M0 140 168 113 252 117 342 140" fill="hsl(182 42% 42%)"/></svg></div><div class="explore-name"><h3>The Swiss Alps</h3><span>FREE FLIGHT</span></div><p class="explore-description">A winding turquoise lake. Snow-covered ridgelines. Quiet villages tucked into the mountains. Explore our original world inspired by Switzerland's Bernese Oberland.</p><h3 class="dialog-section-title fleet-heading">Aircraft <span>${Object.keys(FLEET).length} to fly · scroll to explore</span></h3><div class="weather-options aircraft-options" role="radiogroup" aria-label="Aircraft">${Object.values(FLEET).map(t=>`<button class="weather-option ${t.id===flight.type.id?'selected':''}" role="radio" tabindex="${t.id===flight.type.id?0:-1}" aria-checked="${t.id===flight.type.id}" data-aircraft="${t.id}"><i data-lucide="plane"></i><div><strong>${t.name} <small>${t.badge}</small></strong><span>${t.choice}</span></div><span></span></button>`).join('')}</div><p class="dialog-note">Changing aircraft saves this flight and starts the new one in the air.</p><h3 class="dialog-section-title fleet-heading" id="airport-heading">Airfield <span>${AIRPORTS.length} fields · fit for the ${flight.type.name}</span></h3><div class="weather-options airport-options" role="radiogroup" aria-labelledby="airport-heading">${AIRPORTS.map(airportOption).join('')}</div>${airportDetail()}<button class="primary-btn" id="explore-landing">Land at ${sel.name} · ${selection.runway} <i data-lucide="arrow-up-right"></i></button><button class="primary-btn" id="explore-start">Start in the air <i data-lucide="arrow-up-right"></i></button><button class="secondary-btn" id="explore-course">Checkpoint course · ${course.course.name} <i data-lucide="arrow-up-right"></i></button><button class="secondary-btn" id="explore-crosswind">${PRACTICE.name} · Alpine Field 36 <i data-lucide="arrow-up-right"></i></button><button class="secondary-btn" id="runway-start">${heli?'Lift off from':'Depart'} ${sel.name} · runway ${selection.runway} <i data-lucide="plane"></i></button><button class="secondary-btn" data-next-dialog="chart">See ${sel.name} on the navigation chart <i data-lucide="map"></i></button><p class="dialog-note">Original procedural scenery and aircraft. An accessible flight experience with an arcade flight model.</p></div>`;
  }else if(type==='chart'){
  content=dialogHead('Navigation chart')+`<div class="dialog-body chart-body"><div class="chart-map"><canvas id="chart-canvas" tabindex="0" role="img" aria-describedby="chart-help"></canvas><span class="map-north" aria-hidden="true">N <span>↑</span></span></div><div class="chart-side"><div class="chart-readout" id="chart-readout" aria-live="polite"></div><div class="chart-tools"><div class="chart-framing" role="radiogroup" aria-label="Chart framing">${FRAMINGS.map(f=>`<button role="radio" data-framing="${f}">${FRAMING_LABELS[f]}</button>`).join('')}</div><div class="chart-zoom"><button id="chart-zoom-out" aria-label="Zoom chart out"><i data-lucide="minus"></i></button><button id="chart-zoom-in" aria-label="Zoom chart in"><i data-lucide="plus"></i></button></div></div><h3 class="dialog-section-title">Destination</h3><div class="chart-airports" role="radiogroup" aria-label="Destination airfield">${AIRPORTS.map(chartAirport).join('')}</div><p class="dialog-note" id="chart-help">Choose a field here or on the chart to navigate to it; this is the same field Explore departs from and lands at. The bearing points the way and never steers. Drag or use the arrow keys to pan, + and − to zoom.</p><button class="secondary-btn" data-next-dialog="explore">Departures and landing missions <i data-lucide="arrow-up-right"></i></button></div></div>`;
  }else if(type==='logbook'){
@@ -517,14 +590,18 @@ function showDialog(type){
  if(type==='chart')setupChart();
  if(type==='landing'){if($('start-landing'))$('start-landing').onclick=()=>{if(startLanding(selection.field))dialog.close();};dialog.querySelectorAll('[data-mission-airport]').forEach(b=>b.onclick=()=>{selection.select(b.dataset.missionAirport);showDialog('landing');$('start-landing')?.focus();});}
  if(type==='course'){$('start-course')&&($('start-course').onclick=()=>{if(startCourse())dialog.close();});dialog.querySelectorAll('[data-course-aircraft]').forEach(b=>b.onclick=()=>{setAircraft(b.dataset.courseAircraft);showDialog('course');$('start-course')?.focus();});}
+ if(type==='crosswind'){$('start-crosswind')&&($('start-crosswind').onclick=()=>{if(startCrosswind())dialog.close();});dialog.querySelectorAll('[data-crosswind-aircraft]').forEach(b=>b.onclick=()=>{setAircraft(b.dataset.crosswindAircraft);showDialog('crosswind');$('start-crosswind')?.focus();});}
  if(type==='explore'){
- $('explore-landing').onclick=()=>showDialog('landing');$('explore-course').onclick=()=>showDialog('course');$('explore-start').onclick=()=>{cancelLanding(false);restart();dialog.close();};$('runway-start').onclick=()=>{runwayStart();dialog.close();};
+ $('explore-landing').onclick=()=>showDialog('landing');$('explore-course').onclick=()=>showDialog('course');$('explore-crosswind').onclick=()=>showDialog('crosswind');$('explore-start').onclick=()=>{cancelLanding(false);restart();dialog.close();};$('runway-start').onclick=()=>{runwayStart();dialog.close();};
  radioKeys('[data-aircraft]');radioKeys('[data-airport]');radioKeys('[data-runway]');
  dialog.querySelectorAll('[data-aircraft]').forEach(b=>b.onclick=()=>{if(setAircraft(b.dataset.aircraft))rerenderExplore(`[data-aircraft="${b.dataset.aircraft}"]`);});
  // Choosing a field or runway only changes the selection; departures and missions start from the buttons.
  dialog.querySelectorAll('[data-airport]').forEach(b=>b.onclick=()=>{if(selection.select(b.dataset.airport))rerenderExplore(`[data-airport="${b.dataset.airport}"]`);});
  dialog.querySelectorAll('[data-runway]').forEach(b=>b.onclick=()=>{if(selection.select(selection.id,b.dataset.runway))rerenderExplore(`[data-runway="${b.dataset.runway}"]`);});
  }
+ // The wind suggestion is applied only here, by the pilot: it selects the other runway and changes nothing else.
+ dialog.querySelectorAll('[data-apply-runway]').forEach(b=>b.onclick=()=>{if(!applyAdvice(selection,runwayAdvice()))return;toast(`Runway ${selection.runway} selected · into wind`);
+  if(type==='explore')rerenderExplore(`[data-runway="${selection.runway}"]`);else{showDialog(type);$('start-landing')?.focus();}});
 }
 document.querySelectorAll('[data-dialog]').forEach(b=>b.onclick=()=>showDialog(b.dataset.dialog));
 dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});
@@ -603,6 +680,17 @@ function drawMap(){
   $('map-framing-label').textContent=FRAMING_LABELS[miniFraming.framing];$('map-framing').setAttribute('aria-label',`Map framing: ${FRAMING_LABELS[miniFraming.framing]}. Change framing`);
   $('mini-map').setAttribute('aria-label',d?`Navigation map, ${FRAMING_LABELS[miniFraming.framing].toLowerCase()} view: aircraft and ${d.name}`:'Navigation map');}
 }
+// The live runway wind: the instantaneous sample on the mission's locked runway while one flies, otherwise the
+// selected runway, in the map row and the mission card. Text names head/tail and the side; the arrow points downwind.
+let lastWindReadout='';
+function updateWindReadout(){
+ const f=readoutField(selection,landing),r=windReadout(flight.sampleWind(),f),text=`${f.id}|${r.runway}|${r.text}|${r.tone}|${r.arrow===null?'':r.arrow.toFixed(2)}`;
+ if(text===lastWindReadout)return;lastWindReadout=text;
+ $('map-wind-arrow').style.transform=`rotate(${r.arrow??0}rad)`;$('map-wind-arrow').classList.toggle('calm',r.arrow===null);
+ $('map-wind-runway').textContent=`${f.ident} ${r.runway}`;$('map-wind-text').textContent=r.text==='Calm'?'Wind calm':`Now ${r.text}`;$('map-wind-text').className=`wind-${r.tone}`;
+ $('map-wind').setAttribute('aria-label',`Wind now on ${f.name} runway ${r.runway}: ${r.words}`);
+ $('landing-wind').innerHTML=`<span>Wind now</span> <span class="wind-${r.tone}">${r.text==='Calm'?'calm':r.text}</span>`;$('landing-wind').setAttribute('aria-label',`Wind now on runway ${r.runway}: ${r.words}`);
+}
 // The airspeed envelope (src/airspeed-envelope.js): read-only bands on the fixed-wing tape, and a latched low / high /
 // overspeed state that is off on the ground, after a crash, while paused, under a dialog and once a mission is over.
 const airspeedMonitor=new AirspeedMonitor();let lastBands=null,lastAirspeed='';
@@ -631,11 +719,13 @@ function updateUI(time){
  let notice='';if(stalled)notice='STALL · Add power and regain airspeed';else if(terrain.level!=='clear')notice=terrainNotice(terrain.level,h);else if(overspeed)notice=OVERSPEED_NOTICE;else if(s.grounded&&!h&&s.brake>0.02)notice='Wheel brakes on · release to roll';else if(s.grounded&&landing.status==='idle')notice=h?'On the ground · Raise collective to lift vertically':'On the ground · Add power and pitch up to take off';
  const overspeedShown=notice===OVERSPEED_NOTICE;
  if(notice!==lastNotice){lastNotice=notice;$('flight-notice').textContent=notice;$('flight-notice').classList.toggle('visible',!!notice);$('flight-notice').classList.toggle('warning',stalled||terrain.level==='warning'||overspeedShown);$('flight-notice').classList.toggle('caution',!stalled&&terrain.level==='caution');$('flight-notice').classList.toggle('stall',stalled);$('flight-notice').classList.toggle('overspeed',overspeedShown);}
- updateLandingUI();
+ updateLandingUI();updateWindReadout();
  if(s.crashed&&!lastCrash&&activities.kind==='free'){lastCrash=true;$('crash-overlay').hidden=false;$('sim-status').textContent='Flight ended';}
  drawMap();drawChart();
 }
 function updateCamera(dt){
+ // The touchdown settle is added after aiming and taken off again first, so lagging views never accumulate it.
+ camera.position.sub(settleOffset);settleOffset.set(0,0,0);
  const s=flight.state,scale=flight.type.cameraScale??1;horizontalEuler.set(0,-s.heading,0);horizontalQuat.setFromEuler(horizontalEuler);
  const heli=!!flight.type.flight.rotorcraft,free=flight.type.flight.aerobatic,frame=free?(initialCamera?followFrame.reset(s.quaternion):followFrame.update(s.quaternion,dt,s.bodyRates.pitch)):horizontalQuat;
  camera.up.set(0,1,0);if(free)camera.up.applyQuaternion(frame);
@@ -651,6 +741,12 @@ function updateCamera(dt){
   else camera.position.lerp(cameraPosition,initialCamera?1:1-Math.exp(-dt*4));
   if(view==='orbit'&&s.grounded)camera.position.y=Math.max(camera.position.y,world.heightAt(camera.position.x,camera.position.z)+1.3);
   target.set(0,view==='orbit'?0:-.1,view==='orbit'?0:-(heli?1.5:8)*scale*THREE.MathUtils.clamp(1.2/camera.aspect,1,2.3)).applyQuaternion(frame).add(s.position);camera.lookAt(target);camera.fov=view==='orbit'?52:53;
+ }
+ if(settle){
+  const t=frameTime-settle.start;
+  if(t>=settle.duration)settle=null;
+  else{settleOffset.set(0,1,0).applyQuaternion(camera.quaternion).multiplyScalar(impulseShape(t,settle.duration)*(view==='cockpit'?settle.cockpit:settle.outside));camera.position.add(settleOffset);sceneDirty=true;
+   if(view==='orbit'&&s.grounded){const floor=world.heightAt(camera.position.x,camera.position.z)+1.3;if(camera.position.y<floor){settleOffset.y+=floor-camera.position.y;camera.position.y=floor;}}}
  }
  camera.updateProjectionMatrix();initialCamera=false;
 }
@@ -672,6 +768,7 @@ function tick(){
   controls.advance(performance.now()/1000,(step,inputs)=>{if(activities.finished)return;flight.update(step,inputs);activities.update(step,flight.state);});flightMaxAlt=Math.max(flightMaxAlt,flight.state.position.y);
   trailClock+=dt;if(trailClock>1){trailClock=0;flightTrail.push({x:flight.state.position.x,z:flight.state.position.z});if(flightTrail.length>2000)flightTrail.shift();}
  }else controls.reset(performance.now()/1000);
+ updateTouchdown();
  aircraft.group.position.copy(flight.state.position);aircraft.group.quaternion.copy(flight.state.quaternion);cockpit.userData.update?.(flight.state);aircraft.update(canFly?dt:flight.type.flight.rotorcraft?0:dt*.15,flight.state.throttle,{...flight.state,time:frameTime});
  if(canFly||sceneDirty||orbitDrag){updateGlideLights();world.update(dt,frameTime,flight.state.position,windsockWind());updateCamera(dt);renderer.render(scene,camera);updateFlightPath();sceneDirty=false;fpsFrames++;}audio.update({...flight.state,stalled:canFly&&flight.state.stalled,throttle:paused||activities.finished?0:flight.state.throttle,speed:paused||activities.finished?0:flight.state.speed,crashed:flight.state.crashed||paused||activities.finished},flight.gearWarning);
  if(frameTime-lastUi>.12){lastUi=frameTime;updateUI(frameTime);}const now=performance.now();if(now-lastFps>1500){if(canFly)$('fps-label').textContent=`${Math.round(fpsFrames/((now-lastFps)/1000))} FPS`;fpsFrames=0;lastFps=now;}
@@ -682,5 +779,5 @@ window.addEventListener('beforeunload',saveFlight);
 setView(view,false);updateAircraftLabels();updateAirportUI();updateAssist();updateUI(0);updateCamera(1);renderer.render(scene,camera);updateFlightPath();tick();
 setTimeout(()=>{$('loading').classList.add('leaving');setTimeout(()=>$('loading').remove(),750);},500);
 // Expose read-only diagnostic snapshots for repeatable rendering and control checks.
-window.aeronaut={getState:()=>({...flight.state,position:flight.state.position.toArray(),quaternion:flight.state.quaternion.toArray(),windVelocity:flight.state.windVelocity.toArray(),groundVelocity:groundTrack(flight.state,flight.type),paused,view,quality:settings.quality,weather:settings.weather,wind:settings.wind}),getWind:()=>flight.windSnapshot(),getWindsocks:()=>world.airports.map(a=>({id:a.id,yaw:a.windsock.rotation.y,parentYaw:a.windsock.parent.rotation.y,droop:a.windsock.rotation.z})),setWind:value=>setWind(value),getSettings:()=>structuredClone(settings),getMission:()=>landing.snapshot(),startLanding:()=>startLanding(selection.field),getCourse:()=>({...course.snapshot(),activity:activities.kind,gatesVisible:courseGates.group.visible}),startCourse,cancelActivity:()=>cancelLanding(true),getRendererInfo:()=>({...renderer.info.render}),getGlideLights:()=>({...glideLights.indication,field:glideLights.field?.id??null,runway:glideLights.field?.runway??null}),getFlightPath:()=>({...flightPathView,enabled:settings.showFlightPath}),getHeadingSelect:()=>({selected:flight.state.selectedHeading,active:flight.state.autopilot&&flight.state.headingHold,autopilot:flight.state.autopilot,recovering:flight.recovering,heading:flight.state.heading*180/Math.PI,open:!headingSelect.hidden}),getTerrainAlert:()=>({...terrainView,samples:terrainAlert.samples,probes:terrainAlert.probes}),reset:restart,setPaused, setQuality,setAircraft,runwayStart:(id,runway)=>runwayStart(id?resolveAirport(id,runway).field:selection.field),approachStart:(id,runway)=>approachStart(id?resolveAirport(id,runway).field:selection.field),airports:()=>world.airports.map(({position,windsock,...field})=>field),getAirport:airportState,getNavigation:()=>{const n=navReadout();return{destination:navigationDestination(airportState()),bearing:n&&Number(n.bearingText),distance:n?.distance,framing:{...miniFraming},scale:miniMap.scale?.label,pendingTiles:miniMap.pending,drawMs:mapDrawMs};},setMapFraming:(framing,zoom)=>setMapFraming({framing,...(zoom===undefined?{}:{zoom})}),selectAirport:(id,runway)=>selection.select(id,runway),getAircraft:()=>({id:flight.type.id,name:flight.type.name,gearPosition:aircraft.gearPosition,surfaces:aircraft.surfaces,afterburner:aircraft.afterburner})};
+window.aeronaut={getState:()=>({...flight.state,position:flight.state.position.toArray(),quaternion:flight.state.quaternion.toArray(),windVelocity:flight.state.windVelocity.toArray(),groundVelocity:groundTrack(flight.state,flight.type),paused,view,quality:settings.quality,weather:settings.weather,wind:settings.wind}),getWind:()=>flight.windSnapshot(),getRunwayWind:()=>{const f=readoutField(selection,landing);return{advice:runwayAdvice(),readout:{field:f.id,...windReadout(flight.sampleWind(),f)}};},getWindsocks:()=>world.airports.map(a=>({id:a.id,yaw:a.windsock.rotation.y,parentYaw:a.windsock.parent.rotation.y,droop:a.windsock.rotation.z})),setWind:value=>setWind(value),getSettings:()=>structuredClone(settings),getMission:()=>landing.snapshot(),startLanding:()=>startLanding(selection.field),getCourse:()=>({...course.snapshot(),activity:activities.kind,gatesVisible:courseGates.group.visible}),startCourse,startCrosswind,getPractice:()=>({...practice.snapshot(),activity:activities.kind,live:flight.windSnapshot()}),cancelActivity:()=>cancelLanding(true),getRendererInfo:()=>({...renderer.info.render}),getGlideLights:()=>({...glideLights.indication,field:glideLights.field?.id??null,runway:glideLights.field?.runway??null}),getFlightPath:()=>({...flightPathView,enabled:settings.showFlightPath}),getHeadingSelect:()=>({selected:flight.state.selectedHeading,active:flight.state.autopilot&&flight.state.headingHold,autopilot:flight.state.autopilot,recovering:flight.recovering,heading:flight.state.heading*180/Math.PI,open:!headingSelect.hidden}),getTerrainAlert:()=>({...terrainView,samples:terrainAlert.samples,probes:terrainAlert.probes}),getTouchdown:()=>({last:lastTouchdown&&{...lastTouchdown},settling:!!settle,offset:settleOffset.length(),reducedMotion:!!reducedMotion?.matches,audio:audio.context?.state??'locked',soundOn:audio.enabled}),reset:restart,setPaused, setQuality,setAircraft,runwayStart:(id,runway)=>runwayStart(id?resolveAirport(id,runway).field:selection.field),approachStart:(id,runway)=>approachStart(id?resolveAirport(id,runway).field:selection.field),airports:()=>world.airports.map(({position,windsock,...field})=>field),getAirport:airportState,getNavigation:()=>{const n=navReadout();return{destination:navigationDestination(airportState()),bearing:n&&Number(n.bearingText),distance:n?.distance,framing:{...miniFraming},scale:miniMap.scale?.label,pendingTiles:miniMap.pending,drawMs:mapDrawMs};},setMapFraming:(framing,zoom)=>setMapFraming({framing,...(zoom===undefined?{}:{zoom})}),selectAirport:(id,runway)=>selection.select(id,runway),getAircraft:()=>({id:flight.type.id,name:flight.type.name,gearPosition:aircraft.gearPosition,surfaces:aircraft.surfaces,afterburner:aircraft.afterburner})};
 if(query.get('start')==='runway')runwayStart();else if(query.get('start')==='approach')approachStart();

@@ -733,6 +733,8 @@ export class FlightAudio {
     this.context = null;
     this.stallActive = false;
     this.stallHorn = null;
+    this.gearWarningOn = false;
+    this.touchdownVoice = null;
     this.volume = 1;
   }
 
@@ -771,6 +773,7 @@ export class FlightAudio {
           previous = brown ? (previous + white * 0.035) / 1.035 : white;
           data[i] = brown ? previous * 3.5 : white * 0.5;
         }
+        if (!brown) this.noiseBuffer ??= buffer;
         const source = ctx.createBufferSource();
         source.buffer = buffer;
         source.loop = true;
@@ -858,6 +861,7 @@ export class FlightAudio {
     this.enabled = false;
     this.stallActive = false;
     this.stopStallHorn();
+    this.stopTouchdown();
     this.master?.gain.setTargetAtTime(0, this.context.currentTime, 0.1);
     return false;
   }
@@ -889,6 +893,57 @@ export class FlightAudio {
     this.stallHorn = null;
   }
 
+  /**
+   * One short procedural contact from touchdownResponse(...).sound: a falling sine body thump plus a band-passed tyre
+   * chirp or a low skid scrape over the shared noise buffer, straight to the volume output so engine level never
+   * changes it. Plays only while sound is on and the context is running; otherwise the touchdown is dropped, never
+   * queued. A sounding stall or gear horn halves it so the warning stays clear. Returns whether it played.
+   */
+  playTouchdown(sound) {
+    const ctx = this.context;
+    if (!sound || !this.enabled || !ctx || ctx.state !== 'running' || !this.output || !this.noiseBuffer) return false;
+    this.stopTouchdown();
+    const now = ctx.currentTime, duck = this.stallActive || this.gearWarningOn ? 0.5 : 1;
+    const end = now + Math.max(sound.decay, sound.rollDuration) + 0.05;
+    const bus = ctx.createGain();
+    bus.gain.value = duck;
+    bus.connect(this.output);
+    const thump = ctx.createOscillator(), body = ctx.createGain();
+    thump.type = 'sine';
+    thump.frequency.setValueAtTime(sound.thumpFrom, now);
+    thump.frequency.exponentialRampToValueAtTime(sound.thumpTo, now + sound.decay);
+    body.gain.setValueAtTime(0, now);
+    body.gain.linearRampToValueAtTime(sound.gain, now + 0.008);
+    body.gain.exponentialRampToValueAtTime(0.0001, now + sound.decay);
+    thump.connect(body).connect(bus);
+    const noise = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), roll = ctx.createGain();
+    noise.buffer = this.noiseBuffer;
+    filter.type = sound.roll === 'tyre' ? 'bandpass' : 'lowpass';
+    filter.frequency.value = sound.rollFrequency;
+    filter.Q.value = sound.roll === 'tyre' ? 1.4 : 0.7;
+    roll.gain.setValueAtTime(0, now);
+    roll.gain.linearRampToValueAtTime(sound.rollGain, now + 0.02);
+    roll.gain.exponentialRampToValueAtTime(0.0001, now + sound.rollDuration);
+    noise.connect(filter).connect(roll).connect(bus);
+    const voice = this.touchdownVoice = { thump, noise, bus, start: now, end, gain: sound.gain * duck };
+    thump.onended = () => {
+      for (const node of [thump, body, noise, filter, roll, bus]) node.disconnect();
+      if (this.touchdownVoice === voice) this.touchdownVoice = null;
+    };
+    thump.start(now);
+    thump.stop(end);
+    noise.start(now);
+    noise.stop(end);
+    return true;
+  }
+
+  stopTouchdown() {
+    const voice = this.touchdownVoice;
+    if (!voice) return;
+    this.touchdownVoice = null;
+    try { voice.thump.stop(); voice.noise.stop(); } catch { /* already ended */ }
+  }
+
   update(state, gearWarning = false) {
     if (!this.context || !this.master) return;
     const type = aircraftType(state.aircraft), engine = type.engine, propeller = ['piston', 'aeroprop', 'turboprop'].includes(engine);
@@ -898,7 +953,8 @@ export class FlightAudio {
     if (!stalled) this.stopStallHorn();
     this.stallActive = stalled;
     const now = this.context.currentTime;
-    this.gearHorn.gain.setTargetAtTime(this.enabled && !state.crashed && !helicopter && !type.fixedGear && gearWarning ? 0.12 : 0, now, 0.03);
+    this.gearWarningOn = this.enabled && !state.crashed && !helicopter && !type.fixedGear && !!gearWarning;
+    this.gearHorn.gain.setTargetAtTime(this.gearWarningOn ? 0.12 : 0, now, 0.03);
     const fighter = engine === 'fighter';
     this.jetBus.gain.setTargetAtTime(fighter || helicopter || propeller ? 0 : 1, now, 0.08);
     this.fighterBus.gain.setTargetAtTime(fighter ? 1 : 0, now, 0.08);

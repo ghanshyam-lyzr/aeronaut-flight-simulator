@@ -29,7 +29,7 @@ Every fresh start goes through `FlightController.reset()`, which clears both the
 
 ### Keyboard safety
 
-Opening the selector first releases any held flight keys (`clearControls`). Every key pressed inside it stops at the selector, so typing or pressing Space, W, R, P, H, G, B, `[` or Shift cannot fly the aircraft or trigger a shortcut. Key releases still pass through to the window handler, so a flight key can never be left stuck down. No new flight-control key was added; the selector has no global hotkey, so trim (`[` `]` `T`), brakes (`B`), map (`M` `V` `N` `−` `+`) and the course controls keep their keys.
+Opening the selector first releases any held flight keys (`clearControls`). Every key pressed inside it stops at the selector, so typing or pressing Space, W, R, P, H, G, B, `[` or Shift cannot fly the aircraft or trigger a shortcut. Key releases still pass through to the window handler, so a flight key can never be left stuck down. With focus on the **Sel** chip itself (where Tab or Esc leaves it), Space and Enter open or close the selector like any button and stop there, so they never reach the global Space = assist shortcut; their key releases still pass. Space over the flight world still toggles assist. No new flight-control key was added; the selector has no global hotkey, so trim (`[` `]` `T`), brakes (`B`), map (`M` `V` `N` `−` `+`) and the course controls keep their keys.
 
 ## Measurements
 
@@ -101,5 +101,12 @@ All checks ran in headless Chromium against the dev preview (port 5173) on the m
 - A tap on the world closed the selector.
 - The page has no horizontal overflow.
 - While open, the selector covers the phone's yoke and trim column; closing it (a tap on the world, ×, or Esc) uncovers them.
+
+**Revalidation after merging main through #47 (course card #44, runway wind #45, touchdown feedback #46, crosswind practice #47):** `npm test` 654/654 and `npm run build` pass. In the browser, with no console errors:
+
+- **Desktop, 1600×900:** Space on the focused Sel opened the selector with assist unchanged. Esc closed it and returned focus to Sel, where Space opened it again with assist unchanged; Enter also opened it.
+- **Retargeting:** typing 340 with assist on retargeted the hold (*Assist · heading 340°*). ↑ gave 341, and Space inside the field changed nothing.
+- **Space over the world:** pressed twice, it turned assist off, then back on capturing the current heading (not held); a tap of A handed back manual control.
+- **Phone, 390×844, touch:** tapping Sel opened the selector without the on-screen keyboard. Taps of −10 and −1 retargeted to 349. A tap on the world closed it, and Space over the world and on the focused Sel behaved as on desktop. There was no horizontal overflow.
 
 **Software-WebGL limits.** This VM renders with SwiftShader at about 2–4 frames per second (Low quality). The simulator caps each frame's step, so for repeatable runs `performance.now()` and event `timeStamp` were driven by a controlled clock advancing 250 ms per rendered frame, and the scripts read simulated rather than wall-clock time. Screenshots were taken with the frame loop briefly held. These checks exercise the real rendered app and its handlers; they are not hardware frame rates, real touch hardware or a subjective flight test on a normal GPU or phone.
