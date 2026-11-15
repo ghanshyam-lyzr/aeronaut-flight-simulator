@@ -1,4 +1,5 @@
 import { Vector3, MathUtils } from 'three';
+import { angularResponse } from './handling.js';
 
 const { clamp, lerp } = MathUtils;
 const mix = (a, b, rate, dt) => lerp(a, b, 1 - Math.exp(-rate * dt));
@@ -16,31 +17,41 @@ export function stepHelicopter(flight, dt, controls) {
   s.stalled = s.afterburner = false;
   s.throttle = clamp(s.throttle + controls.throttle * dt * f.throttleRate, 0, 1);
 
+  let pitchTarget, rollTarget, yawTarget;
   if (s.autopilot) {
     // Brake into the captured hover point. Desired acceleration is rotated into the cabin frame.
     const ax = clamp((flight.holdPosition.x - s.position.x) * 0.18 - v.x * 0.85, -3, 3);
     const az = clamp((flight.holdPosition.z - s.position.z) * 0.18 - v.z * 0.85, -3, 3);
     const c = Math.cos(s.heading), h = Math.sin(s.heading);
     local.set(c * ax + h * az, 0, -h * ax + c * az);
-    s.pitch = mix(s.pitch, Math.atan2(local.z, g), 3, dt);
-    s.bank = mix(s.bank, Math.atan2(local.x, g), 3, dt);
-    flight.pitchRate = flight.rollRate = 0;
-    flight.yawRate = mix(flight.yawRate, clamp(angleError(flight.holdHeading, s.heading) * 1.5, -f.yawRate, f.yawRate), 5, dt);
+    pitchTarget = (Math.atan2(local.z, g) - s.pitch) * 3;
+    rollTarget = (Math.atan2(local.x, g) - s.bank) * 3;
+    yawTarget = clamp(angleError(flight.holdHeading, s.heading) * 1.5, -f.yawRate, f.yawRate);
     const verticalAcceleration = clamp((flight.holdAltitude - s.position.y) * 0.36 - v.y * 0.95, -3, 3);
-    s.throttle = clamp(f.hoverCollective * (1 + verticalAcceleration / g), 0.2, 0.9);
+    const collective = f.hoverCollective * (1 + verticalAcceleration / g);
+    // Lead the slower rotor's lift response, but move the lever continuously from its
+    // current setting. Engaging assist must not snap collective by tens of percent.
+    const target = clamp(collective + (collective - s.spool) / f.collectiveResponse, 0.2, 0.9);
+    s.throttle += clamp(target - s.throttle, -2 * f.throttleRate * dt, 2 * f.throttleRate * dt);
   } else {
-    flight.pitchRate = mix(flight.pitchRate, controls.pitch * f.pitchRate, f.pitchResponse, dt);
-    flight.rollRate = mix(flight.rollRate, controls.roll * f.rollRate, f.rollResponse, dt);
-    flight.yawRate = mix(flight.yawRate, controls.yaw * f.yawRate, f.yawResponse ?? 6, dt);
-    s.pitch += flight.pitchRate * dt;
-    s.bank += flight.rollRate * dt;
-    // A centered cyclic levels the disc; momentum still needs time or opposite cyclic to stop.
-    if (Math.abs(controls.pitch) < 0.001) s.pitch = mix(s.pitch, 0, f.levelRate ?? 1.6, dt);
-    if (Math.abs(controls.roll) < 0.001) s.bank = mix(s.bank, 0, f.levelRate ?? 1.6, dt);
+    // Blend disc stability continuously: a small held cyclic produces a small tilt,
+    // full cyclic retains authority. Translation still needs time or counter-cyclic to stop.
+    const level = f.levelRate ?? 1.6;
+    pitchTarget = controls.pitch * f.pitchRate - s.pitch * level * (1 - Math.abs(controls.pitch));
+    rollTarget = controls.roll * f.rollRate - s.bank * level * (1 - Math.abs(controls.roll));
+    yawTarget = controls.yaw * f.yawRate;
   }
+  // Assist keeps its existing 3/s attitude servo, with a damped rate handover.
+  const pitchLimit = s.autopilot ? 1.8 : f.pitchRate, rollLimit = s.autopilot ? 1.8 : f.rollRate;
+  const pitch = angularResponse(flight.pitchRate, clamp(pitchTarget, -pitchLimit, pitchLimit), s.autopilot ? 12 : f.pitchResponse, dt);
+  const roll = angularResponse(flight.rollRate, clamp(rollTarget, -rollLimit, rollLimit), s.autopilot ? 12 : f.rollResponse, dt);
+  const yaw = angularResponse(flight.yawRate, yawTarget, f.yawResponse ?? 6, dt);
+  flight.pitchRate = pitch.rate; flight.rollRate = roll.rate; flight.yawRate = yaw.rate;
+  s.pitch += pitch.angle;
+  s.bank += roll.angle;
   s.pitch = clamp(s.pitch, ...f.pitchLimits);
   s.bank = clamp(s.bank, -f.bankLimit, f.bankLimit);
-  if (!s.grounded) s.heading = (s.heading + flight.yawRate * dt + tau) % tau;
+  if (!s.grounded) s.heading = (s.heading + yaw.angle + tau) % tau;
   flight.setQuaternion();
   Object.assign(s.bodyRates, { pitch: flight.pitchRate, roll: flight.rollRate, yaw: flight.yawRate });
   s.spool = mix(s.spool, s.throttle, f.collectiveResponse, dt);

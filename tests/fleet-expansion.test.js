@@ -46,7 +46,9 @@ for (const id of EXPANDED_AIRCRAFT) {
     assert.ok(s.distance < 850, `${id}: takeoff roll ${s.distance}`);
     assert.ok(s.speed >= f.rotateSpeed - (type.noFlaps ? 0 : f.flapStallGain));
     assert.ok(largest <= f.maxAcceleration * 0.025 + 1e-6);
-    run(flight, 6, { throttle: 1 }); assert.equal(s.crashed, false); assert.equal(s.stalled, false); assert.ok(s.position.y > 105);
+    // Fly a climb attitude after rotation; released elevator no longer supplies a long extra pull.
+    for (let i = 0; i < 6 * 120; i++) flight.update(1 / 120, { throttle: 1, pitch: s.pitch < 0.18 ? 0.6 : 0 });
+    assert.equal(s.crashed, false); assert.equal(s.stalled, false); assert.ok(s.position.y > 105);
     flight.reset(); assert.equal(s.aircraft, id); assert.equal(s.flightTime, 0);
   });
 

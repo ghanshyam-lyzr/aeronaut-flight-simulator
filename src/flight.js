@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { FLEET, aircraftType, DEFAULT_AIRCRAFT } from './fleet.js';
 import { stepHelicopter } from './helicopter-flight.js';
+import { angularResponse } from './handling.js';
 
 const clamp = THREE.MathUtils.clamp;
 const mix = (value, target, rate, dt) => THREE.MathUtils.lerp(value, target, 1 - Math.exp(-rate * dt));
@@ -26,6 +27,7 @@ export class FlightController {
     this.previousVelocity = new THREE.Vector3();
     this.acceleration = new THREE.Vector3();
     this.aircraftUp = new THREE.Vector3();
+    this.rotationStep = new THREE.Vector3();
     this.reset();
   }
 
@@ -155,7 +157,14 @@ export class FlightController {
     s.afterburner = f.afterburnerFrom !== null && s.throttle >= f.afterburnerFrom && s.spool > f.afterburnerFrom - 0.05;
     const burner = s.afterburner ? clamp((s.spool - f.afterburnerFrom + 0.05) / (1.05 - f.afterburnerFrom), 0, 1) * f.afterburnerSpeed : 0;
 
-    this.yawRate = mix(this.yawRate, controls.yaw * f.yawRate, 2.8, dt);
+    const pitch = angularResponse(this.pitchRate, controls.pitch * f.pitchRate, f.pitchResponse, dt);
+    const roll = angularResponse(this.rollRate, controls.roll * f.rollRate, f.rollResponse, dt);
+    // Rudder response follows the airframe's inertia, like elevator and ailerons.
+    const yaw = angularResponse(this.yawRate, controls.yaw * f.yawRate, f.yawResponse ?? f.pitchResponse, dt);
+    this.pitchRate = pitch.rate;
+    this.rollRate = roll.rate;
+    this.yawRate = yaw.rate;
+    this.rotationStep.set(pitch.angle, -yaw.angle, -roll.angle);
     // An aerobatic type flies a free body-axis attitude once airborne: no angle clamps and no self-leveling.
     const free = f.aerobatic && !s.grounded;
     if (free) {
@@ -170,15 +179,13 @@ export class FlightController {
       this.pitchRate = mix(this.pitchRate, 0, 5, dt);
       this.rollRate = mix(this.rollRate, 0, 5, dt);
     } else {
-      this.pitchRate = mix(this.pitchRate, controls.pitch * f.pitchRate, f.pitchResponse, dt);
-      this.rollRate = mix(this.rollRate, controls.roll * f.rollRate, f.rollResponse, dt);
-      s.pitch += this.pitchRate * dt;
-      s.bank += this.rollRate * dt;
+      s.pitch += pitch.angle;
+      s.bank += roll.angle;
       // Soft self-stability makes cruising possible without continuous corrections.
-      if (Math.abs(controls.roll) < 0.05) s.bank = mix(s.bank, 0, 0.17, dt);
+      s.bank = mix(s.bank, 0, 0.17 * clamp((0.1 - Math.abs(controls.roll)) / 0.05, 0, 1), dt);
       // A glider's released stick settles to its idle-power glide attitude rather than level.
       const trim = f.glidePitch ? -f.glidePitch * clamp(1 - s.spool / 0.32, 0, 1) : 0;
-      if (Math.abs(controls.pitch) < 0.05) s.pitch = mix(s.pitch, trim, 0.045, dt);
+      s.pitch = mix(s.pitch, trim, 0.045 * clamp((0.1 - Math.abs(controls.pitch)) / 0.05, 0, 1), dt);
     }
 
     if (!free) {
@@ -231,7 +238,7 @@ export class FlightController {
     } else {
       // Banking produces a coordinated turn; yaw adds a small rudder correction.
       const turnRate = GRAVITY * Math.tan(s.bank) / Math.max(s.speed, 24);
-      s.heading = ((s.heading + (turnRate + this.yawRate) * dt) % TAU + TAU) % TAU;
+      s.heading = ((s.heading + turnRate * dt + yaw.angle) % TAU + TAU) % TAU;
       const turnSink = Math.abs(Math.sin(s.bank)) * 0.9;
       const targetVerticalSpeed = Math.sin(s.pitch) * s.speed - idleSink - lowSpeedSink - turnSink;
       s.verticalSpeed = mix(s.verticalSpeed, targetVerticalSpeed, 2.1, dt);
@@ -356,10 +363,8 @@ export class FlightController {
       this.pitchRate = mix(this.pitchRate, 0, 5, dt);
       this.rollRate = mix(this.rollRate, 0, 5, dt);
     } else {
-      this.pitchRate = mix(this.pitchRate, controls.pitch * f.pitchRate, f.pitchResponse, dt);
-      this.rollRate = mix(this.rollRate, controls.roll * f.rollRate, f.rollResponse, dt);
-      _axis.set(this.pitchRate, -this.yawRate, -this.rollRate);
-      const angle = _axis.length() * dt;
+      _axis.copy(this.rotationStep);
+      const angle = _axis.length();
       if (angle > 0) q.multiply(_q.setFromAxisAngle(_axis.normalize(), angle));
     }
     q.normalize();
