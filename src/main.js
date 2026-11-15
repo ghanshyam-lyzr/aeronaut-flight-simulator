@@ -427,7 +427,7 @@ function drawMap(){
 }
 // The airspeed envelope (src/airspeed-envelope.js): read-only bands on the fixed-wing tape, and a latched low / high /
 // overspeed state that is off on the ground, after a crash, while paused, under a dialog and once a mission is over.
-const airspeedMonitor=new AirspeedMonitor();let lastBands='',lastAirspeed='';
+const airspeedMonitor=new AirspeedMonitor();let lastBands=null,lastAirspeed='';
 function updateAirspeed(s,speed,active){
  const e=airspeedEnvelope(flight.type,s.flaps),state=airspeedMonitor.update(s,flight.type,active),bands=e?`${flight.type.id}|${s.flaps}`:'';
  $('speed-marker').style.left=`${e?tapeLayout(e,speed).marker:Math.min(96,speed/flight.type.speedScale*100)}%`;
