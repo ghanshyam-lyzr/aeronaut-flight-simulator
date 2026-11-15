@@ -4,13 +4,21 @@ import { angularResponse } from './handling.js';
 const { clamp, lerp } = MathUtils;
 const mix = (a, b, rate, dt) => lerp(a, b, 1 - Math.exp(-rate * dt));
 const g = 9.81, tau = 2 * Math.PI;
-const up = new Vector3(), local = new Vector3();
+const up = new Vector3(), local = new Vector3(), air = new Vector3();
 const angleError = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
 
-/** Rotor lift and world-space momentum: no minimum airspeed or fixed-wing turn/lift terms. */
+// Rotor and fuselage drag on the velocity through the air (m/s²), the same law for translation and for wind.
+const dragRate = (x, z) => 0.08 + Math.hypot(x, z) * 0.0012;
+
+/**
+ * Rotor lift and world-space momentum: no minimum airspeed or fixed-wing turn/lift terms. state.velocity is the
+ * ground velocity; drag acts on the velocity through the air (ground velocity minus the wind), so a level disc
+ * drifts downwind, and state.speed is the airspeed. Hover hold keeps its ground-fixed point by leaning into the wind.
+ */
 export function stepHelicopter(flight, dt, controls) {
   const s = flight.state, f = flight.type.flight, v = s.velocity;
   flight.previousVelocity.copy(v);
+  const w = flight.advanceWind(dt);
   s.flightTime += dt;
   s.gearDown = true;
   s.flaps = 0;
@@ -20,8 +28,10 @@ export function stepHelicopter(flight, dt, controls) {
   let pitchTarget, rollTarget, yawTarget;
   if (s.autopilot) {
     // Brake into the captured hover point. Desired acceleration is rotated into the cabin frame.
-    const ax = clamp((flight.holdPosition.x - s.position.x) * 0.18 - v.x * 0.85, -3, 3);
-    const az = clamp((flight.holdPosition.z - s.position.z) * 0.18 - v.z * 0.85, -3, 3);
+    // Wind feed-forward: the tilt that cancels the wind's drag at the hold point (zero in calm air).
+    const windDrag = w.x || w.z ? dragRate(w.x, w.z) : 0;
+    const ax = clamp((flight.holdPosition.x - s.position.x) * 0.18 - v.x * 0.85 - w.x * windDrag, -3, 3);
+    const az = clamp((flight.holdPosition.z - s.position.z) * 0.18 - v.z * 0.85 - w.z * windDrag, -3, 3);
     const c = Math.cos(s.heading), h = Math.sin(s.heading);
     local.set(c * ax + h * az, 0, -h * ax + c * az);
     pitchTarget = (Math.atan2(local.z, g) - s.pitch) * 3;
@@ -77,13 +87,13 @@ export function stepHelicopter(flight, dt, controls) {
     } else return;
   }
 
-  const drag = 0.08 + Math.hypot(v.x, v.z) * 0.0012;
-  v.x += (up.x * lift - v.x * drag) * dt;
-  v.z += (up.z * lift - v.z * drag) * dt;
+  const airX = v.x - w.x, airZ = v.z - w.z, drag = dragRate(airX, airZ);
+  v.x += (up.x * lift - airX * drag) * dt;
+  v.z += (up.z * lift - airZ * drag) * dt;
   v.y += (up.y * lift - g - v.y * 0.8) * dt;
   s.position.addScaledVector(v, dt);
   s.distance += Math.hypot(v.x, v.z) * dt;
-  s.speed = v.length(); // true airspeed includes sideways/backwards/vertical flight in still air
+  s.speed = air.copy(v).sub(w).length(); // true airspeed, including sideways/backwards/vertical flight
   s.verticalSpeed = v.y;
   flight.acceleration.copy(v).sub(flight.previousVelocity).divideScalar(dt);
   flight.acceleration.y += g;
