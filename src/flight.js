@@ -447,11 +447,14 @@ export function jetSound(spool, speed = 0) {
   };
 }
 
-/** Mix levels for the fighter's single turbofan at a spool (0–1), airspeed (m/s) and afterburner state. */
-export function fighterSound(spool, speed = 0, afterburner = false) {
+/**
+ * Mix levels for a fighter's turbofans at a spool (0–1), airspeed (m/s) and afterburner state.
+ * `voice` scales the Arolla F7's single-engine mix for another type on the same bus (the twin Taris F12).
+ */
+export function fighterSound(spool, speed = 0, afterburner = false, voice = null) {
   const n1 = clamp(Number(spool) || 0, 0, 1);
   const airspeed = clamp(Number(speed) || 0, 0, 285);
-  return {
+  const mix = {
     whine: 1100 + n1 * 3100,          // compressor tone, Hz
     whineGain: 0.03 + n1 * 0.03,
     roar: 220 + n1 * 900,             // exhaust band centre, Hz
@@ -461,6 +464,8 @@ export function fighterSound(spool, speed = 0, afterburner = false) {
     wind: clamp(airspeed / 700, 0.015, 0.32),
     master: 0.6 + n1 * 0.3 + (afterburner ? 0.08 : 0),
   };
+  if (voice) for (const key of ['whine', 'roar', 'roarGain', 'rumbleGain', 'burnerGain']) mix[key] *= voice[key] ?? 1;
+  return mix;
 }
 
 /** Lower compressor/fan tones and a fuller exhaust on the existing twin-engine bus. */
@@ -497,13 +502,14 @@ export function passengerSound(engine, spool, speed = 0) {
 
 /**
  * Rotor blade-pass thrum, turbine whine and cabin airflow; RPM is independent of collective.
- * `rotor` describes the type's main rotor; the defaults are the Laret H4's three blades at 363 RPM.
+ * `rotor` describes the type's main rotor (or each of a tandem's two); the defaults are the Laret H4's three blades at 363 RPM.
  */
 export function helicopterSound(rotorSpeed, collective = 0.58, speed = 0, rotor = {}) {
   const rpm = clamp(Number(rotorSpeed) || 0, 0, 1), load = clamp(Number(collective) || 0, 0, 1);
-  const { blades = 3, rate = 38, turbine = 600 } = rotor;
+  const { blades = 3, rate = 38, turbine = 600, tandem = false } = rotor;
   return {
-    bladePass: rpm * rate / (2 * Math.PI) * blades,
+    // Two counter-rotating rotors (a tandem) pass twice as many blades overhead each turn.
+    bladePass: rpm * rate / (2 * Math.PI) * blades * (tandem ? 2 : 1),
     // A larger, slower rotor sits lower in pitch.
     rotor: (38 + rpm * 54) * rate / 38,
     rotorGain: rpm * (0.08 + load * 0.12),
@@ -688,7 +694,7 @@ export class FlightAudio {
     this.stallActive = stalled;
     const now = this.context.currentTime;
     this.gearHorn.gain.setTargetAtTime(this.enabled && !state.crashed && !helicopter && !type.fixedGear && gearWarning ? 0.12 : 0, now, 0.03);
-    const fighter = state.aircraft === 'fighter';
+    const fighter = engine === 'fighter';
     this.jetBus.gain.setTargetAtTime(fighter || helicopter || propeller ? 0 : 1, now, 0.08);
     this.fighterBus.gain.setTargetAtTime(fighter ? 1 : 0, now, 0.08);
     this.helicopterBus.gain.setTargetAtTime(helicopter ? 1 : 0, now, 0.08);
@@ -717,7 +723,7 @@ export class FlightAudio {
       return;
     }
     if (fighter) {
-      const f = fighterSound(state.spool ?? state.throttle, state.speed, state.afterburner), v = this.fighter;
+      const f = fighterSound(state.spool ?? state.throttle, state.speed, state.afterburner, type.engineVoice), v = this.fighter;
       v.whine.frequency.setTargetAtTime(f.whine, now, 0.25);
       v.whineVoice.gain.gain.setTargetAtTime(f.whineGain, now, 0.25);
       v.roar.filter.frequency.setTargetAtTime(f.roar, now, 0.3);

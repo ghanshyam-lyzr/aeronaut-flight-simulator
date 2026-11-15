@@ -5,6 +5,10 @@ import { transport } from './transport-type.js';
 import { cargo } from './cargo-type.js';
 import { motorglider } from './motorglider-type.js';
 import { cityliner } from './cityliner-type.js';
+import { racer } from './racer-type.js';
+import { pushpull } from './pushpull-type.js';
+import { tandem } from './tandem-type.js';
+import { interceptor } from './interceptor-type.js';
 
 // Flyable aircraft. Flight numbers are metres, seconds and radians; labels feed every screen that names the aircraft.
 const jet = {
@@ -310,6 +314,6 @@ const aerobatic = {
   },
 };
 
-export const FLEET = { jet, fighter, helicopter, airliner, trainer, bush, commuter, regional, widebody, aerobatic, canard, utility, transport, cargo, motorglider, biplane, cityliner };
+export const FLEET = { jet, fighter, helicopter, airliner, trainer, bush, commuter, regional, widebody, aerobatic, canard, utility, transport, cargo, motorglider, biplane, cityliner, racer, pushpull, tandem, interceptor };
 export const DEFAULT_AIRCRAFT = 'jet';
 export const aircraftType = id => FLEET[id] ?? FLEET[DEFAULT_AIRCRAFT];

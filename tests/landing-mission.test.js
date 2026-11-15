@@ -128,7 +128,7 @@ for (const [label, mutate, reason] of [
 }
 
 test('every helicopter needs its landing box and rejects excessive lateral speed', () => {
-  assert.deepEqual(ROTORCRAFT, ['helicopter', 'transport']);
+  assert.deepEqual(ROTORCRAFT, ['helicopter', 'transport', 'tandem']);
   for (const id of ROTORCRAFT) for (const overrides of [{ position: { ...runwayPoint(280), y: 79.6 }, speed: 0 }, { speed: FLEET[id].flight.maxTouchdownSpeed }]) {
     const { flight, mission } = attempt(id); touchdown(flight, mission, overrides);
     assert.equal(mission.status, 'failed', id);
