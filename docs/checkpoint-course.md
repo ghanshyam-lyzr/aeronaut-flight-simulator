@@ -22,7 +22,42 @@ One curated, beginner-friendly timed course in the existing central valley: six 
   - a cue: *Turn right 11° toward gate 2*, *130 ft high · ease the nose down*, *Gate 2 straight ahead*, or *Gate 2 is behind you · turn back and enter from the front*;
   - the objective line, with the session best once there is one;
   - *Retry* and *Free flight*.
+- **Phones (≤550 px)** use a compact course card (below) so the first gate is in view from the first frame.
 - Each gate passed shows a toast with its split time. A pass that does not count shows a note for 3.5 s instead of the cue: missed (crossed outside the opening), flown backwards, or out of order.
+
+## Phone layout (390×844)
+
+In the default chase view at the default chase distance, the first gate's opening is drawn about 225–270 px from the top of a 390×844 screen. The original card used the landing mission's phone layout (title, phase line, pips, two readings, cue, rules line, buttons) and ran from 72 to 281 px, so a new run showed only the gate poles below it unless the pilot found *Collapse*.
+
+On phones the course card is now one compact block, 72–203 px:
+
+- the course title gives way to the phase line (*Gate 1 of 6 · 1.5 km*, 12 px chartreuse); the title stays in the card for screen readers and comes back when the card is collapsed;
+- the six gate pips;
+- one row: *Course time* in Barlow Condensed, *Best* once there is a session best, and *Retry* / *Free flight* (34 px tall);
+- the cue, 11 px, on one line for every cue the course writes (the longest, *Gate 2 is behind you · turn back and enter from the front*, is 286 of 334 px);
+- the rules line (*Gates in order, front to back · pause stops the clock*) is left to the brief, and the *Next gate* reading is left to the phase line and pips, which say the same.
+
+The collapse button grows to a 32 px target in course mode. A new run, Retry and a landing start always open the card expanded, with the button's icon, label (*Collapse/Expand flight details*) and `aria-expanded` reset; before, a collapsed card re-expanded on a new run but kept its *+* icon.
+
+Only `body.course-mode` at ≤550 px changes: the landing mission card, the free-flight card, tablets and desktop are untouched. Notices, the GEAR banner, the map/fullscreen buttons and the restore-HUD button keep their phone positions (notices at 350 px, GEAR at 395 px), all below the gate.
+
+### Measured (headless Chromium, 390×844, chase camera, chase distance 1)
+
+The opening's four corners were projected through the running camera (`Vector3.project` on the live gate frame, measured in a temporary probe that is not in the code) and compared with the card's `getBoundingClientRect()`:
+
+| Run | Card (x, y) | Next gate opening (x, y) | Clear by |
+| --- | --- | --- | --- |
+| Mira T2, start (0.5 s) | 14–376, 72–203 | 160–231, 225–267 | 22 px (21 px to the frame's outer edge) |
+| Vela J8, start (0.6 s) | 14–376, 72–203 | 159–231, 228–270 | 25 px |
+| Mira T2, after gate 1 (split 0:31.4) | 14–376, 72–203 | 301–365, 240–278 | 38 px |
+| Vela J8, after gate 1 (split 0:16.0) | 14–376, 72–203 | 306–373, 243–282 | 41 px |
+| Collapsed | 14–376, 72–127 | | |
+
+The card's bottom stayed at 203 px with each long cue (behind, backwards, out of order, height) and with a *Best* reading and a 12:59.9 time put in. The yoke, Brake, trim ▲/▼ and value, and Power ± were each the hit-test target at their own centres. As a gate gets close it grows past the card, as it must; the card is about clearing the gate and the direction of travel on approach.
+
+Screenshots: [Mira T2 start](checkpoint-course/course-390.png), [Mira T2 after gate 1](checkpoint-course/course-390-gate2.png), [Vela J8 start](checkpoint-course/course-390-jet.png), [Vela J8 after gate 1](checkpoint-course/course-390-jet-gate2.png), [collapsed](checkpoint-course/course-390-collapsed.png).
+
+Also checked at 390×844: pause (the overlay sits below the card), hidden HUD (the card stays, as for landing missions, with *Show hidden panels* below it) and back, a crash result (*Terrain collision*, the card hidden, *Retry the course* focused) and *Return to free flight*, which restored the free-flight card at its old 193 px width. A phone landing mission kept its own card. At 1280×800 and 1600×900 the course card is unchanged (title, *Next gate*, rules line, buttons), with the gate clear of it in the middle of the screen.
 
 ## How gates count (`src/checkpoint-course.js`)
 
@@ -89,7 +124,7 @@ Along the scripted course line the terrain lookahead stays at *clear* for the wh
   - At their 330+ kt cruise, this pilot misses gates in the Arolla F7 and Taris F12, and also overshot in the Aven W280 in some tuning runs. That is why the brief advises easing power below 210 kt for fast types.
 - **Headless Chromium (software WebGL, low quality, about 0–1 FPS):**
   - Brief: [1600×900](checkpoint-course/course-brief-1600.png), [1280×800](checkpoint-course/course-brief-1280.png) and [390×844](checkpoint-course/course-brief-390.png). It fits without a dialog scroll at 1280×800.
-  - The **Vela J8 flew gate 1 for real**, on assist, at the 0.25 s frame cap: split 0:16.0, with the cue turning to *Turn right 10° toward gate 2*. See [start](checkpoint-course/course-start-1600.png) and [after gate 1](checkpoint-course/course-gate2-1600.png). The course card at [1280×800](checkpoint-course/course-1280.png) and [390×844](checkpoint-course/course-390.png) (Mira T2, after *Switch to the Mira T2*).
+  - The **Vela J8 flew gate 1 for real**, on assist, at the 0.25 s frame cap: split 0:16.0, with the cue turning to *Turn right 10° toward gate 2*. See [start](checkpoint-course/course-start-1600.png) and [after gate 1](checkpoint-course/course-gate2-1600.png). The course card at [1280×800](checkpoint-course/course-1280.png); the phone card is under *Phone layout*.
   - Crash runs (nose held down with W) gave the result panel at [1600×900](checkpoint-course/course-result-crash-1600.png), [1280×800](checkpoint-course/course-result-1280.png) and [390×844](checkpoint-course/course-result-390.png).
   - Retry reset the run to gate 1 at 0:00.0 at the start position, with the result hidden. A landing start during the course cancelled it and hid the gates; starting the course again cancelled the landing. *Free flight* left no activity, with both entries back. The helicopter brief showed the exclusion notice with no start button, and the switch made the Mira T2 the aircraft.
   - There were no console errors.
@@ -97,6 +132,7 @@ Along the scripted course line the terrain lookahead stays at *clear* for the wh
 ## Limits
 
 - **Software rendering:** at about 0.09 simulated seconds per wall second, a full run in the browser would take about 20 minutes. So only gate 1 was flown in the browser, and the complete route evidence is the Node flights above, which use the same flight model and course code. Screenshots of the running course were taken paused with the pause overlay hidden, because the renderer was too busy to capture otherwise. The *Course complete* result was verified by the tests and the shared result code path, not captured as a screenshot.
+- **Phone evidence** comes from the same software renderer, at low quality, running live (not paused) at about 1 FPS. Gate 1 was flown for real on assist in both aircraft; the projected bounds are exact for the camera of the frame they were read in, and the screenshots are taken a frame or two later. The *Best* reading was checked with a value put into the page, because a full run takes too long in this renderer.
 - The turn and height cues are simple bearing and height differences to the gate centre. They do not plan a line.
 - The best time lasts for the browser session only, by design.
 - The navigation map still points at the selected airfield during the course; it does not show the gates.

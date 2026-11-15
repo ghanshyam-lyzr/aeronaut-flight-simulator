@@ -190,7 +190,7 @@ function startLanding(field=landing.field){
  $('pause-overlay').hidden=$('crash-overlay').hidden=$('landing-result').hidden=true;
  $('pause-btn').setAttribute('aria-label','Pause flight');iconButton('pause-btn','pause');
  settings.showHud=true;applyDisplay();saveSettings();
- document.querySelector('.mission-panel').classList.remove('collapsed');
+ setMissionCollapsed(false);
  updateAssist();updateLandingUI();announceAirport();toast(landing.profile.helicopter?'You have control · gently lower collective to settle in the box':`You have control · follow runway ${field.runway}, then flare and idle power`);return true;
 }
 // Ends whichever activity is underway (landing mission or checkpoint course): every caller wants free flight next.
@@ -206,13 +206,14 @@ function startCourse(){
  $('pause-overlay').hidden=$('crash-overlay').hidden=$('landing-result').hidden=true;
  $('pause-btn').setAttribute('aria-label','Pause flight');iconButton('pause-btn','pause');
  settings.showHud=true;applyDisplay();saveSettings();
- document.querySelector('.mission-panel').classList.remove('collapsed');
+ setMissionCollapsed(false);
  updateAssist();updateLandingUI();announceAirport();toast('Assist holds you level toward gate 1 · steer to take control');return true;
 }
 function updateLandingUI(){
  const underway=landing.status!=='idle',s=flight.state,f=landing.field,racing=course.status!=='idle';
  // landing-mode is the mission card layout, shared by the landing mission and the checkpoint course.
  document.body.classList.toggle('landing-mode',underway||racing);
+ document.body.classList.toggle('course-mode',racing);
  document.body.classList.toggle('landing-finished',activities.finished);
  $('flight-mode').textContent=underway?'Landing mission':racing?'Checkpoint course':'Free flight';
  document.querySelector('.map-explore').textContent=underway?`Landing · runway ${f.runway}`:racing?'Checkpoint course':'Free exploration';
@@ -266,6 +267,7 @@ function updateCourseUI(){
   else cue=`Gate ${g.number} straight ahead · hold it steady`;}
  if(now<courseEventUntil)cue=courseEventText;
  $('course-cue').textContent=cue;
+ $('course-best-reading').hidden=course.best===null;if(course.best!==null)$('course-best').textContent=formatCourseTime(course.best);
  $('course-objective').textContent=`Gates in order, front to back · pause stops the clock${course.best!==null?` · best ${formatCourseTime(course.best)}`:''}`;
  if(course.finished&&!missionResultShown){
   missionResultShown=true;clearControls();clearTimeout(toastTimeout);$('toast').classList.remove('visible');$('pause-overlay').hidden=$('crash-overlay').hidden=true;
@@ -317,7 +319,9 @@ $('landing-entry').onclick=()=>showDialog('landing');$('course-entry').onclick=(
 $('course-retry').onclick=()=>startCourse();$('course-cancel').onclick=()=>cancelLanding(true);
 $('landing-retry').onclick=()=>startLanding();$('landing-result-retry').onclick=()=>course.status!=='idle'?startCourse():startLanding();
 for(const id of ['landing-cancel','landing-result-exit'])$(id).onclick=()=>cancelLanding(true);
-$('collapse-mission').onclick=()=>{const c=document.querySelector('.mission-panel');c.classList.toggle('collapsed');iconButton('collapse-mission',c.classList.contains('collapsed')?'plus':'minus');};
+// A new landing or course run always opens the card expanded, with its button saying so.
+function setMissionCollapsed(collapsed){document.querySelector('.mission-panel').classList.toggle('collapsed',collapsed);iconButton('collapse-mission',collapsed?'plus':'minus');$('collapse-mission').setAttribute('aria-label',collapsed?'Expand flight details':'Collapse flight details');$('collapse-mission').setAttribute('aria-expanded',String(!collapsed));}
+$('collapse-mission').onclick=()=>setMissionCollapsed(!document.querySelector('.mission-panel').classList.contains('collapsed'));
 $('throttle-slider').addEventListener('input',e=>{flight.state.throttle=Number(e.target.value)/100;if(flight.type.flight.rotorcraft)flight.state.autopilot=false;});
 // One audio context, unlocked by a gesture as browsers require. Sound starts off, as before; once the pilot turns
 // it on, that choice is saved and resumes at the first tap or key press after a reload.
