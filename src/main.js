@@ -29,6 +29,7 @@ import { WIND_PRESETS, windText, sampleText, KNOT } from './wind.js';
 import { adviseRunway, componentText, windReadout, readoutField, applyAdvice } from './runway-wind.js';
 import { AirspeedMonitor, airspeedEnvelope, tapeLayout, AIRSPEED_LABELS, OVERSPEED_NOTICE } from './airspeed-envelope.js';
 import { TerrainAlert, terrainNotice } from './terrain-alert.js';
+import { TouchdownDetector, touchdownResponse, touchdownOutputs, impulseShape } from './touchdown.js';
 import { NavigationMap } from './nav-map.js';
 import { navigationDestination, navigationReadout, bearingDistance, degrees, formatNM, zoomFrom, nearestZoom, FRAMINGS, FRAMING_LABELS, ZOOM_SPANS } from './navigation.js';
 
@@ -86,6 +87,18 @@ const glideLights=createGlideLights(scene);
 function updateGlideLights(){const s=flight.state;glideLights.setField(landing.status==='idle'?selection.field:landing.field);glideLights.update(s.position,landingProfile(flight.type),{grounded:s.grounded,crashed:s.crashed||activities.finished});}
 flight.toggleAutopilot();
 const audio = new FlightAudio();
+// Touchdown feedback (src/touchdown.js): each new wheel or skid contact once, as a short sound and a camera-local settle.
+// Read-only on the flight; resets, retries, runway starts and aircraft changes resynchronise it without an event.
+const touchdown=new TouchdownDetector(flight.state),reducedMotion=globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');
+let settle=null,lastTouchdown=null;const settleOffset=new THREE.Vector3();
+function resetTouchdown(){touchdown.sync(flight.state);settle=null;}
+function updateTouchdown(){
+ const record=touchdown.update(flight.state);if(!record)return;
+ const r=touchdownResponse(record,flight.type),out=touchdownOutputs({paused,dialogOpen:dialog.open,hidden:document.hidden,soundOn:audio.enabled,audioRunning:audio.context?.state==='running',reducedMotion:!!reducedMotion?.matches});
+ const sound=out.sound&&audio.playTouchdown(r.sound);
+ settle=out.motion?{start:frameTime,duration:r.impulse.duration,cockpit:r.impulse.cockpit,outside:r.impulse.outside}:null;
+ lastTouchdown={kind:r.kind,contact:r.contact,level:r.level,severity:r.severity,sink:r.sink,speed:r.speed,gain:sound?audio.touchdownVoice?.gain??r.sound.gain:0,impulse:out.motion?{...r.impulse}:null,sound,motion:out.motion,time:record.time,count:(lastTouchdown?.count??0)+1};
+}
 let paused=false, view=settings.camera, frameTime=0, orbitAngle=0.45, orbitHeight=9, orbitDistance=31;
 const keys=new Set();
 const touch={pitch:0,roll:0,yaw:0,throttle:0,brake:0,trim:0};
@@ -142,7 +155,7 @@ function setPaused(value){
 }
 function saveFlight(){const s=flight.state;if(s.flightTime<10)return;const entry={date:new Date().toISOString(),time:s.flightTime,distance:s.distance,maxAltitude:flightMaxAlt,aircraft:s.aircraft};savedFlights=recordFlight(savedFlights,entry);storeFlights(savedFlights);}
 let flightMaxAlt=flight.state.position.y;
-function restart(notify=true){if(landing.status!=='idle'){startLanding();return;}if(course.status!=='idle'){startCourse();return;}saveFlight();flight.reset();flight.toggleAutopilot();flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);sceneDirty=true;paused=false;lastCrash=false;initialCamera=true;clearControls();$('pause-overlay').hidden=true;$('crash-overlay').hidden=true;$('sim-status').textContent='Live simulation';iconButton('pause-btn','pause');updateAssist();if(notify)toast('A fresh start. You have the skies.');}
+function restart(notify=true){if(landing.status!=='idle'){startLanding();return;}if(course.status!=='idle'){startCourse();return;}saveFlight();flight.reset();flight.toggleAutopilot();resetTouchdown();flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);sceneDirty=true;paused=false;lastCrash=false;initialCamera=true;clearControls();$('pause-overlay').hidden=true;$('crash-overlay').hidden=true;$('sim-status').textContent='Live simulation';iconButton('pause-btn','pause');updateAssist();if(notify)toast('A fresh start. You have the skies.');}
 // Every label that names the aircraft reads from the active fleet type.
 // Rotorcraft land on fixed skids unless their type has fixed wheels; hover collective is per type.
 const wheeled=t=>t.landingGear==='wheels',hoverPercent=t=>Math.round(t.flight.hoverCollective*100),capital=w=>w[0].toUpperCase()+w.slice(1);
@@ -176,17 +189,17 @@ const query=new URLSearchParams(location.search);
 if(query.has('airport'))selection.select(query.get('airport'),query.get('runway')||undefined);
 const surfaceName=f=>f.surface==='grass'?'grass':'paved';
 // A free-flight start on a 3° final, placed as the landing mission places it; no mission runs.
-function approachStart(field=selection.field){cancelLanding(false);saveFlight();const m=new LandingMission(field);m.start(flight);m.cancel();flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);paused=false;lastCrash=false;initialCamera=true;sceneDirty=true;clearControls();$('pause-overlay').hidden=$('crash-overlay').hidden=true;updateAssist();toast(`${field.name} · final for runway ${field.runway}`);}
+function approachStart(field=selection.field){cancelLanding(false);saveFlight();const m=new LandingMission(field);m.start(flight);m.cancel();resetTouchdown();flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);paused=false;lastCrash=false;initialCamera=true;sceneDirty=true;clearControls();$('pause-overlay').hidden=$('crash-overlay').hidden=true;updateAssist();toast(`${field.name} · final for runway ${field.runway}`);}
 // A fresh departure: any aircraft may try any field in free flight; a poor fit is named, not refused.
 function runwayStart(field=selection.field){
- cancelLanding(false);restart(false);const p=runwayPoint(100,0,field);flight.runwayStart(p.x,world.heightAt(p.x,p.z)+(flight.type.groundClearance??2.8),p.z,field.heading);trailOrigin.copy(flight.state.position);updateAssist();initialCamera=true;sceneDirty=true;
+ cancelLanding(false);restart(false);const p=runwayPoint(100,0,field);flight.runwayStart(p.x,world.heightAt(p.x,p.z)+(flight.type.groundClearance??2.8),p.z,field.heading);resetTouchdown();trailOrigin.copy(flight.state.position);updateAssist();initialCamera=true;sceneDirty=true;
  const fit=suitability(field,flight.type.id),hint=flight.type.runwayHint;
  toast(fit.rating==='unsuitable'?`${flight.type.name}: ${fit.reason.toLowerCase()} · ${field.name} has ${field.runwayLength.toLocaleString('en')} m ${surfaceName(field)}`:/^Runway \d+/.test(hint)?hint.replace(/^Runway \d+/,`${field.name} · runway ${field.runway}`):`${field.name} · ${hint}`);
 }
 // Starts a scored mission at a field (default: retry the current mission's field). Unsuited aircraft get the brief instead.
 function startLanding(field=landing.field){
  if(!missionAvailability(field,flight.type.id).available){cancelLanding(false);showDialog('landing');return false;}
- saveFlight();activities.startLanding(flight,field);setMissionCues(field);flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);trailClock=0;
+ saveFlight();activities.startLanding(flight,field);resetTouchdown();setMissionCues(field);flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);trailClock=0;
  paused=false;lastCrash=false;initialCamera=true;sceneDirty=true;missionResultShown=false;clearControls();
  $('pause-overlay').hidden=$('crash-overlay').hidden=$('landing-result').hidden=true;
  $('pause-btn').setAttribute('aria-label','Pause flight');iconButton('pause-btn','pause');
@@ -202,7 +215,7 @@ function cancelLanding(fresh=false){
 // Starts (or retries) the checkpoint course in the current aircraft; an aircraft the course is not built for gets the brief.
 function startCourse(){
  if(!courseAvailability(flight.type).available){cancelLanding(false);showDialog('course');return false;}
- saveFlight();activities.startCourse(flight);flight.toggleAutopilot();flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);trailClock=0;
+ saveFlight();activities.startCourse(flight);flight.toggleAutopilot();resetTouchdown();flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);trailClock=0;
  paused=false;lastCrash=false;initialCamera=true;sceneDirty=true;missionResultShown=false;lastCourseEvent=null;clearControls();
  $('pause-overlay').hidden=$('crash-overlay').hidden=$('landing-result').hidden=true;
  $('pause-btn').setAttribute('aria-label','Pause flight');iconButton('pause-btn','pause');
@@ -598,6 +611,8 @@ function updateUI(time){
  drawMap();drawChart();
 }
 function updateCamera(dt){
+ // The touchdown settle is added after aiming and taken off again first, so lagging views never accumulate it.
+ camera.position.sub(settleOffset);settleOffset.set(0,0,0);
  const s=flight.state,scale=flight.type.cameraScale??1;horizontalEuler.set(0,-s.heading,0);horizontalQuat.setFromEuler(horizontalEuler);
  const heli=!!flight.type.flight.rotorcraft,free=flight.type.flight.aerobatic,frame=free?(initialCamera?followFrame.reset(s.quaternion):followFrame.update(s.quaternion,dt,s.bodyRates.pitch)):horizontalQuat;
  camera.up.set(0,1,0);if(free)camera.up.applyQuaternion(frame);
@@ -613,6 +628,12 @@ function updateCamera(dt){
   else camera.position.lerp(cameraPosition,initialCamera?1:1-Math.exp(-dt*4));
   if(view==='orbit'&&s.grounded)camera.position.y=Math.max(camera.position.y,world.heightAt(camera.position.x,camera.position.z)+1.3);
   target.set(0,view==='orbit'?0:-.1,view==='orbit'?0:-(heli?1.5:8)*scale*THREE.MathUtils.clamp(1.2/camera.aspect,1,2.3)).applyQuaternion(frame).add(s.position);camera.lookAt(target);camera.fov=view==='orbit'?52:53;
+ }
+ if(settle){
+  const t=frameTime-settle.start;
+  if(t>=settle.duration)settle=null;
+  else{settleOffset.set(0,1,0).applyQuaternion(camera.quaternion).multiplyScalar(impulseShape(t,settle.duration)*(view==='cockpit'?settle.cockpit:settle.outside));camera.position.add(settleOffset);sceneDirty=true;
+   if(view==='orbit'&&s.grounded){const floor=world.heightAt(camera.position.x,camera.position.z)+1.3;if(camera.position.y<floor){settleOffset.y+=floor-camera.position.y;camera.position.y=floor;}}}
  }
  camera.updateProjectionMatrix();initialCamera=false;
 }
@@ -634,6 +655,7 @@ function tick(){
   controls.advance(performance.now()/1000,(step,inputs)=>{if(activities.finished)return;flight.update(step,inputs);activities.update(step,flight.state);});flightMaxAlt=Math.max(flightMaxAlt,flight.state.position.y);
   trailClock+=dt;if(trailClock>1){trailClock=0;flightTrail.push({x:flight.state.position.x,z:flight.state.position.z});if(flightTrail.length>2000)flightTrail.shift();}
  }else controls.reset(performance.now()/1000);
+ updateTouchdown();
  aircraft.group.position.copy(flight.state.position);aircraft.group.quaternion.copy(flight.state.quaternion);cockpit.userData.update?.(flight.state);aircraft.update(canFly?dt:flight.type.flight.rotorcraft?0:dt*.15,flight.state.throttle,{...flight.state,time:frameTime});
  if(canFly||sceneDirty||orbitDrag){updateGlideLights();world.update(dt,frameTime,flight.state.position,windsockWind());updateCamera(dt);renderer.render(scene,camera);updateFlightPath();sceneDirty=false;fpsFrames++;}audio.update({...flight.state,stalled:canFly&&flight.state.stalled,throttle:paused||activities.finished?0:flight.state.throttle,speed:paused||activities.finished?0:flight.state.speed,crashed:flight.state.crashed||paused||activities.finished},flight.gearWarning);
  if(frameTime-lastUi>.12){lastUi=frameTime;updateUI(frameTime);}const now=performance.now();if(now-lastFps>1500){if(canFly)$('fps-label').textContent=`${Math.round(fpsFrames/((now-lastFps)/1000))} FPS`;fpsFrames=0;lastFps=now;}
@@ -644,5 +666,5 @@ window.addEventListener('beforeunload',saveFlight);
 setView(view,false);updateAircraftLabels();updateAirportUI();updateAssist();updateUI(0);updateCamera(1);renderer.render(scene,camera);updateFlightPath();tick();
 setTimeout(()=>{$('loading').classList.add('leaving');setTimeout(()=>$('loading').remove(),750);},500);
 // Expose read-only diagnostic snapshots for repeatable rendering and control checks.
-window.aeronaut={getState:()=>({...flight.state,position:flight.state.position.toArray(),quaternion:flight.state.quaternion.toArray(),windVelocity:flight.state.windVelocity.toArray(),groundVelocity:groundTrack(flight.state,flight.type),paused,view,quality:settings.quality,weather:settings.weather,wind:settings.wind}),getWind:()=>flight.windSnapshot(),getRunwayWind:()=>{const f=readoutField(selection,landing);return{advice:runwayAdvice(),readout:{field:f.id,...windReadout(flight.sampleWind(),f)}};},getWindsocks:()=>world.airports.map(a=>({id:a.id,yaw:a.windsock.rotation.y,parentYaw:a.windsock.parent.rotation.y,droop:a.windsock.rotation.z})),setWind:value=>setWind(value),getSettings:()=>structuredClone(settings),getMission:()=>landing.snapshot(),startLanding:()=>startLanding(selection.field),getCourse:()=>({...course.snapshot(),activity:activities.kind,gatesVisible:courseGates.group.visible}),startCourse,cancelActivity:()=>cancelLanding(true),getRendererInfo:()=>({...renderer.info.render}),getGlideLights:()=>({...glideLights.indication,field:glideLights.field?.id??null,runway:glideLights.field?.runway??null}),getFlightPath:()=>({...flightPathView,enabled:settings.showFlightPath}),getTerrainAlert:()=>({...terrainView,samples:terrainAlert.samples,probes:terrainAlert.probes}),reset:restart,setPaused, setQuality,setAircraft,runwayStart:(id,runway)=>runwayStart(id?resolveAirport(id,runway).field:selection.field),approachStart:(id,runway)=>approachStart(id?resolveAirport(id,runway).field:selection.field),airports:()=>world.airports.map(({position,windsock,...field})=>field),getAirport:airportState,getNavigation:()=>{const n=navReadout();return{destination:navigationDestination(airportState()),bearing:n&&Number(n.bearingText),distance:n?.distance,framing:{...miniFraming},scale:miniMap.scale?.label,pendingTiles:miniMap.pending,drawMs:mapDrawMs};},setMapFraming:(framing,zoom)=>setMapFraming({framing,...(zoom===undefined?{}:{zoom})}),selectAirport:(id,runway)=>selection.select(id,runway),getAircraft:()=>({id:flight.type.id,name:flight.type.name,gearPosition:aircraft.gearPosition,surfaces:aircraft.surfaces,afterburner:aircraft.afterburner})};
+window.aeronaut={getState:()=>({...flight.state,position:flight.state.position.toArray(),quaternion:flight.state.quaternion.toArray(),windVelocity:flight.state.windVelocity.toArray(),groundVelocity:groundTrack(flight.state,flight.type),paused,view,quality:settings.quality,weather:settings.weather,wind:settings.wind}),getWind:()=>flight.windSnapshot(),getRunwayWind:()=>{const f=readoutField(selection,landing);return{advice:runwayAdvice(),readout:{field:f.id,...windReadout(flight.sampleWind(),f)}};},getWindsocks:()=>world.airports.map(a=>({id:a.id,yaw:a.windsock.rotation.y,parentYaw:a.windsock.parent.rotation.y,droop:a.windsock.rotation.z})),setWind:value=>setWind(value),getSettings:()=>structuredClone(settings),getMission:()=>landing.snapshot(),startLanding:()=>startLanding(selection.field),getCourse:()=>({...course.snapshot(),activity:activities.kind,gatesVisible:courseGates.group.visible}),startCourse,cancelActivity:()=>cancelLanding(true),getRendererInfo:()=>({...renderer.info.render}),getGlideLights:()=>({...glideLights.indication,field:glideLights.field?.id??null,runway:glideLights.field?.runway??null}),getFlightPath:()=>({...flightPathView,enabled:settings.showFlightPath}),getTerrainAlert:()=>({...terrainView,samples:terrainAlert.samples,probes:terrainAlert.probes}),getTouchdown:()=>({last:lastTouchdown&&{...lastTouchdown},settling:!!settle,offset:settleOffset.length(),reducedMotion:!!reducedMotion?.matches,audio:audio.context?.state??'locked',soundOn:audio.enabled}),reset:restart,setPaused, setQuality,setAircraft,runwayStart:(id,runway)=>runwayStart(id?resolveAirport(id,runway).field:selection.field),approachStart:(id,runway)=>approachStart(id?resolveAirport(id,runway).field:selection.field),airports:()=>world.airports.map(({position,windsock,...field})=>field),getAirport:airportState,getNavigation:()=>{const n=navReadout();return{destination:navigationDestination(airportState()),bearing:n&&Number(n.bearingText),distance:n?.distance,framing:{...miniFraming},scale:miniMap.scale?.label,pendingTiles:miniMap.pending,drawMs:mapDrawMs};},setMapFraming:(framing,zoom)=>setMapFraming({framing,...(zoom===undefined?{}:{zoom})}),selectAirport:(id,runway)=>selection.select(id,runway),getAircraft:()=>({id:flight.type.id,name:flight.type.name,gearPosition:aircraft.gearPosition,surfaces:aircraft.surfaces,afterburner:aircraft.afterburner})};
 if(query.get('start')==='runway')runwayStart();else if(query.get('start')==='approach')approachStart();
