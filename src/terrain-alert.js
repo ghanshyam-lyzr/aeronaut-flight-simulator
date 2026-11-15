@@ -102,7 +102,9 @@ export function sampleTerrain(state, type, heightAt, { airports = AIRPORTS, extr
     const relief = approaching ? runwayRelief({ x, z }, track, airports) : null;
     // Meeting the ground on a runway while lined up with it is a landing: nothing beyond that point matters.
     if (relief?.onRunway) { if (clearance <= 0) return result; continue; }
-    if (!meets && (!(clearance < (relief ? c.approachMargin + extra : margin)) || c0 - clearance < c.closure)) continue;
+    // Hysteresis widens the open-ground margin only: a 3° final sits within it, so an alert raised before the aircraft
+    // tracked the runway (a crosswind's drift) would otherwise latch down the whole good approach.
+    if (!meets && (!(clearance < (relief ? c.approachMargin : margin)) || c0 - clearance < c.closure)) continue;
     // Rising: the ground climbs into the path, or above the wheels' current height so even level flight meets it.
     if (h - h0 >= c.closure / 2 || (meets && p.y - h - gear <= 0)) {
       result.cause = 'rising'; result.time = contact; result.level = contact <= c.warnTime ? 'warning' : 'caution';

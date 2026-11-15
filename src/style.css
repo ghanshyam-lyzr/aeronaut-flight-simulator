@@ -235,7 +235,9 @@ dialog.chart-dialog{width:min(1060px,calc(100% - 32px))}
 #course-phase{color:var(--accent)}
 .mission-entry+.mission-entry{padding-top:9px}
 @media(max-width:550px){.course-pips{margin-bottom:6px}}
-/* The course entry adds one row to the free-flight card; the scene label moves down with it. */
-.scene-label{top:345px}@media(max-width:800px){.scene-label{top:322px}}
-/* Phones keep the free-flight card at its old height; the course starts from Menu → Explore there. */
-@media(max-width:550px){#course-entry{display:none}}
+/* The course and crosswind practice entries add two rows to the free-flight card; the scene label moves down with them. */
+.scene-label{top:383px}@media(max-width:800px){.scene-label{top:357px}}
+/* Phones keep the free-flight card at its old height; the course and crosswind practice start from Menu → Explore there. */
+@media(max-width:550px){#course-entry,#crosswind-entry{display:none}}
+/* Crosswind practice brief: the landing metrics grid, with the readings a size down so four fit beside the steps. */
+.crosswind-brief{margin:4px 0 16px;padding:14px 0;gap:14px 16px}.crosswind-brief dd{font-size:22px}
