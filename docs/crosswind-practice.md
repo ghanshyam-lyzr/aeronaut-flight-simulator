@@ -154,6 +154,12 @@ All checks ran against the dev server through `window.aeronaut`. The new diagnos
   - H hid the panels: the practice card stayed visible, the restore button appeared and the attempt kept its wind.
   - P paused: the wind clock was identical after 3 s paused, and after 2.5 s under the Weather dialog.
   - Enter on the focused **Retry crosswind practice** button retried the attempt. **Switch to the Mira T2** kept the brief open with focus on Start.
+- **Integration with #46.**
+  - Collapsing the card and then retrying, or starting a new practice, reopens it with the minus icon, `aria-expanded="true"` and "Collapse flight details" (`setMissionCollapsed`).
+  - `getTouchdown()` after a retry shows no stale contact and no settle (`resetTouchdown()` on every practice start).
+- **Cues in the browser.** A keyed approach showed "Drifting left · turn into the wind with E" and the offset cue on desktop, and "… with a gentle right bank" at 390×844.
+  - A hands-off attempt stayed about 40 m up and drifted 50 m left after 29 flight seconds, and flying to the flare by hand is impractical at 1 fps (below). So the flare and straighten cues were not seen live in the browser.
+  - Their timing is proven by the deterministic pilot following `practiceCue()`, the same function the card displays.
 - **Touch.** Checked with dispatched pointer events on the touch yoke (it banked and turned the aircraft during an attempt) and with clicks on the brief and result buttons. No real touch device was used. The synthetic pointer logged one `setPointerCapture` error, because no real pointer existed; it is not an app error.
 - **Software-WebGL limit.** This VM renders at about 1 fps, even at Low quality.
   - Flight time advances about one flight second per 6–8 s of wall time, so no attempt was hand-flown to a landing in the browser.
