@@ -212,3 +212,12 @@ dialog.chart-dialog{width:min(1060px,calc(100% - 32px))}
 .flight-path-marker{position:absolute;left:0;top:0;width:34px;height:22px;margin:-13px 0 0 -17px;color:var(--accent);filter:drop-shadow(0 1px 2px var(--shadow));pointer-events:none;will-change:transform}
 .flight-path-marker svg{display:block}
 @media(max-width:550px){.flight-path-marker{opacity:.9}}
+/* Checkpoint course: the landing mission card's layout, with a compact row of gate pips. */
+.course-pips{display:flex;gap:4px;margin:0 0 10px}.course-pips span{flex:1;height:3px;border-radius:2px;background:var(--border)}.course-pips span.done{background:var(--accent)}.course-pips span.next{background:var(--foreground)}
+#course-phase{color:var(--accent)}
+.mission-entry+.mission-entry{padding-top:9px}
+@media(max-width:550px){.course-pips{margin-bottom:6px}}
+/* The course entry adds one row to the free-flight card; the scene label moves down with it. */
+.scene-label{top:345px}@media(max-width:800px){.scene-label{top:322px}}
+/* Phones keep the free-flight card at its old height; the course starts from Menu → Explore there. */
+@media(max-width:550px){#course-entry{display:none}}
