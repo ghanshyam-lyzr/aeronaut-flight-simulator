@@ -3,6 +3,7 @@ import { FLEET, aircraftType, DEFAULT_AIRCRAFT } from './fleet.js';
 import { stepHelicopter } from './helicopter-flight.js';
 import { angularResponse } from './handling.js';
 import { Wind } from './wind.js';
+import { stallSpeed } from './stall.js';
 
 const clamp = THREE.MathUtils.clamp;
 const mix = (value, target, rate, dt) => THREE.MathUtils.lerp(value, target, 1 - Math.exp(-rate * dt));
@@ -434,9 +435,9 @@ export class FlightController {
     // A jet's acceleration is thrust-limited, so leaving the runway does not jump to the airborne target.
     s.speed = f.maxAcceleration ? Math.min(nextSpeed, s.speed + f.maxAcceleration * dt) : nextSpeed;
 
-    const stallSpeed = f.stallSpeed - s.flaps * f.flapStallGain;
-    s.stalled = s.speed < stallSpeed && !s.grounded;
-    const stallAmount = clamp((stallSpeed + 4 - s.speed) / 12, 0, 1);
+    const effectiveStall = stallSpeed(this.type, s.flaps, s);
+    s.stalled = s.speed < effectiveStall;
+    const stallAmount = clamp((effectiveStall + 4 - s.speed) / 12, 0, 1);
     if (s.stalled) {
       if (free) this.dropNose(1 - Math.exp(-(0.7 + stallAmount) * dt));
       else s.pitch = mix(s.pitch, -0.25, 0.7 + stallAmount, dt);

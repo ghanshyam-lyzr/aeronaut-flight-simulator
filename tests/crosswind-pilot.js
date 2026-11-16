@@ -28,8 +28,9 @@ export function setup(id = 'trainer', pilotWind = 'calm') {
  * `steer: false` leaves the rudder alone on the runway. `straighten` is the height (m) at which rudder takes the crab out (null: never).
  * `followCue: true` ignores `straighten` and does what the card's live cue (practiceCue) says instead: straighten only once
  * it says "Straighten", and with the yoke level the wings once it says so. Returns telemetry, with the cues shown (`cues`).
+ * `trimSeconds` holds nose-up trim at the start; the motorglider needs a small flare adjustment in this wind.
  */
-export function flyApproach({ flight, landing, activities, s }, { correct = true, straighten = STRAIGHTEN_HEIGHT, steer = true, rudder = true, followCue = false, rate = 60, seconds = 150 } = {}) {
+export function flyApproach({ flight, landing, activities, s }, { correct = true, straighten = STRAIGHTEN_HEIGHT, steer = true, rudder = true, followCue = false, rate = 60, seconds = 150, trimSeconds = 0 } = {}) {
   const p = landing.profile, f = landing.field, inputs = new FlightInputs(0);
   let maxOffset = 0, minHeight = Infinity, frames = 0, last = null;
   const cues = [];
@@ -58,7 +59,8 @@ export function flyApproach({ flight, landing, activities, s }, { correct = true
       if (rudder) yaw = turn; else roll = turn;
     }
     maxOffset = Math.max(maxOffset, Math.abs(at.cross)); minHeight = Math.min(minHeight, height);
-    inputs.set({ pitch: (desiredPitch - s.pitch) * 4, roll, yaw, throttle: s.grounded ? -1 : 0, brake: s.grounded && s.speed > 1 ? 1 : 0 }, (frame - 1) / rate);
+    inputs.set({ pitch: (desiredPitch - s.pitch) * 4, roll, yaw, throttle: s.grounded ? -1 : 0, brake: s.grounded && s.speed > 1 ? 1 : 0,
+      trim: (frame - 1) / rate < trimSeconds ? 1 : 0 }, (frame - 1) / rate);
     inputs.advance(frame / rate, (step, controls) => { if (!landing.active) return; flight.update(step, controls); activities.update(step, s); });
     frames = frame;
   }
