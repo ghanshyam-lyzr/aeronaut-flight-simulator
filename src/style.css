@@ -310,3 +310,9 @@ dialog.chart-dialog{width:min(1060px,calc(100% - 32px))}
 @media(max-width:550px){.heading-select{left:0;right:0;width:auto}.heading-bug .bug-label{display:none}.heading-bug{gap:3px;padding:0 4px;margin-right:0}}
 .rotorcraft-heading .heading-bug{display:none}
 .heading-select:focus{outline:none}
+
+/* Stall recovery shares Alpine Flight's activity card; phones enter through Menu → Explore. */
+#recovery-phase{color:var(--accent)}
+@media(min-width:551px){.scene-label{top:425px}}
+@media(max-width:550px){#recovery-entry{display:none}.recovery-mode .mission-panel h1{font-size:19px}.recovery-mode .mission-panel{padding-bottom:0}#recovery-guidance .landing-actions button{min-height:34px}#recovery-guidance .landing-readings{gap:8px}#recovery-cue{min-height:34px}}
+.recovery-dialog .dialog-head{position:sticky;top:0;z-index:1;background:var(--surface);padding-bottom:12px}

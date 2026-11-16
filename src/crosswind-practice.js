@@ -10,6 +10,7 @@ import { KNOT, normalizeWind, sampleWind, windComponents, windText } from './win
 import { missionAvailability, resolveAirport } from './airport-selection.js';
 import { runwayCoordinates } from './airfield.js';
 import { TOUCHDOWN_ATTITUDE } from './landing-mission.js';
+import { ActivityWind } from './activity-wind.js';
 
 const DEG = Math.PI / 180;
 const angle = a => Math.atan2(Math.sin(a), Math.cos(a));
@@ -49,47 +50,39 @@ export function practiceBrief(type, field = practiceField()) {
 // The stretch of final the crab is judged over: from 800 m out to 50 m before the threshold.
 const CRAB_WINDOW = Object.freeze({ from: -800, to: -50 });
 
-export class CrosswindPractice {
+export class CrosswindPractice extends ActivityWind {
   constructor(landing, field = practiceField()) {
+    super();
     this.landing = landing; this.field = field;
-    this.running = false; this.owning = false; this.previous = null; this.flight = null;
+    this.running = false;
     this.clear();
   }
 
   clear() { this.crabSum = 0; this.crabTime = 0; this.thresholdCross = null; this.lastTime = 0; }
+  canStart(flight) { return practiceAvailability(flight.type, this.field).available; }
 
   /** Begin or retry an attempt in the flight's current aircraft; null (and nothing changed) when it cannot fly it. */
   start(flight) {
-    if (!practiceAvailability(flight.type, this.field).available) return null;
-    // Only the first start borrows the wind; a retry already owns it, so the pilot's selection is never overwritten.
-    if (!this.owning) { this.previous = flight.setWind(PRACTICE.wind, { immediate: true }); this.owning = true; this.flight = flight; }
-    else flight.setWind(PRACTICE.wind, { immediate: true });
+    if (!this.canStart(flight)) return null;
+    this.borrow(flight, PRACTICE.wind);
     const s = this.landing.start(flight, this.field);
+    this.watchFlight(s);
     this.running = true; this.clear();
     return s;
   }
 
-  /** While the attempt owns the wind, a new pilot choice (the Weather dialog) is what end() restores. */
-  holdPilotChoice(config) { if (!this.owning) return false; this.previous = normalizeWind(config); return true; }
-
-  /**
-   * The wind a flight started after the attempt will meet: the pilot's selection while the attempt owns the wind,
-   * otherwise `live`. Runway advice for the selected destination reads this, never the practice wind.
-   */
-  pilotWind(live) { return this.owning ? this.previous : live; }
-
   /** End the attempt (if any) and give the pilot's wind back, exactly once. Returns whether it restored the wind. */
   end() {
-    const restored = this.owning;
-    if (restored) this.flight.setWind(this.previous, { immediate: true });
+    const restored = this.release();
     if (this.running && this.landing.status !== 'idle') this.landing.cancel();
-    this.running = false; this.owning = false; this.previous = null; this.flight = null; this.clear();
+    this.running = false; this.clear();
     return restored;
   }
 
   /** One physics slice after the mission's own: crab on final and the offset at the threshold. */
   update(dt, state) {
     if (!this.running) return;
+    if (this.observeFlight(state)) { this.end(); return; }
     // The mission cancels itself on an aircraft change or an external reset: the wind goes back with it.
     if (this.landing.status === 'idle') { this.end(); return; }
     if (!this.landing.active || !Number.isFinite(dt) || dt <= 0 || state.grounded) return;
