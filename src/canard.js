@@ -1,3 +1,4 @@
+import { createAircraftPaint } from './aircraft-paint.js';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { canard as type } from './canard-type.js';
@@ -37,6 +38,7 @@ export function createCanard() {
     metal: standard('hsl(200, 12%, 65%)', 0.27, 0.85), dark: standard('hsl(205, 20%, 14%)', 0.5, 0.5),
     glass: new THREE.MeshPhysicalMaterial({ color: 'hsl(201, 37%, 19%)', roughness: 0.08, metalness: 0.5, clearcoat: 1 }),
   };
+  const propTips = materials.stripe.clone(); // Preserve blade safety markings when exterior paint changes.
   const surfaces = { ailerons: [], elevators: [], rudder: [], flaps: [] }, rotors = [], gears = [], lights = [];
   function part(geometry, material, parent = group, name = '') {
     const mesh = new THREE.Mesh(geometry, material); mesh.name = name;
@@ -126,7 +128,7 @@ export function createCanard() {
     const a = i * 2 * Math.PI / 3, r = D.propRadius;
     const blade = part(new THREE.BoxGeometry(r * 0.15, r * 0.9, 0.05), materials.dark, prop);
     blade.position.set(-Math.sin(a) * r * 0.53, Math.cos(a) * r * 0.53, 0); blade.rotation.set(0, -0.26, a);
-    const tipMark = part(new THREE.BoxGeometry(r * 0.15, r * 0.11, 0.055), materials.stripe, prop);
+    const tipMark = part(new THREE.BoxGeometry(r * 0.15, r * 0.11, 0.055), propTips, prop);
     tipMark.position.set(-Math.sin(a) * r * 0.93, Math.cos(a) * r * 0.93, 0); tipMark.rotation.z = a;
   }
   ellipsoid(0, 0, 0.12, 0.16, 0.16, 0.3, materials.accent, prop);
@@ -163,7 +165,7 @@ export function createCanard() {
   const deflection = { ailerons: 0, elevators: 0, rudder: 0 };
   let previous = null;
   return {
-    group, materials,
+    group, materials, paint: createAircraftPaint({ body: [materials.paint], accent: [materials.accent], stripe: [materials.stripe] }),
     update(dt, throttle = 0.72, state = {}) {
       const spool = clamp(state.spool ?? throttle, 0, 1);
       // Seen from behind the pusher turns clockwise; from the chase camera that is -Z rotation.

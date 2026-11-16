@@ -1,3 +1,4 @@
+import { createAircraftPaint } from './aircraft-paint.js';
 import * as THREE from 'three';
 
 const clamp = THREE.MathUtils.clamp;
@@ -22,7 +23,8 @@ export function createFighter() {
   const metal = new THREE.MeshStandardMaterial({ color: palette.metal, roughness: 0.32, metalness: 0.9 });
   const burnt = new THREE.MeshStandardMaterial({ color: palette.burnt, roughness: 0.45, metalness: 0.85, side: THREE.DoubleSide });
   const rubber = new THREE.MeshStandardMaterial({ color: palette.rubber, roughness: 0.85 });
-  const materials = { shell, grey, ink, coral, ivory, glass, metal, burnt, rubber };
+  const storeBand = coral.clone();
+  const materials = { shell, grey, ink, coral, storeBand, ivory, glass, metal, burnt, rubber };
   const navigation = [];
   const surfaces = { flaps: [], ailerons: [], elevators: [], rudder: [] };
   const gearLegs = [];
@@ -193,7 +195,7 @@ export function createFighter() {
     round.rotation.x = Math.PI / 2; round.position.set(side * 5.04, -0.21, 1.95);
     const seeker = mesh(new THREE.ConeGeometry(0.075, 0.32, 14), ivory);
     seeker.rotation.x = -Math.PI / 2; seeker.position.set(side * 5.04, -0.21, 0.49);
-    const band = mesh(new THREE.CylinderGeometry(0.078, 0.078, 0.14, 14), coral);
+    const band = mesh(new THREE.CylinderGeometry(0.078, 0.078, 0.14, 14), storeBand);
     band.rotation.x = Math.PI / 2; band.position.set(side * 5.04, -0.21, 0.95);
     for (const angle of [0, Math.PI / 2]) {
       const finPoints = [[0, 0, 2.85], [0, 0.22, 3.12], [0, 0.22, 3.25], [0, 0, 3.25]].map(([, r, z]) => [side * 5.04 + Math.cos(angle) * r, -0.21 + Math.sin(angle) * r, z]);
@@ -318,7 +320,7 @@ export function createFighter() {
   const turn = new THREE.Quaternion();
   return {
     group,
-    materials,
+    materials, paint: createAircraftPaint({ body: [shell, grey], accent: [coral] }),
     update(dt, throttle = 0.7, state = {}) {
       clock = state.time ?? clock + dt;
       const spool = clamp(state.spool ?? throttle, 0, 1);

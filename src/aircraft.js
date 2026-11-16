@@ -1,3 +1,4 @@
+import { createAircraftPaint } from './aircraft-paint.js';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -57,7 +58,8 @@ function createVela() {
   const seam = new THREE.MeshStandardMaterial({ color: palette.seam, roughness: 0.55, metalness: 0.3 });
   const rubber = new THREE.MeshStandardMaterial({ color: palette.rubber, roughness: 0.85 });
   const nozzle = new THREE.MeshStandardMaterial({ color: '#3c4448', roughness: 0.45, metalness: 0.8, side: THREE.DoubleSide });
-  const materials = { paint, coral, graphite, glass, metal, seam, rubber, nozzle };
+  const stripe = graphite.clone(), pinstripe = coral.clone();
+  const materials = { paint, coral, stripe, pinstripe, graphite, glass, metal, seam, rubber, nozzle };
   const engines = [];
   const navigation = [];
   const surfaces = {};
@@ -169,8 +171,8 @@ function createVela() {
       const p = hull(z, side > 0 ? angle + i * 0.05 : Math.PI - angle - i * 0.05, 0.012);
       return p;
     });
-    line(stripe(-0.2, -6.5, 5.4), 0.045, graphite);
-    line(stripe(-0.07, -6.0, 5.1), 0.016, coral);
+    line(stripe(-0.2, -6.5, 5.4), 0.045, materials.stripe);
+    line(stripe(-0.07, -6.0, 5.1), 0.016, pinstripe);
   }
 
   // Lifting surfaces are lofted around a NACA-style section; movable surfaces pivot on their hinge line.
@@ -400,7 +402,7 @@ function createVela() {
   const turn = new THREE.Quaternion();
   return {
     group,
-    materials,
+    materials, paint: createAircraftPaint({ body: [paint], accent: [coral], stripe: [stripe, pinstripe] }),
     update(dt, throttle = 0.7, state = {}) {
       clock = state.time ?? clock + dt;
       const spool = clamp(state.spool ?? throttle, 0, 1);

@@ -1,3 +1,4 @@
+import { createAircraftPaint } from './aircraft-paint.js';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { transport as type } from './transport-type.js';
@@ -178,7 +179,7 @@ export function createTransport() {
   }
 
   return {
-    group, materials, mainRotor, tailRotor,
+    group, materials, paint: createAircraftPaint({ body: [materials.paint], accent: [materials.slate], stripe: [materials.sand] }), mainRotor, tailRotor,
     update(dt, collective = type.flight.hoverCollective, state = {}) {
       const rpm = clamp(state.rotorSpeed ?? 1, 0, 1);
       if (!state.crashed) {

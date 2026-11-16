@@ -1,3 +1,4 @@
+import { createAircraftPaint } from './aircraft-paint.js';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { cityliner as type } from './cityliner-type.js';
@@ -201,7 +202,7 @@ export function createCityliner() {
   let gearPosition = 0, flapAngle = 0, previous = null;
   const deflection = { ailerons: 0, elevators: 0, rudder: 0 };
   return {
-    group, materials,
+    group, materials, paint: createAircraftPaint({ body: [materials.paint], accent: [materials.accent], stripe: [materials.stripe] }),
     update(dt, throttle = 0.72, state = {}) {
       // One simulated spool drives all four fans; small fans turn faster than the big airliner's.
       const spool = clamp(state.spool ?? throttle, 0, 1);

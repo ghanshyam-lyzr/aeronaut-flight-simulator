@@ -1,3 +1,4 @@
+import { createAircraftPaint } from './aircraft-paint.js';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { pushpull as type } from './pushpull-type.js';
@@ -40,6 +41,7 @@ export function createPushpull() {
     metal: standard('hsl(200, 12%, 65%)', 0.27, 0.85), dark: standard('hsl(205, 20%, 14%)', 0.5, 0.5),
     glass: new THREE.MeshPhysicalMaterial({ color: 'hsl(205, 22%, 15%)', roughness: 0.06, metalness: 0.55, clearcoat: 1, side: THREE.DoubleSide }),
   };
+  const propTips = materials.stripe.clone(); // Preserve blade safety markings when exterior paint changes.
   const surfaces = { ailerons: [], elevators: [], rudder: [], flaps: [] }, props = [], gears = [], lights = [];
   function part(geometry, material, parent = group, name = '') {
     const mesh = new THREE.Mesh(geometry, material); mesh.name = name;
@@ -162,7 +164,7 @@ export function createPushpull() {
       const a = i * Math.PI;
       const blade = part(new THREE.BoxGeometry(r * 0.15, r * 0.88, 0.05), materials.dark, prop);
       blade.position.set(-Math.sin(a) * r * 0.52, Math.cos(a) * r * 0.52, 0); blade.rotation.set(0, 0.26 * facing, a);
-      const tipMark = part(new THREE.BoxGeometry(r * 0.15, r * 0.12, 0.055), materials.stripe, prop);
+      const tipMark = part(new THREE.BoxGeometry(r * 0.15, r * 0.12, 0.055), propTips, prop);
       tipMark.position.set(-Math.sin(a) * r * 0.93, Math.cos(a) * r * 0.93, 0); tipMark.rotation.z = a;
     }
     const spinner = part(new THREE.ConeGeometry(0.17, 0.4, 16), materials.accent, prop);
@@ -205,7 +207,7 @@ export function createPushpull() {
   const deflection = { ailerons: 0, elevators: 0, rudder: 0 };
   let flapAngle = 0, previous = null;
   return {
-    group, materials,
+    group, materials, paint: createAircraftPaint({ body: [materials.paint], accent: [materials.accent], stripe: [materials.stripe] }),
     update(dt, throttle = 0.72, state = {}) {
       const spool = clamp(state.spool ?? throttle, 0, 1), turn = state.crashed ? 0 : dt * (8 + spool * 150);
       // One throttle, two engines: the props turn in opposite senses about the shared centreline.

@@ -1,3 +1,4 @@
+import { createAircraftPaint } from './aircraft-paint.js';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { interceptor as type } from './interceptor-type.js';
@@ -39,7 +40,8 @@ export function createInterceptor() {
   const titanium = new THREE.MeshStandardMaterial({ color: palette.titanium, roughness: 0.42, metalness: 0.88, side: THREE.DoubleSide });
   const heatTint = new THREE.MeshStandardMaterial({ color: palette.heatTint, roughness: 0.38, metalness: 0.9, side: THREE.DoubleSide });
   const rubber = new THREE.MeshStandardMaterial({ color: palette.rubber, roughness: 0.86 });
-  const materials = { shell, belly, graphite, bronze, ivory, glass, metal, titanium, heatTint, rubber };
+  const stripe = bronze.clone();
+  const materials = { shell, belly, graphite, bronze, stripe, ivory, glass, metal, titanium, heatTint, rubber };
   const top = new THREE.Color(palette.top), under = new THREE.Color(palette.belly);
   const surfaces = { flaps: [], ailerons: [], elevators: [], rudder: [] };
   const gearLegs = [], lights = [], navigation = [];
@@ -209,7 +211,7 @@ export function createInterceptor() {
       const y = interpolate(body, z)[2] + 0.12;
       line.push([side * (Math.max(skinX(body, z, y), skinX(intake, z, y, 1.2)) + 0.012), y, z]);
     }
-    tube(line, 0.022, bronze);
+    tube(line, 0.022, stripe);
   }
 
   // Swept trapezoidal wings (~40° leading edge) with inboard flaps, outboard ailerons and ivory tip rounds.
@@ -345,7 +347,7 @@ export function createInterceptor() {
   const turn = new THREE.Quaternion();
   return {
     group,
-    materials,
+    materials, paint: createAircraftPaint({ body: [shell, belly], accent: [bronze], stripe: [stripe] }),
     update(dt, throttle = 0.72, state = {}) {
       clock = state.time ?? clock + dt;
       const spool = clamp(state.spool ?? throttle, 0, 1);

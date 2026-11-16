@@ -1,3 +1,4 @@
+import { createAircraftPaint } from './aircraft-paint.js';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { aircraftType } from './fleet.js';
@@ -33,6 +34,7 @@ export function createFleetAircraft(id) {
     metal: standard('hsl(200, 12%, 65%)', 0.27, 0.85), dark: standard('hsl(205, 20%, 14%)', 0.5, 0.5),
     glass: new THREE.MeshPhysicalMaterial({ color: 'hsl(201, 37%, 19%)', roughness: 0.1, metalness: 0.5, clearcoat: 1 }),
   };
+  const propTips = d.props ? materials.stripe.clone() : null; // Preserve blade safety markings when exterior paint changes.
   const surfaces = { ailerons: [], elevators: [], rudder: [], flaps: [] }, gears = [], rotors = [], lights = [];
   function part(geometry, material, parent = group, name = '') {
     const mesh = new THREE.Mesh(geometry, material); mesh.name = name;
@@ -141,7 +143,7 @@ export function createFleetAircraft(id) {
       const blade = part(new THREE.BoxGeometry(radius * 0.16, radius * 0.92, 0.055), materials.dark, rotor);
       blade.position.set(-Math.sin(i * 2 * Math.PI / blades) * radius * 0.52, Math.cos(i * 2 * Math.PI / blades) * radius * 0.52, 0);
       blade.rotation.set(0, 0.24, i * 2 * Math.PI / blades);
-      const tip = part(new THREE.BoxGeometry(radius * 0.16, radius * 0.12, 0.06), materials.stripe, rotor);
+      const tip = part(new THREE.BoxGeometry(radius * 0.16, radius * 0.12, 0.06), propTips, rotor);
       tip.position.set(-Math.sin(i * 2 * Math.PI / blades) * radius * 0.92, Math.cos(i * 2 * Math.PI / blades) * radius * 0.92, 0); tip.rotation.z = i * 2 * Math.PI / blades;
     }
     ellipsoid(0, 0, -0.12, radius * 0.18, radius * 0.18, radius * 0.26, materials.accent, rotor);
@@ -211,7 +213,7 @@ export function createFleetAircraft(id) {
   let gearPosition = type.fixedGear ? 1 : 0, flapAngle = 0, previous = null;
   const deflection = { ailerons: 0, elevators: 0, rudder: 0 };
   return {
-    group, materials,
+    group, materials, paint: createAircraftPaint({ body: [materials.paint], accent: [materials.accent], stripe: [materials.stripe] }),
     update(dt, throttle = 0.72, state = {}) {
       const spool = clamp(state.spool ?? throttle, 0, 1);
       rotors.forEach((rotor, i) => { rotor.rotation.z += dt * (d.props ? 8 + spool * 155 : 12 + spool * 95) * (i % 2 ? -1 : 1); });
