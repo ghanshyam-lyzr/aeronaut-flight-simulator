@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { AIRFIELD } from './airfield.js';
 import { AIRPORTS, ALPINE_FIELD, footprint, localCoordinates, inProtectedArea } from './airports.js';
-import { groundHeight, groundShader, fbm, valleyCurve, westValleyCurve, calmeCurve } from './terrain.js';
+import { groundHeight, surfaceHeight, heightGrid, groundShader, fbm, valleyCurve, westValleyCurve, calmeCurve } from './terrain.js';
 import { WORLD, CORE, SHAPES, REGIONS, ROUTES, LANDMARKS, VILLAGES, AIRPORT_SITES, WATER_LEVEL, regionAt } from './regions.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -158,9 +158,10 @@ function* buildTile(tx, tz, step) {
   // neighbour tile's, so light is continuous across the seams.
   // Vertices sit on one world grid, so tiles compute their shared edges bit for bit alike.
   const gx = i => WORLD.minX + (tx * SEGMENTS + i * step) * spacing, gz = j => WORLD.minZ + (tz * SEGMENTS + j * step) * spacing;
-  for (let j = -1; j <= row; j++) {
-    for (let i = -1; i <= row; i++) heights[(j + 1) * (row + 2) + i + 1] = groundHeight(gx(i), gz(j));
-    if (j % 8 === 7) yield;
+  for (let j = -1; j <= row; j += 8) {
+    const count = Math.min(8, row - j + 1);
+    heightGrid(heights.subarray((j + 1) * (row + 2)), WORLD.minX, WORLD.minZ, spacing, spacing, row + 2, count, groundHeight, tx * SEGMENTS - step, tz * SEGMENTS + j * step, step);
+    yield;
   }
   const vertices = row * row + 8 * row, position = new Float32Array(vertices * 3), normal = new Float32Array(vertices * 3);
   const at = (i, j) => heights[(j + 1) * (row + 2) + i + 1];
@@ -948,6 +949,6 @@ export function createWorld(scene, renderer) {
   setQuality('high');
   updateDetail(new THREE.Vector3(0, 0, 1900));
   grow(Infinity);
-  return { heightAt: (x, z) => Math.max(WATER_LEVEL, groundHeight(x, z)), update, setWeather, setQuality, reflectSky, landmarks, airport: airfield, airports: fields,
+  return { heightAt: surfaceHeight, update, setWeather, setQuality, reflectSky, landmarks, airport: airfield, airports: fields,
     bounds: WORLD, regions: REGIONS, regionAt };
 }

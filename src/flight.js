@@ -4,6 +4,8 @@ import { stepHelicopter } from './helicopter-flight.js';
 import { angularResponse } from './handling.js';
 import { Wind } from './wind.js';
 import { stallSpeed } from './stall.js';
+import { numerics } from './wasm/runtime.js';
+import { updateWasmFlight } from './wasm/flight.js';
 
 const clamp = THREE.MathUtils.clamp;
 const mix = (value, target, rate, dt) => THREE.MathUtils.lerp(value, target, 1 - Math.exp(-rate * dt));
@@ -90,7 +92,8 @@ export function hasHeadingSelect(type) {
  * setWind(config) changes the wind smoothly and returns the previous configuration (see Wind.set).
  */
 export class FlightController {
-  constructor(heightAt = () => 0, aircraft = DEFAULT_AIRCRAFT) {
+  constructor(heightAt = () => 0, aircraft = DEFAULT_AIRCRAFT, { engine = 'auto' } = {}) {
+    this.engine = engine;
     this.heightAt = heightAt;
     this.type = aircraftType(aircraft);
     this.wind = new Wind();
@@ -106,6 +109,8 @@ export class FlightController {
     this.rotationStep = new THREE.Vector3();
     this.reset();
   }
+
+  get backend() { return this.engine !== 'javascript' && numerics() ? 'webassembly' : 'javascript'; }
 
   reset() {
     const s = this.state;
@@ -310,6 +315,7 @@ export class FlightController {
 
   update(dt, inputs = {}) {
     if (this.state.crashed || !Number.isFinite(dt) || dt <= 0) return this.state;
+    if (this.backend === 'webassembly') return updateWasmFlight(this, dt, inputs, brakeDeceleration);
     // A backgrounded tab must never move the aircraft through a mountain in one frame.
     const elapsed = Math.min(dt, 0.25);
     const steps = Math.max(1, Math.ceil(elapsed / 0.025));
@@ -551,7 +557,8 @@ export class FlightController {
     const s = this.state;
     this.attitude.set(s.pitch, -s.heading, -s.bank, 'YXZ');
     s.quaternion.setFromEuler(this.attitude);
-    this.seen = [s.pitch, s.bank, s.heading];
+    this.seen ??= [];
+    this.seen[0] = s.pitch; this.seen[1] = s.bank; this.seen[2] = s.heading;
   }
 
   /** Derives the displayed pitch (±90°), bank (±180°) and heading (0–360°) from the free attitude. */
@@ -561,7 +568,8 @@ export class FlightController {
     s.pitch = _euler.x;
     s.bank = -_euler.z;
     s.heading = ((-_euler.y % TAU) + TAU) % TAU;
-    this.seen = [s.pitch, s.bank, s.heading];
+    this.seen ??= [];
+    this.seen[0] = s.pitch; this.seen[1] = s.bank; this.seen[2] = s.heading;
   }
 
   /**

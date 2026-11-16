@@ -1,6 +1,6 @@
 # Aeronaut
 
-A playable 3D browser flight simulator built with Three.js and Vite. Choose from a fleet of aircraft, from a forgiving high-wing trainer and powered sailplane to an open-cockpit biplane, aerobatic prop, bush plane, turboprop commuter, four-engine cargo turboprop, fighter, light and medium helicopters and passenger jets, and explore a 140 km procedural alpine world: the turquoise central lake valley with its working airfield, the Serein lake basin to the south, the Val Verdance meadow valley to the west and the high Orvane Plateau to the east, linked by passes and a gorge; beyond the ring of the Divide, the Vauclair glacial trough, the Calmeterre river plain, the Mer d'Aurin with its fjord and the volcanic Cendre Highlands, with snowy peaks, forests, villages and boats. See docs/world-scale.md.
+A playable 3D browser flight simulator with a C++ WebAssembly physics/terrain engine, Three.js rendering and Vite. Choose from a fleet of aircraft, from a forgiving high-wing trainer and powered sailplane to an open-cockpit biplane, aerobatic prop, bush plane, turboprop commuter, four-engine cargo turboprop, fighter, light and medium helicopters and passenger jets, and explore a 140 km procedural alpine world: the turquoise central lake valley with its working airfield, the Serein lake basin to the south, the Val Verdance meadow valley to the west and the high Orvane Plateau to the east, linked by passes and a gorge; beyond the ring of the Divide, the Vauclair glacial trough, the Calmeterre river plain, the Mer d'Aurin with its fjord and the volcanic Cendre Highlands, with snowy peaks, forests, villages and boats. See docs/world-scale.md.
 
 ## Run
 
@@ -10,6 +10,8 @@ npm run dev
 ```
 
 The development server binds to `0.0.0.0:5173`. Production build: `npm run build`. The generated `dist/` is a static site and does not require a database or sign-in.
+
+The optimized WebAssembly binary is checked in, so the normal Node/Vite workflow needs no C++ compiler. To rebuild native code use `npm run build:wasm` with Emscripten 3.1.64; `npm run build` checks that its source and binary match. Run `npm run test:wasm` for the full regression suite on the native engine and `npm run benchmark:wasm` for CPU comparisons. [Architecture, rebuilding and measurements](docs/webassembly.md).
 
 ## Fly
 

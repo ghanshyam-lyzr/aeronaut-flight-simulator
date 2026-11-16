@@ -5,6 +5,7 @@
 import { AIRFIELD } from './airfield.js';
 import { SHAPES, ROUTES, WORLD, CORE } from './regions.js';
 import { GRADED_AIRPORTS } from './airports.js';
+import { numerics, nativeSurface, nativeTerrain, sampleNativeGrid } from './wasm/runtime.js';
 
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -161,7 +162,7 @@ function outerHeight(x, z, h) {
   return h;
 }
 
-export function groundHeight(x, z) {
+export function referenceHeight(x, z) {
   // The original central valley, unchanged within 6 km of its lake.
   const curve = valleyCurve(z);
   const dist = Math.abs(x - curve + (noise(x * .00055, z * .00055) - .5) * 230);
@@ -244,6 +245,23 @@ export function groundHeight(x, z) {
     h = mix(h, g.airport.elevation, 1 - smooth(0, 1, Math.sqrt(ea * ea + ec * ec)));
   }
   return h;
+}
+
+// The JS implementation remains the fallback and behavioral reference.
+export function groundHeight(x, z) {
+  const k = numerics();
+  return k ? k.terrain_height(x, z) : referenceHeight(x, z);
+}
+groundHeight[nativeTerrain] = true;
+export const surfaceHeight = (x, z) => Math.max(10, groundHeight(x, z));
+surfaceHeight[nativeSurface] = true;
+
+/** Sample a regular grid in one native batch, retaining arbitrary height callbacks. */
+export function heightGrid(target, x, z, dx, dz, width, height, heightAt = groundHeight, indexX = 0, indexZ = 0, stride = 1) {
+  if ((heightAt[nativeTerrain] || heightAt[nativeSurface])
+    && sampleNativeGrid(target, x, z, dx, dz, width, height, !!heightAt[nativeSurface], indexX, indexZ, stride)) return target;
+  for (let j = 0; j < height; j++) for (let i = 0; i < width; i++) target[j * width + i] = heightAt(x + (indexX + i * stride) * dx, z + (indexZ + j * stride) * dz);
+  return target;
 }
 
 // ---- GLSL twin -------------------------------------------------------------

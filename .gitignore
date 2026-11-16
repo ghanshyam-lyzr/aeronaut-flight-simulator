@@ -3,3 +3,5 @@ dist/
 .taste-skill/
 /uploads/
 /.forge-staging/
+
+/native/generated/
