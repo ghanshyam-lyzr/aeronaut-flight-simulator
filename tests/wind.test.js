@@ -158,10 +158,10 @@ test('a headwind slows ground travel and a tailwind speeds it, at the same airsp
   close(calm.travel - head.travel, 360, 1, 'headwind costs 12 m/s × 30 s'); close(tail.travel - calm.travel, 360, 1, 'tailwind gains the same');
   close(head.distance, head.travel, 1, 'distance flown follows the ground'); close(tail.distance, tail.travel, 1, 'and with a tailwind');
   assert.equal(head.speed, calm.speed); assert.equal(tail.speed, calm.speed);
-  // Navigation time en route is distance over ground speed.
+  // Navigation time en route is distance over closing speed toward the field.
   const destination = { x: 0, z: -60000, name: 'North' };
   const eta = dir => { const f = new FlightController(flat, 'trainer'); if (dir !== null) f.setWind(steady(dir, 12), { immediate: true }); f.toggleAutopilot(); fly(f, 1);
-    return navigationReadout({ position: f.state.position, heading: f.state.heading, speed: groundTrack(f.state, f.type).speed }, destination).ete; };
+    return navigationReadout({ position: f.state.position, heading: f.state.heading, groundVelocity: groundVelocity(f.state, f.type) }, destination).ete; };
   assert.ok(parseInt(eta(360)) > parseInt(eta(null)) && parseInt(eta(null)) > parseInt(eta(180)), `ETE headwind ${eta(360)} > calm ${eta(null)} > tailwind ${eta(180)}`);
 });
 
