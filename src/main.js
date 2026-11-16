@@ -30,6 +30,8 @@ import { WIND_PRESETS, windText, sampleText, KNOT } from './wind.js';
 import { adviseRunway, componentText, windReadout, readoutField, applyAdvice } from './runway-wind.js';
 import { AirspeedMonitor, airspeedEnvelope, tapeLayout, AIRSPEED_LABELS, OVERSPEED_NOTICE } from './airspeed-envelope.js';
 import { TerrainAlert, terrainNotice } from './terrain-alert.js';
+import { AltitudeReminder, altitudeReminderNotice } from './altitude-reminder.js';
+import { createAltitudeReminderUI } from './altitude-reminder-ui.js';
 import { TouchdownDetector, touchdownResponse, touchdownOutputs, impulseShape } from './touchdown.js';
 import { NavigationMap } from './nav-map.js';
 import { navigationDestination, navigationReadout, bearingDistance, degrees, formatNM, zoomFrom, nearestZoom, FRAMINGS, FRAMING_LABELS, ZOOM_SPANS } from './navigation.js';
@@ -71,6 +73,10 @@ const world = createWorld(scene,renderer);
 let aircraft = createAircraft(settings.aircraft);
 scene.add(aircraft.group);world.reflectSky(aircraft.group);
 const flight = new FlightController(world.heightAt, settings.aircraft);
+const altitudeReminder = new AltitudeReminder();
+let altitudeControls = null;
+// Close first: blurring an edited field can commit it. That commit must happen before the fresh flight forgets it.
+function resetAltitudeReminder(){altitudeControls?.close();altitudeReminder.reset();altitudeControls?.refresh();}
 // Wind (src/wind.js) is its own choice, calm unless the pilot picked one; it carries over resets and aircraft changes.
 flight.setWind(settings.wind,{immediate:true});
 const landing = new LandingMission(selection.field);
@@ -161,7 +167,7 @@ function setPaused(value){
 }
 function saveFlight(){const s=flight.state;if(s.flightTime<10)return;const entry={date:new Date().toISOString(),time:s.flightTime,distance:s.distance,maxAltitude:flightMaxAlt,aircraft:s.aircraft};savedFlights=recordFlight(savedFlights,entry);storeFlights(savedFlights);}
 let flightMaxAlt=flight.state.position.y;
-function restart(notify=true){closeHeadingSelect();if(activities.kind==='crosswind'){startCrosswind();return;}if(landing.status!=='idle'){startLanding();return;}if(course.status!=='idle'){startCourse();return;}saveFlight();flight.reset();flight.toggleAutopilot();resetTouchdown();flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);sceneDirty=true;paused=false;lastCrash=false;initialCamera=true;clearControls();$('pause-overlay').hidden=true;$('crash-overlay').hidden=true;$('sim-status').textContent='Live simulation';iconButton('pause-btn','pause');updateAssist();if(notify)toast('A fresh start. You have the skies.');}
+function restart(notify=true){resetAltitudeReminder();closeHeadingSelect();if(activities.kind==='crosswind'){startCrosswind();return;}if(landing.status!=='idle'){startLanding();return;}if(course.status!=='idle'){startCourse();return;}saveFlight();flight.reset();flight.toggleAutopilot();resetTouchdown();flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);sceneDirty=true;paused=false;lastCrash=false;initialCamera=true;clearControls();$('pause-overlay').hidden=true;$('crash-overlay').hidden=true;$('sim-status').textContent='Live simulation';iconButton('pause-btn','pause');updateAssist();if(notify)toast('A fresh start. You have the skies.');}
 // Every label that names the aircraft reads from the active fleet type.
 // Rotorcraft land on fixed skids unless their type has fixed wheels; hover collective is per type.
 const wheeled=t=>t.landingGear==='wheels',hoverPercent=t=>Math.round(t.flight.hoverCollective*100),capital=w=>w[0].toUpperCase()+w.slice(1);
@@ -205,7 +211,7 @@ function runwayStart(field=selection.field){
 // Starts a scored mission at a field (default: retry the current mission's field). Unsuited aircraft get the brief instead.
 function startLanding(field=landing.field){
  if(!missionAvailability(field,flight.type.id).available){cancelLanding(false);showDialog('landing');return false;}
- saveFlight();activities.startLanding(flight,field);resetTouchdown();setMissionCues(field);flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);trailClock=0;
+ resetAltitudeReminder();saveFlight();activities.startLanding(flight,field);resetTouchdown();setMissionCues(field);flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);trailClock=0;
  paused=false;lastCrash=false;initialCamera=true;sceneDirty=true;missionResultShown=false;clearControls();
  $('pause-overlay').hidden=$('crash-overlay').hidden=$('landing-result').hidden=true;
  $('pause-btn').setAttribute('aria-label','Pause flight');iconButton('pause-btn','pause');
@@ -215,13 +221,13 @@ function startLanding(field=landing.field){
 }
 // Ends whichever activity is underway (landing mission or checkpoint course): every caller wants free flight next.
 function cancelLanding(fresh=false){
- activities.cancel();missionResultShown=false;$('landing-result').hidden=true;landingCues.show(false);
+ resetAltitudeReminder();activities.cancel();missionResultShown=false;$('landing-result').hidden=true;landingCues.show(false);
  updateLandingUI();announceAirport();if(fresh){restart(false);toast('Free flight · a fresh start in the air');}
 }
 // Starts (or retries) the checkpoint course in the current aircraft; an aircraft the course is not built for gets the brief.
 function startCourse(){
  if(!courseAvailability(flight.type).available){cancelLanding(false);showDialog('course');return false;}
- saveFlight();activities.startCourse(flight);flight.toggleAutopilot();resetTouchdown();flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);trailClock=0;
+ resetAltitudeReminder();saveFlight();activities.startCourse(flight);flight.toggleAutopilot();resetTouchdown();flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);trailClock=0;
  paused=false;lastCrash=false;initialCamera=true;sceneDirty=true;missionResultShown=false;lastCourseEvent=null;clearControls();
  $('pause-overlay').hidden=$('crash-overlay').hidden=$('landing-result').hidden=true;
  $('pause-btn').setAttribute('aria-label','Pause flight');iconButton('pause-btn','pause');
@@ -233,7 +239,7 @@ function startCourse(){
 // The selected airport is untouched; an aircraft the practice is not built for gets the brief instead.
 function startCrosswind(){
  if(!practiceAvailability(flight.type).available){cancelLanding(false);showDialog('crosswind');return false;}
- saveFlight();activities.startCrosswind(flight);resetTouchdown();setMissionCues(landing.field);flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);trailClock=0;
+ resetAltitudeReminder();saveFlight();activities.startCrosswind(flight);resetTouchdown();setMissionCues(landing.field);flightMaxAlt=flight.state.position.y;flightTrail.length=0;trailOrigin.copy(flight.state.position);trailClock=0;
  paused=false;lastCrash=false;initialCamera=true;sceneDirty=true;missionResultShown=false;clearControls();
  $('pause-overlay').hidden=$('crash-overlay').hidden=$('landing-result').hidden=true;
  $('pause-btn').setAttribute('aria-label','Pause flight');iconButton('pause-btn','pause');
@@ -349,7 +355,7 @@ function placeHeadingSelect(){
 function openHeadingSelect(){
  if(!hasHeadingSelect(flight.type))return;
  // Held flight keys are released first: nothing typed or tapped in here reaches the flight controls.
- clearControls();headingSelect.hidden=false;headingBug.setAttribute('aria-expanded','true');headingError('');headingInput.value=bugText(flight.state.selectedHeading).replace('---','');
+ clearControls();altitudeControls?.close();headingSelect.hidden=false;headingBug.setAttribute('aria-expanded','true');headingError('');headingInput.value=bugText(flight.state.selectedHeading).replace('---','');
  placeHeadingSelect();updateHeadingBug(true);
  // A tap opens on the step buttons without raising the on-screen keyboard; keyboard and mouse land in the field.
  if(bugPointer==='touch')headingSelect.focus({preventScroll:true});else{headingInput.focus({preventScroll:true});headingInput.select();}
@@ -402,12 +408,14 @@ headingInput.addEventListener('change',()=>{if(headingInput.value.trim()!==bugTe
 headingInput.addEventListener('input',()=>headingError(''));
 document.addEventListener('pointerdown',e=>{if(!headingSelect.hidden&&!headingSelect.contains(e.target)&&!headingBug.contains(e.target))closeHeadingSelect();},true);
 window.addEventListener('resize',placeHeadingSelect);
+altitudeControls=createAltitudeReminderUI({monitor:altitudeReminder,getState:()=>flight.state,finished:()=>activities.finished,clearControls,closeHeading:closeHeadingSelect});
 function setView(value,notify=true){sceneDirty=true;view=value;settings.camera=value;saveSettings();aircraft.setCockpit(view==='cockpit');if(cockpit)cockpit.visible=view==='cockpit';$('camera-label').textContent=({chase:'Chase camera',cockpit:'Cockpit view',orbit:'Orbit camera'})[view];initialCamera=true;if(notify)toast(`${$('camera-label').textContent}${view==='orbit'?' · drag to look around':''}`);}
 function cycleView(){const views=['chase','cockpit','orbit'];setView(views[(views.indexOf(view)+1)%views.length]);}
 function toggleMap(){settings.showMap=!settings.showMap;applyDisplay();saveSettings();drawMap();}
 // Display preferences hide panels but never the stall, terrain and gear warnings, nor a mission card underway.
 // While any of them is hidden a restore button stays on screen; it and H show everything again (toggleDisplay).
 function applyDisplay(){
+ if(!settings.showHud||!settings.showInstruments)altitudeControls?.close();
  const c=document.body.classList;c.toggle('hide-hud',!settings.showHud);c.toggle('hide-instruments',!settings.showInstruments);c.toggle('hide-hints',!settings.showHints);c.toggle('hide-crosshair',!settings.showCrosshair);
  $('map-panel').hidden=!settings.showMap;$('restore-hud').hidden=!anyDisplayHidden(settings);$('restore-hud').classList.toggle('partial',settings.showHud);placeRestore();sceneDirty=true;
 }
@@ -527,7 +535,7 @@ function restoreDefaults(){
  showDialog('settings');$('restore-defaults').focus();toast('Settings restored to defaults');
 }
 function showDialog(type){
- clearControls();closeHeadingSelect();
+ clearControls();closeHeadingSelect();altitudeControls?.close();
  const heli=!!flight.type.flight.rotorcraft;
  let content='';
  if(type==='menu'){content=dialogHead('Flight deck')+`<div class="dialog-body"><button class="menu-link" data-next-dialog="explore">Explore the Alps <i data-lucide="arrow-up-right"></i></button><button class="menu-link" data-next-dialog="chart">Navigation chart <i data-lucide="arrow-up-right"></i></button><button class="menu-link" data-next-dialog="logbook">Flight log <i data-lucide="arrow-up-right"></i></button><button class="menu-link" data-next-dialog="controls">Flight controls <i data-lucide="arrow-up-right"></i></button><button class="menu-link" data-next-dialog="environment">Weather <i data-lucide="arrow-up-right"></i></button></div>`;}else if(type==='environment'){
@@ -542,7 +550,7 @@ function showDialog(type){
  +`<div class="settings-actions"><button class="secondary-btn" id="restore-defaults"><i data-lucide="rotate-ccw"></i>Restore defaults</button><button class="primary-btn" data-close>Back to the skies <i data-lucide="arrow-up-right"></i></button></div><p class="dialog-note">Restoring defaults keeps your aircraft, airfield, flight log and the flight in progress.</p></div>`;
  }else if(type==='controls'){
  const controls=[[heli?'Cyclic forward / backward':'Pitch down / up',['W','S']],[heli?'Cyclic left / right':'Bank left / right',['A','D']],['Alternate flight controls',['←','↑','↓','→']],[heli?'Yaw left / right':'Rudder left / right',['Q','E']],[heli?'Raise / lower collective':'Increase / decrease throttle',['Shift','Ctrl']],...(heli?[]:[['Wheel brakes · hold on the ground',['B']]]),...(hasPitchTrim(flight.type)?[['Trim nose down / up · hold to adjust',['[',']']],['Neutral trim',['T']]]:[]),['Change camera',['C']],['Pause / resume',['P']],[heli?'Hover hold':'Flight assist',['Space']],...(!heli&&!flight.type.fixedGear?[['Landing gear',['G']]]:[]),...(!heli&&!flight.type.noFlaps?[['Cycle flaps',['F']]]:[]),['Navigation map',['M']],['Map zoom out / in',['−','+']],['Map framing',['V']],['Navigation chart',['N']],['Hide instruments',['H']],['Restart flight',['R']]];
- content=dialogHead('You have control')+`<div class="dialog-body"><p>${heli?`${hoverPercent(flight.type)}% collective hovers. Tilt forward with W to move; center the cyclic to level. Space brakes into a steady hover.`:'A little input goes a long way. Bank gently into turns and add power to climb.'}</p><div class="controls-list">${controls.map(([label,k])=>`<div class="control-row"><span>${label}</span><span>${k.map(v=>`<kbd>${v}</kbd>`).join('')}</span></div>`).join('')}</div><p class="dialog-note">On a phone, drag the left ${heli?'cyclic':'yoke'} to steer and hold + / − to adjust ${heli?'collective; use the two yaw buttons to turn':`throttle, and hold Brake to slow on the ground${hasPitchTrim(flight.type)?'. Hold the trim arrows to set a hands-off climb or descent; tap the value between them for neutral':''}`}. In orbit view, drag to look around and scroll to zoom. ${flight.type.name}: ${flight.type.help}</p>${heli?'':'<p class="dialog-note">Heading select: open Sel on the heading instrument, type or step a heading (arrow keys ±1°, Page Up / Down ±10°), then Hold heading. Choosing a value alone never steers; with assist on, a new value turns to it at the held altitude. Assist holds the nose heading, so wind can drift the track. Any stick or rudder input hands control back.</p>'}${heli?'':'<p class="dialog-note">Glide-path lights beside the selected runway: two white and two red is on the landing path, more white is high, more red is low.</p>'}</div>`;
+ content=dialogHead('You have control')+`<div class="dialog-body"><p>${heli?`${hoverPercent(flight.type)}% collective hovers. Tilt forward with W to move; center the cyclic to level. Space brakes into a steady hover.`:'A little input goes a long way. Bank gently into turns and add power to climb.'}</p><div class="controls-list">${controls.map(([label,k])=>`<div class="control-row"><span>${label}</span><span>${k.map(v=>`<kbd>${v}</kbd>`).join('')}</span></div>`).join('')}</div><p class="dialog-note">On a phone, drag the left ${heli?'cyclic':'yoke'} to steer and hold + / − to adjust ${heli?'collective; use the two yaw buttons to turn':`throttle, and hold Brake to slow on the ground${hasPitchTrim(flight.type)?'. Hold the trim arrows to set a hands-off climb or descent; tap the value between them for neutral':''}`}. In orbit view, drag to look around and scroll to zoom. ${flight.type.name}: ${flight.type.help}</p><p class="dialog-note">Altitude reminder: open Set beside Altitude. Set feet MSL or Use current; selection arms a reminder, never flight assist. Acknowledge quiets the alert; Disarm stops monitoring. Helicopters use the same MSL reminder, separate from hover hold.</p>${heli?'':'<p class="dialog-note">Heading select: open Sel on the heading instrument, type or step a heading (arrow keys ±1°, Page Up / Down ±10°), then Hold heading. Choosing a value alone never steers; with assist on, a new value turns to it at the held altitude. Assist holds the nose heading, so wind can drift the track. Any stick or rudder input hands control back.</p>'}${heli?'':'<p class="dialog-note">Glide-path lights beside the selected runway: two white and two red is on the landing path, more white is high, more red is low.</p>'}</div>`;
  }else if(type==='landing'){
  const f=selection.field,p=landingProfile(flight.type),h=p.helicopter,fit=missionAvailability(selection.airport,flight.type.id),hdg=headingDegrees(f.heading),name=flight.type.name;
  const caution=[fit.rating==='suitable'?`Tight fit for the ${name}: little runway to spare after the touchdown zone.`:'',f.caution].filter(Boolean).join(' ');
@@ -615,7 +623,7 @@ window.addEventListener('keydown',e=>{
  ({KeyP:()=>setPaused(!paused),Space:toggleAssist,KeyC:cycleView,KeyG:gear,KeyF:flaps,KeyM:toggleMap,KeyH:toggleHud,KeyR:()=>restart(),KeyT:resetTrim,KeyN:()=>showDialog('chart'),KeyV:cycleMapFraming,Minus:()=>zoomMap(-1),NumpadSubtract:()=>zoomMap(-1),Equal:()=>zoomMap(1),NumpadAdd:()=>zoomMap(1)})[e.code]?.();
 });
 window.addEventListener('keyup',e=>{const trimming=(e.code==='BracketLeft'||e.code==='BracketRight')&&keys.has(e.code);keys.delete(e.code);queueControls(e.timeStamp/1000);if(trimming&&hasPitchTrim(flight.type))toast(`Pitch trim ${trimText(flight.state.pitchTrim)}`);});window.addEventListener('blur',clearControls);
-document.addEventListener('visibilitychange',()=>{if(document.hidden)clearControls();});
+document.addEventListener('visibilitychange',()=>{clearControls();altitudeReminder.update(flight.state,{suspended:true,finished:activities.finished});});
 let orbitDrag=null;
 worldContainer.addEventListener('pointerdown',e=>{if(dialog.open||paused||flight.state.crashed)return;worldContainer.focus();if(view==='orbit'){orbitDrag={x:e.clientX,y:e.clientY};worldContainer.setPointerCapture(e.pointerId);}else if(settings.mouseSteering){mouse.active=true;worldContainer.setPointerCapture(e.pointerId);}});
 worldContainer.addEventListener('pointermove',e=>{if(orbitDrag){sceneDirty=true;orbitAngle-=(e.clientX-orbitDrag.x)*.008;orbitHeight=THREE.MathUtils.clamp(orbitHeight+(e.clientY-orbitDrag.y)*.09,-8,35);orbitDrag={x:e.clientX,y:e.clientY};}else if(mouse.active){const r=worldContainer.getBoundingClientRect();mouse.roll=THREE.MathUtils.clamp((e.clientX-r.left-r.width/2)/(r.width*.3),-1,1);mouse.pitch=THREE.MathUtils.clamp((flight.type.flight.rotorcraft?1:-1)*(e.clientY-r.top-r.height/2)/(r.height*.3),-1,1);queueControls(e.timeStamp/1000);}});
@@ -716,9 +724,13 @@ function updateUI(time){
  const stalled=s.stalled&&!activities.finished&&!s.grounded&&!s.crashed&&!paused&&!dialog.open;
  const overspeed=updateAirspeed(s,speed,!paused&&!dialog.open&&!activities.finished)==='overspeed';
  const terrain=terrainView=terrainAlert.update(s,flight.type,activities.finished);
- let notice='';if(stalled)notice='STALL · Add power and regain airspeed';else if(terrain.level!=='clear')notice=terrainNotice(terrain.level,h);else if(overspeed)notice=OVERSPEED_NOTICE;else if(s.grounded&&!h&&s.brake>0.02)notice='Wheel brakes on · release to roll';else if(s.grounded&&landing.status==='idle')notice=h?'On the ground · Raise collective to lift vertically':'On the ground · Add power and pitch up to take off';
+ const reminder=altitudeReminder.update(s,{suspended:paused||dialog.open||document.hidden,finished:activities.finished});
+ const reminderNotice=altitudeReminderNotice(reminder);altitudeControls?.refresh();
+ let notice='';if(stalled)notice='STALL · Add power and regain airspeed';else if(terrain.level!=='clear')notice=terrainNotice(terrain.level,h);else if(overspeed)notice=OVERSPEED_NOTICE;else if(reminderNotice)notice=reminderNotice;else if(s.grounded&&!h&&s.brake>0.02)notice='Wheel brakes on · release to roll';else if(s.grounded&&landing.status==='idle')notice=h?'On the ground · Raise collective to lift vertically':'On the ground · Add power and pitch up to take off';
  const overspeedShown=notice===OVERSPEED_NOTICE;
- if(notice!==lastNotice){lastNotice=notice;$('flight-notice').textContent=notice;$('flight-notice').classList.toggle('visible',!!notice);$('flight-notice').classList.toggle('warning',stalled||terrain.level==='warning'||overspeedShown);$('flight-notice').classList.toggle('caution',!stalled&&terrain.level==='caution');$('flight-notice').classList.toggle('stall',stalled);$('flight-notice').classList.toggle('overspeed',overspeedShown);}
+ $('altitude-notice-ack').hidden=!reminderNotice||notice!==reminderNotice;
+ $('flight-notice').classList.toggle('altitude-notice',!!reminderNotice&&notice===reminderNotice);
+ if(notice!==lastNotice){lastNotice=notice;$('flight-notice-text').textContent=notice;$('flight-notice').classList.toggle('visible',!!notice);$('flight-notice').classList.toggle('warning',stalled||terrain.level==='warning'||overspeedShown);$('flight-notice').classList.toggle('caution',!stalled&&terrain.level==='caution');$('flight-notice').classList.toggle('stall',stalled);$('flight-notice').classList.toggle('overspeed',overspeedShown);}
  updateLandingUI();updateWindReadout();
  if(s.crashed&&!lastCrash&&activities.kind==='free'){lastCrash=true;$('crash-overlay').hidden=false;$('sim-status').textContent='Flight ended';}
  drawMap();drawChart();
@@ -763,9 +775,9 @@ const windsockSample={};function windsockWind(){flight.sampleWind(windsockSample
 const clock=new THREE.Clock();
 function tick(){
  requestAnimationFrame(tick);const dt=Math.min(clock.getDelta(),.25);frameTime+=dt;
- const canFly=!paused&&!dialog.open&&!flight.state.crashed&&!activities.finished;
+ const canFly=!paused&&!dialog.open&&!document.hidden&&!flight.state.crashed&&!activities.finished;
  if(canFly){
-  controls.advance(performance.now()/1000,(step,inputs)=>{if(activities.finished)return;flight.update(step,inputs);activities.update(step,flight.state);});flightMaxAlt=Math.max(flightMaxAlt,flight.state.position.y);
+  controls.advance(performance.now()/1000,(step,inputs)=>{if(activities.finished)return;flight.update(step,inputs);activities.update(step,flight.state);altitudeReminder.update(flight.state,{finished:activities.finished});});flightMaxAlt=Math.max(flightMaxAlt,flight.state.position.y);
   trailClock+=dt;if(trailClock>1){trailClock=0;flightTrail.push({x:flight.state.position.x,z:flight.state.position.z});if(flightTrail.length>2000)flightTrail.shift();}
  }else controls.reset(performance.now()/1000);
  updateTouchdown();
@@ -779,5 +791,5 @@ window.addEventListener('beforeunload',saveFlight);
 setView(view,false);updateAircraftLabels();updateAirportUI();updateAssist();updateUI(0);updateCamera(1);renderer.render(scene,camera);updateFlightPath();tick();
 setTimeout(()=>{$('loading').classList.add('leaving');setTimeout(()=>$('loading').remove(),750);},500);
 // Expose read-only diagnostic snapshots for repeatable rendering and control checks.
-window.aeronaut={getState:()=>({...flight.state,position:flight.state.position.toArray(),quaternion:flight.state.quaternion.toArray(),windVelocity:flight.state.windVelocity.toArray(),groundVelocity:groundTrack(flight.state,flight.type),paused,view,quality:settings.quality,weather:settings.weather,wind:settings.wind}),getWind:()=>flight.windSnapshot(),getRunwayWind:()=>{const f=readoutField(selection,landing);return{advice:runwayAdvice(),readout:{field:f.id,...windReadout(flight.sampleWind(),f)}};},getWindsocks:()=>world.airports.map(a=>({id:a.id,yaw:a.windsock.rotation.y,parentYaw:a.windsock.parent.rotation.y,droop:a.windsock.rotation.z})),setWind:value=>setWind(value),getSettings:()=>structuredClone(settings),getMission:()=>landing.snapshot(),startLanding:()=>startLanding(selection.field),getCourse:()=>({...course.snapshot(),activity:activities.kind,gatesVisible:courseGates.group.visible}),startCourse,startCrosswind,getPractice:()=>({...practice.snapshot(),activity:activities.kind,live:flight.windSnapshot()}),cancelActivity:()=>cancelLanding(true),getRendererInfo:()=>({...renderer.info.render}),getGlideLights:()=>({...glideLights.indication,field:glideLights.field?.id??null,runway:glideLights.field?.runway??null}),getFlightPath:()=>({...flightPathView,enabled:settings.showFlightPath}),getHeadingSelect:()=>({selected:flight.state.selectedHeading,active:flight.state.autopilot&&flight.state.headingHold,autopilot:flight.state.autopilot,recovering:flight.recovering,heading:flight.state.heading*180/Math.PI,open:!headingSelect.hidden}),getTerrainAlert:()=>({...terrainView,samples:terrainAlert.samples,probes:terrainAlert.probes}),getTouchdown:()=>({last:lastTouchdown&&{...lastTouchdown},settling:!!settle,offset:settleOffset.length(),reducedMotion:!!reducedMotion?.matches,audio:audio.context?.state??'locked',soundOn:audio.enabled}),reset:restart,setPaused, setQuality,setAircraft,runwayStart:(id,runway)=>runwayStart(id?resolveAirport(id,runway).field:selection.field),approachStart:(id,runway)=>approachStart(id?resolveAirport(id,runway).field:selection.field),airports:()=>world.airports.map(({position,windsock,...field})=>field),getAirport:airportState,getNavigation:()=>{const n=navReadout();return{destination:navigationDestination(airportState()),bearing:n&&Number(n.bearingText),distance:n?.distance,framing:{...miniFraming},scale:miniMap.scale?.label,pendingTiles:miniMap.pending,drawMs:mapDrawMs};},setMapFraming:(framing,zoom)=>setMapFraming({framing,...(zoom===undefined?{}:{zoom})}),selectAirport:(id,runway)=>selection.select(id,runway),getAircraft:()=>({id:flight.type.id,name:flight.type.name,gearPosition:aircraft.gearPosition,surfaces:aircraft.surfaces,afterburner:aircraft.afterburner})};
+window.aeronaut={getState:()=>({...flight.state,position:flight.state.position.toArray(),quaternion:flight.state.quaternion.toArray(),windVelocity:flight.state.windVelocity.toArray(),groundVelocity:groundTrack(flight.state,flight.type),paused,view,quality:settings.quality,weather:settings.weather,wind:settings.wind}),getWind:()=>flight.windSnapshot(),getRunwayWind:()=>{const f=readoutField(selection,landing);return{advice:runwayAdvice(),readout:{field:f.id,...windReadout(flight.sampleWind(),f)}};},getWindsocks:()=>world.airports.map(a=>({id:a.id,yaw:a.windsock.rotation.y,parentYaw:a.windsock.parent.rotation.y,droop:a.windsock.rotation.z})),setWind:value=>setWind(value),getSettings:()=>structuredClone(settings),getMission:()=>landing.snapshot(),startLanding:()=>startLanding(selection.field),getCourse:()=>({...course.snapshot(),activity:activities.kind,gatesVisible:courseGates.group.visible}),startCourse,startCrosswind,getPractice:()=>({...practice.snapshot(),activity:activities.kind,live:flight.windSnapshot()}),cancelActivity:()=>cancelLanding(true),getRendererInfo:()=>({...renderer.info.render}),getGlideLights:()=>({...glideLights.indication,field:glideLights.field?.id??null,runway:glideLights.field?.runway??null}),getFlightPath:()=>({...flightPathView,enabled:settings.showFlightPath}),getHeadingSelect:()=>({selected:flight.state.selectedHeading,active:flight.state.autopilot&&flight.state.headingHold,autopilot:flight.state.autopilot,recovering:flight.recovering,heading:flight.state.heading*180/Math.PI,open:!headingSelect.hidden}),getAltitudeReminder:()=>({...altitudeReminder.snapshot(),open:altitudeControls.isOpen(),notice:altitudeReminderNotice(altitudeReminder.snapshot())}),getTerrainAlert:()=>({...terrainView,samples:terrainAlert.samples,probes:terrainAlert.probes}),getTouchdown:()=>({last:lastTouchdown&&{...lastTouchdown},settling:!!settle,offset:settleOffset.length(),reducedMotion:!!reducedMotion?.matches,audio:audio.context?.state??'locked',soundOn:audio.enabled}),reset:restart,setPaused, setQuality,setAircraft,runwayStart:(id,runway)=>runwayStart(id?resolveAirport(id,runway).field:selection.field),approachStart:(id,runway)=>approachStart(id?resolveAirport(id,runway).field:selection.field),airports:()=>world.airports.map(({position,windsock,...field})=>field),getAirport:airportState,getNavigation:()=>{const n=navReadout();return{destination:navigationDestination(airportState()),bearing:n&&Number(n.bearingText),distance:n?.distance,framing:{...miniFraming},scale:miniMap.scale?.label,pendingTiles:miniMap.pending,drawMs:mapDrawMs};},setMapFraming:(framing,zoom)=>setMapFraming({framing,...(zoom===undefined?{}:{zoom})}),selectAirport:(id,runway)=>selection.select(id,runway),getAircraft:()=>({id:flight.type.id,name:flight.type.name,gearPosition:aircraft.gearPosition,surfaces:aircraft.surfaces,afterburner:aircraft.afterburner})};
 if(query.get('start')==='runway')runwayStart();else if(query.get('start')==='approach')approachStart();

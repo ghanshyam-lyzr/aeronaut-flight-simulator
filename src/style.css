@@ -310,3 +310,27 @@ dialog.chart-dialog{width:min(1060px,calc(100% - 32px))}
 @media(max-width:550px){.heading-select{left:0;right:0;width:auto}.heading-bug .bug-label{display:none}.heading-bug{gap:3px;padding:0 4px;margin-right:0}}
 .rotorcraft-heading .heading-bug{display:none}
 .heading-select:focus{outline:none}
+
+/* Altitude reminder — Alpine Flight, advisory emphasis below every flight warning. */
+.altitude-bug{padding:0 5px;margin-right:0}
+.altitude-select{width:326px;background:var(--surface)}
+.altitude-stepper{grid-template-columns:36px 42px minmax(64px,1fr) 42px 36px;gap:5px}
+.altitude-entry input{width:64px;font-size:22px}
+.altitude-status{display:flex;justify-content:space-between;gap:8px;margin:9px 0;font-size:11px;color:var(--muted)}
+#altitude-select-state.error{color:var(--danger)}
+.altitude-select-actions{grid-template-columns:1fr 1.2fr 1fr}
+.altitude-select-actions button{font-size:11px}
+#altitude-select-note{margin:8px 0 0;font-size:11px;color:var(--muted)}
+.altitude-notice{color:var(--accent)}
+#altitude-notice-ack{display:block;margin:6px auto 0;padding:5px 9px;min-height:28px;border:1px solid var(--border);border-radius:6px;color:var(--foreground)}
+.altitude-select :focus-visible{outline-offset:2px}
+@media(max-width:550px){
+ .altitude-label-row{gap:2px}.altitude-bug{padding:0 3px;margin-left:0}.altitude-bug b{font-size:13px}
+ /* On phones the selector occupies the telemetry strip itself, leaving the yoke, power and mission cues clear. */
+ .altitude-select{left:-1px;right:-1px;bottom:-1px;width:auto;height:176px;padding:9px 12px}
+ .altitude-select .heading-select-head{margin-bottom:5px}
+ .altitude-select .heading-stepper>button,.altitude-select .heading-entry{height:36px}
+ .altitude-select-actions button{height:34px}.altitude-status{margin:6px 0}.altitude-select #altitude-select-note{margin-top:5px}
+ .flight-notice.altitude-notice{top:264px;max-width:calc(100% - 28px)}
+ .landing-mode .flight-notice.altitude-notice{top:292px}
+}
