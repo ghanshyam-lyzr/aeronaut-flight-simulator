@@ -1,3 +1,4 @@
+import { heightGrid } from './terrain.js';
 // Navigation map arithmetic: projection, framing, scale, bearing and distance,
 // terrain tiles and label placement. Pure data and maths (no three.js, no DOM),
 // like regions.js, so the map and its tests read the same numbers.
@@ -254,7 +255,7 @@ export function terrainColour(h00, h10, h01, h11, spacing) {
  */
 export function rasterTile(t, heightAt, pixels = TILE_PIXELS) {
   const n = pixels + 1, step = t.size / pixels, h = new Float64Array(n * n), data = new Uint8ClampedArray(pixels * pixels * 4);
-  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) h[j * n + i] = heightAt(t.minX + i * step, t.minZ + j * step);
+  heightGrid(h, t.minX, t.minZ, step, step, n, n, heightAt);
   for (let j = 0; j < pixels; j++) for (let i = 0; i < pixels; i++) {
     const c = terrainColour(h[j * n + i], h[j * n + i + 1], h[(j + 1) * n + i], h[(j + 1) * n + i + 1], step), o = (j * pixels + i) * 4;
     data[o] = c[0]; data[o + 1] = c[1]; data[o + 2] = c[2]; data[o + 3] = 255;

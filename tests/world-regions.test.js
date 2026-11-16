@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { groundHeight, groundShader, noise, fbm, hash, valleyCurve, westValleyCurve, basinDistance } from '../src/terrain.js';
+import { groundHeight, referenceHeight, groundShader, noise, fbm, hash, valleyCurve, westValleyCurve, basinDistance } from '../src/terrain.js';
 import { groundHeight as worldHeight, deepBasin, DEEP_CHANNEL_SOUTH } from '../src/world.js';
 import { WORLD, REGIONS, ROUTES, LANDMARKS, VILLAGES, AIRFIELD_SITES, SHAPES, WATER_LEVEL, regionAt, region, inWorld, clampToWorld } from '../src/regions.js';
 import { AIRFIELD, runwayPoint } from '../src/airfield.js';
@@ -76,7 +76,8 @@ test('the central valley, Alpine Field and its approach are unchanged', () => {
   grid(-7000, 7000, -13000, 9000, 97, (x, z) => {
     if (Math.abs(x - valleyCurve(z)) > 5500) return;
     if (carved.some(route => distanceToRoute(x, z, route) < route.width * 4.4 + 400)) return;
-    assert.equal(groundHeight(x, z), legacyHeight(x, z), `height at ${x}, ${z}`);
+    assert.equal(referenceHeight(x, z), legacyHeight(x, z), `reference height at ${x}, ${z}`);
+    assert.ok(Math.abs(groundHeight(x, z) - legacyHeight(x, z)) < 1e-9, `engine height at ${x}, ${z}`);
     compared++;
   });
   assert.ok(compared > 15000, `${compared} points compared`);
@@ -87,7 +88,8 @@ test('the central valley, Alpine Field and its approach are unchanged', () => {
   }
   for (let along = 0; along >= -10000; along -= 50) for (const cross of [-300, 0, 300]) {
     const p = runwayPoint(along, cross);
-    assert.equal(groundHeight(p.x, p.z), legacyHeight(p.x, p.z));
+    assert.equal(referenceHeight(p.x, p.z), legacyHeight(p.x, p.z));
+    assert.ok(Math.abs(groundHeight(p.x, p.z) - legacyHeight(p.x, p.z)) < 1e-9);
     if (along < -1200) assert.ok(groundHeight(p.x, p.z) < AIRFIELD.elevation + Math.tan(3 * Math.PI / 180) * -along - 30);
   }
 });

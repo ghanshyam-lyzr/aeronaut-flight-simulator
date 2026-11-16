@@ -1,0 +1,55 @@
+{
+  "node": "v22.23.4",
+  "binaryBytes": 78810,
+  "results": [
+    {
+      "workload": "terrain tile (107×107 heights)",
+      "javascriptMs": 11.307579,
+      "webassemblyMs": 6.552152,
+      "speedup": 1.73
+    },
+    {
+      "workload": "map tile (32×32 shaded pixels)",
+      "javascriptMs": 1.525886,
+      "webassemblyMs": 0.985535,
+      "speedup": 1.55
+    },
+    {
+      "workload": "trainer frame (1 substep)",
+      "javascriptMs": 0.003194,
+      "webassemblyMs": 0.002278,
+      "speedup": 1.4
+    },
+    {
+      "workload": "trainer frame (10 substeps)",
+      "javascriptMs": 0.029926,
+      "webassemblyMs": 0.010847,
+      "speedup": 2.76
+    },
+    {
+      "workload": "fighter frame (1 substep)",
+      "javascriptMs": 0.003199,
+      "webassemblyMs": 0.002202,
+      "speedup": 1.45
+    },
+    {
+      "workload": "fighter frame (10 substeps)",
+      "javascriptMs": 0.034282,
+      "webassemblyMs": 0.01199,
+      "speedup": 2.86
+    },
+    {
+      "workload": "tandem frame (1 substep)",
+      "javascriptMs": 0.005716,
+      "webassemblyMs": 0.004395,
+      "speedup": 1.3
+    },
+    {
+      "workload": "tandem frame (10 substeps)",
+      "javascriptMs": 0.03988,
+      "webassemblyMs": 0.012404,
+      "speedup": 3.22
+    }
+  ],
+  "checksum": 67824669.29107349
+}
