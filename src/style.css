@@ -347,3 +347,44 @@ dialog.chart-dialog{width:min(1060px,calc(100% - 32px))}
 @media(min-width:551px){.scene-label{top:425px}}
 @media(max-width:550px){#recovery-entry{display:none}.recovery-mode .mission-panel h1{font-size:19px}.recovery-mode .mission-panel{padding-bottom:0}#recovery-guidance .landing-actions button{min-height:34px}#recovery-guidance .landing-readings{gap:8px}#recovery-cue{min-height:34px}}
 .recovery-dialog .dialog-head{position:sticky;top:0;z-index:1;background:var(--surface);padding-bottom:12px}
+
+/* Paint Hangar — a quiet workbench around the shared live airframe. */
+:root{--paint-stage:hsl(210 8% 17%);--paint-focus:hsl(77 88% 67% / .16)}
+.aircraft-appearance-entry{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0;border-block:1px solid var(--border);margin-top:20px}
+.aircraft-appearance-entry>div{display:grid;gap:4px}.aircraft-appearance-entry span{font-size:11px;color:var(--muted)}.aircraft-appearance-entry strong{font-size:14px;font-weight:500}
+.aircraft-appearance-entry button{display:flex;gap:7px;align-items:center;min-height:44px;font-size:12px;color:var(--accent);text-align:left}.aircraft-appearance-entry svg{width:15px;height:15px;flex-shrink:0}
+dialog.paint-dialog{width:min(980px,calc(100% - 32px));max-height:calc(100dvh - 48px);overflow:hidden}
+.paint-dialog #dialog-content{display:flex;flex-direction:column;max-height:calc(100dvh - 50px)}
+.paint-dialog .dialog-head{flex-shrink:0;align-items:flex-start;padding:18px 24px 19px;border-bottom:1px solid var(--border)}
+.paint-dialog .dialog-head h2{font-size:21px;margin-top:5px}.paint-dialog .dialog-head .icon-btn{min-width:44px;min-height:44px}
+.paint-back{font-size:12px;color:var(--muted);min-height:28px}.paint-back:hover{color:var(--foreground)}
+.paint-layout{display:grid;grid-template-columns:minmax(0,1fr) 338px;grid-template-rows:minmax(0,1fr);min-height:0}
+.paint-preview{background:var(--paint-stage);position:relative;min-width:0;min-height:0;display:flex;flex-direction:column;justify-content:space-between}
+.paint-aircraft{padding:24px 24px 0;position:relative;z-index:1;pointer-events:none}.paint-aircraft>span{font-size:11px;letter-spacing:.7px;color:var(--muted)}.paint-aircraft h3{font-size:27px;font-weight:500;letter-spacing:-.6px;margin:7px 0 0}
+#paint-canvas{background:var(--paint-stage);display:block;width:100%;height:0;min-height:0;flex:1 1 0px}
+.paint-preview-footer{display:flex;align-items:center;justify-content:space-between;padding:0 20px 20px;gap:10px}.paint-preview-footer>span{display:grid;gap:5px;color:var(--muted);font-size:11px}.paint-preview-footer strong{font-size:13px;font-weight:500;color:var(--foreground)}
+.paint-preview-footer>div{display:flex;gap:6px}.paint-preview-footer button{height:44px;width:44px;border:1px solid var(--border);border-radius:6px;background:var(--surface);font-size:22px}
+.paint-controls{padding:20px 22px;overflow-y:auto;overscroll-behavior:contain;min-height:0}
+.paint-controls fieldset{margin:0;padding:0;border:0;min-width:0}.paint-controls legend{padding:0;font-size:12px;font-weight:500;margin-bottom:12px}
+.paint-presets{display:grid;grid-template-columns:1fr 1fr;gap:8px}.paint-preset{display:flex;flex-direction:column;align-items:flex-start;gap:5px;min-height:92px;padding:10px;border:1px solid var(--border);border-radius:6px;text-align:left;background:var(--surface-raised)}
+.paint-preset[aria-checked=true]{border-color:var(--accent);background:var(--paint-focus)}.paint-preset strong{font-size:12px;font-weight:500}.paint-preset>span:last-child{font-size:11px;color:var(--muted)}
+.paint-swatches{display:flex;align-items:center;height:16px;gap:3px;margin-bottom:2px}.paint-swatches i{display:block;width:17px;height:12px;background:var(--paint-swatch);border:1px solid var(--border);border-radius:2px}.paint-swatches>span{font-family:var(--numbers);font-size:13px;color:var(--foreground);letter-spacing:.4px}
+.paint-controls .paint-custom{margin-top:22px}.paint-custom legend{margin-bottom:5px}.paint-custom>p{font-size:11px;line-height:1.6;color:var(--muted);margin:0 0 8px}
+.paint-color{display:flex;align-items:center;gap:11px;min-height:68px;border-bottom:1px solid var(--border)}
+.paint-color input[type=color]{flex-shrink:0;height:44px;width:44px;padding:3px;border:1px solid var(--border);border-radius:6px;background:var(--surface-raised);cursor:pointer}
+.paint-color>div{flex:1;display:grid;grid-template-columns:1fr 104px;gap:2px 8px;align-items:center;min-width:0}.paint-color label{font-size:12px}
+.paint-color input[type=text]{width:100%;min-width:0;background:var(--background);border:1px solid var(--border);color:var(--foreground);border-radius:6px;padding:8px 9px;font-family:var(--numbers);font-size:17px;letter-spacing:.6px;min-height:40px}
+.paint-color input[aria-invalid=true]{border-color:var(--danger)}.paint-error{grid-column:1/-1;color:var(--danger);font-size:11px;line-height:1.5}.paint-error:empty{display:none}
+.paint-status{font-size:11px;color:var(--muted);line-height:1.6;min-height:35px;margin:14px 0 8px}.paint-controls .secondary-btn,.paint-controls .primary-btn{min-height:44px;margin-top:8px;font-size:12px}.paint-scope{font-size:11px;color:var(--muted);line-height:1.6;margin:10px 0 0}
+.paint-dialog button:focus-visible,.paint-dialog input:focus-visible,.aircraft-appearance-entry button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.paint-dialog button:hover{filter:brightness(1.12)}
+@media(max-width:700px){
+ dialog.paint-dialog{width:calc(100% - 24px);max-width:none;max-height:calc(100dvh - 24px);border-radius:10px}
+ .paint-dialog #dialog-content{max-height:calc(100dvh - 26px)}.paint-dialog .dialog-head{padding:9px 16px 12px}.paint-dialog .dialog-head h2{font-size:19px;margin-top:1px}
+ .paint-layout{display:flex;flex-direction:column;overflow-y:auto;overscroll-behavior:contain}.paint-preview{flex-shrink:0;position:sticky;top:0;z-index:2;border-bottom:1px solid var(--border)}
+ .paint-aircraft{padding:14px 16px 0}.paint-aircraft h3{font-size:22px;margin-top:3px}.paint-aircraft>span{font-size:11px}
+ #paint-canvas{height:170px;flex:0 0 170px}.paint-preview-footer{padding:0 12px 10px}.paint-preview-footer>span{display:flex;align-items:center;gap:9px}.paint-preview-footer button{width:36px;height:36px;font-size:20px}
+ .paint-controls{padding:17px 16px 20px;overflow:visible;flex-shrink:0}.paint-presets{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.paint-preset{min-height:79px;padding:8px 6px;gap:5px}.paint-preset strong{font-size:11px;line-height:1.4}.paint-preset>span:last-child{display:none}.paint-swatches{gap:2px}.paint-swatches i{width:13px;height:11px}
+ .paint-controls .paint-custom{margin-top:18px}.paint-color{min-height:61px}.paint-status{margin-top:12px}.paint-preview-footer strong{font-size:12px}
+}
+@media(max-height:700px) and (min-width:701px){.paint-dialog .dialog-head{padding-top:10px;padding-bottom:10px}}
