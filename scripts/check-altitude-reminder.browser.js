@@ -67,6 +67,25 @@ async (page) => {
       await p.screenshot({ path: `/tmp/forge-browser/altitude-selector-${width}.png` });
       results.push({ viewport: `${width}×${height}`, ...boxes });
       await p.locator('#altitude-select-close').click({ force: true });
+      // Opening the chart suspends the reminder and retains the shared navigation readouts.
+      const target = await p.evaluate(() => aeronaut.getAltitudeReminder().target);
+      await p.locator('#map-expand').click({ force: true });
+      await p.evaluate(() => window.__step());
+      const chart = await p.evaluate(() => {
+        const d = document.getElementById('main-dialog'), r = d.getBoundingClientRect();
+        return { open: d.open, x: r.x, right: r.right, y: r.y, bottom: r.bottom, overflow: d.scrollWidth > d.clientWidth,
+          readout: document.getElementById('chart-readout').textContent, help: document.getElementById('chart-help').textContent,
+          navigation: aeronaut.getNavigation(), reminder: aeronaut.getAltitudeReminder() };
+      });
+      check(chart.open && chart.x >= 0 && chart.right <= width && chart.y >= 0 && chart.bottom <= height && !chart.overflow, `${width}: chart overflow`);
+      for (const label of ['Track', 'Groundspeed', 'Est. time to field']) check(chart.readout.includes(label), `${width}: missing chart ${label}`);
+      for (const key of ['track', 'groundSpeed', 'closingSpeed', 'eteSeconds', 'eteState', 'eteReason']) check(key in chart.navigation, `${width}: missing diagnostic ${key}`);
+      check(chart.help.includes('closing speed') && chart.reminder.target === target && !chart.reminder.open && chart.reminder.suppressed === 'suspended', `${width}: chart/reminder coexistence`);
+      await p.screenshot({ path: `/tmp/forge-browser/altitude-chart-${width}.png` });
+      await p.locator('#chart-readout').scrollIntoViewIfNeeded();
+      await p.screenshot({ path: `/tmp/forge-browser/altitude-chart-readout-${width}.png` });
+      results.push({ viewport: `${width}×${height}`, chart });
+      await p.locator('#main-dialog [data-close]').click({ force: true });
     }
     await p.evaluate(() => aeronaut.setAircraft('helicopter'));
     check(await p.evaluate(() => aeronaut.getAltitudeReminder().target === null), 'aircraft change must clear target');
