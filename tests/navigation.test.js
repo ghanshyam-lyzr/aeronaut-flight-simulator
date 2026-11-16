@@ -2,12 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { FlightController } from '../src/flight.js';
 import { FlightInputs } from '../src/controls.js';
+import { groundVelocity, groundTrack } from '../src/flight-path.js';
+import { LandingMission } from '../src/landing-mission.js';
 import { WORLD, WATER_LEVEL, LANDMARKS, inWorld } from '../src/regions.js';
 import { AIRPORTS, ALPINE_FIELD, airportById } from '../src/airports.js';
 import { AirportSelection, describeField, resolveAirport } from '../src/airport-selection.js';
 import { groundHeight } from '../src/terrain.js';
 import {
-  METRES_PER_NM, navigationDestination, bearingDistance, relativeBearing, degrees, formatNM, formatEte, navigationReadout,
+  METRES_PER_NM, NAVIGATION, navigationDestination, bearingDistance, relativeBearing, degrees, formatNM, formatEte, navigationReadout,
   ZOOM_SPANS, createView, clampCentre, routeZoom, frameView, zoomFrom, inView, edgePointer, scaleBar,
   TILE_PIXELS, MAX_TILE_LEVEL, tileLevel, tilesFor, tile, parentTile, tileMetres, rasterTile, terrainColour, mapPlaces, mapAirports, placeLabels,
 } from '../src/navigation.js';
@@ -53,7 +55,7 @@ test('distance and time en route read in accurate units', () => {
   assert.equal(formatEte(1e6, 100), '2 h 47');
   assert.equal(formatEte(5000, 0), '', 'no time en route when parked');
   const orvane = airportById('orvane-regional');
-  const r = navigationReadout({ position: { x: ALPINE_FIELD.x, z: ALPINE_FIELD.z }, heading: 0, speed: 100 }, orvane);
+  const r = navigationReadout({ position: { x: ALPINE_FIELD.x, z: ALPINE_FIELD.z }, heading: 0, groundVelocity: { x: 0, z: -100 } }, orvane);
   const dx = orvane.x - ALPINE_FIELD.x, dz = orvane.z - ALPINE_FIELD.z;
   assert.ok(close(r.distance, Math.hypot(dx, dz)));
   assert.equal(r.bearingText, String(Math.round(Math.atan2(dx, -dz) / DEG)).padStart(3, '0'));
@@ -74,6 +76,139 @@ test('the destination is the mission field while a mission runs, else the select
   // Cancelled: back to the selection.
   assert.equal(navigationDestination(state(null)).id, 'verdance-meadow');
   assert.equal(navigationDestination(null), null);
+});
+
+// Navigation only receives the flight-path contract's ground velocity. No helper rebuilds it from airspeed,
+// heading or wind; input-driven examples below also check it against actual horizontal displacement.
+const north = { x: 0, z: -10000 };
+const nav = (v, destination = north, heading = 0, position = { x: 0, z: 0 }) =>
+  navigationReadout({ position, heading, groundVelocity: v }, destination);
+const flightNav = (flight, destination = north) => navigationReadout({ position: flight.state.position,
+  heading: flight.state.heading, groundVelocity: groundVelocity(flight.state, flight.type) }, destination);
+
+test('calm, headwind, tailwind and crosswind use horizontal travel and closing speed, not nose or airspeed', () => {
+  const calm = nav({ x: 0, y: 70, z: -100 }), head = nav({ x: 0, z: -80 }), tail = nav({ x: 0, z: -120 });
+  const cross = nav({ x: 40, y: -70, z: -100 });
+  assert.equal(calm.groundSpeed, 100, 'vertical travel is excluded');
+  assert.equal(calm.groundSpeedText, '194 kt'); assert.equal(calm.trackText, '360°');
+  assert.equal(calm.eteSeconds, 100); assert.equal(head.eteSeconds, 125); assert.ok(close(tail.eteSeconds, 10000 / 120));
+  assert.ok(cross.groundSpeed > calm.groundSpeed); assert.ok(cross.track > 0);
+  assert.equal(cross.closingSpeed, 100); assert.equal(cross.eteSeconds, calm.eteSeconds, 'crosswind adds speed without adding progress north');
+  const copy = { position: { x: 0, z: 0 }, heading: Math.PI, speed: 999, airspeed: 999, groundVelocity: { x: 0, z: -100 } };
+  const before = structuredClone(copy), result = navigationReadout(copy, north);
+  assert.equal(result.eteSeconds, calm.eteSeconds, 'neither nose direction nor airspeed drives the estimate');
+  assert.deepEqual(copy, before, 'navigation is read-only');
+});
+
+test('track wraps through north independently of nose heading and disappears below walking speed', () => {
+  for (const angle of [-.2, 0, .2, 359.8, 360, 720]) {
+    const a = angle * DEG, r = nav({ x: Math.sin(a) * 10, z: -Math.cos(a) * 10 }, north, 350 * DEG);
+    assert.ok(r.track >= 0 && r.track < 2 * Math.PI);
+    assert.equal(r.trackText, `${degrees(a)}°`);
+    assert.ok(close(r.relative, 10 * DEG), 'bearing arrow still refers to the nose');
+  }
+  assert.equal(nav({ x: 0, z: 0 }).track, null);
+  assert.equal(nav({ x: .1, z: -.2 }).trackText, '—');
+  assert.equal(nav({ x: 0, z: -NAVIGATION.trackSpeed }).trackText, '360°');
+  assert.equal(nav({ x: 0, z: 0 }).groundSpeedText, '0 kt');
+});
+
+test('hover, sideways, slow and outbound progress have no estimate; nearby and unavailable states are explicit', () => {
+  for (const v of [{ x: 0, z: 0 }, { x: 0, z: -2 }, { x: 0, z: 40 }, { x: 100, z: 0 }, { x: 100, z: -1 }, { x: 100, z: -50 }]) {
+    const r = nav(v);
+    assert.equal(r.eteState, 'not-closing', JSON.stringify(v));
+    assert.equal(r.ete, ''); assert.equal(r.eteSeconds, null); assert.equal(r.eteReason, 'Not closing');
+  }
+  assert.equal(nav({ x: 0, z: -2.01 }).eteState, 'estimate', 'slow rotorcraft travel can still make useful progress');
+  for (const distance of [0, 1e-12, 99, 100]) {
+    const r = nav({ x: 0, z: -30 }, { x: 0, z: -distance });
+    assert.equal(r.eteState, 'near-destination'); assert.equal(r.ete, ''); assert.equal(r.eteSeconds, null);
+    assert.ok(Number.isFinite(r.closingSpeed));
+  }
+  assert.equal(nav({ x: 0, z: -30 }, { x: 0, z: -101 }).eteState, 'estimate');
+  for (const v of [null, undefined, { x: NaN, z: 0 }, { x: 0, z: Infinity }]) {
+    const r = nav(v);
+    assert.equal(r.eteState, 'unavailable'); assert.equal(r.groundSpeed, null); assert.equal(r.track, null);
+    assert.equal(r.groundSpeedText, '—'); assert.equal(r.eteSeconds, null);
+  }
+  const noDestination = nav({ x: 20, z: 0 }, null);
+  assert.equal(noDestination.eteState, 'no-destination'); assert.equal(noDestination.bearing, null);
+  assert.equal(noDestination.eteSeconds, null); assert.equal(noDestination.trackText, '090°');
+  assert.equal(formatEte(1000, Infinity), ''); assert.equal(formatEte(Infinity, 30), '');
+});
+
+function navigationFlight({ aircraft = 'trainer', direction = 0, wind = 0, seconds = 8, controls = {}, assist = true, rate = 120 } = {}) {
+  const flight = new FlightController(() => 40, aircraft), inputs = new FlightInputs(0);
+  flight.setWind({ direction: direction * DEG, speed: wind }, { immediate: true });
+  if (assist) flight.toggleAutopilot();
+  inputs.set(controls, 0);
+  let displacement;
+  for (let frame = 1; frame <= seconds * rate; frame++) inputs.advance(frame / rate, (dt, c) => {
+    const before = flight.state.position.clone(); flight.update(dt, c);
+    if (dt > 1e-6) displacement = flight.state.position.clone().sub(before).divideScalar(dt);
+  });
+  return { flight, inputs, displacement };
+}
+
+test('normal-input flight in calm/headwind/tailwind/crosswind reports measured travel, with unchanged heading assist', () => {
+  const observations = [];
+  for (const direction of [0, 0, 180, 270]) {
+    const wind = observations.length ? 12 : 0;
+    const { flight, displacement } = navigationFlight({ direction, wind });
+    const destination = { x: flight.state.position.x, z: flight.state.position.z - 10000 };
+    const n = flightNav(flight, destination), g = groundTrack(flight.state, flight.type);
+    assert.ok(close(n.groundSpeed, Math.hypot(displacement.x, displacement.z), 1e-6));
+    assert.ok(close(n.closingSpeed, -displacement.z, 1e-6));
+    assert.ok(close(n.track, g.track));
+    assert.ok(close(n.eteSeconds, 10000 / -displacement.z, 1e-6));
+    assert.equal(flight.state.autopilot, true); assert.equal(flight.state.heading, 0); assert.equal(flight.state.crashed, false);
+    observations.push({ ...n, airspeed: flight.state.airspeed });
+  }
+  const [calm, head, tail, cross] = observations;
+  assert.equal(calm.airspeed, head.airspeed); assert.equal(calm.airspeed, tail.airspeed); assert.equal(calm.airspeed, cross.airspeed);
+  assert.ok(head.eteSeconds > calm.eteSeconds && calm.eteSeconds > tail.eteSeconds);
+  assert.ok(cross.track > calm.track); assert.ok(close(cross.eteSeconds, calm.eteSeconds));
+});
+
+test('normal rotorcraft inputs support hover and backwards closing; no estimate survives a crash or stationary ground wind', () => {
+  const { flight: hover } = navigationFlight({ aircraft: 'helicopter' });
+  assert.equal(flightNav(hover).groundSpeed, 0); assert.equal(flightNav(hover).eteState, 'not-closing');
+  for (const rate of [30, 60, 144]) {
+    const { flight, displacement } = navigationFlight({ aircraft: 'helicopter', controls: { pitch: .3 }, assist: false, rate });
+    const p = flight.state.position, ahead = flightNav(flight, { x: p.x, z: p.z - 10000 }), behind = flightNav(flight, { x: p.x, z: p.z + 10000 });
+    assert.equal(flight.state.crashed, false); assert.ok(displacement.z > 2, 'nose-up cyclic moves backwards');
+    assert.equal(ahead.eteState, 'not-closing'); assert.equal(behind.eteState, 'estimate'); assert.equal(behind.trackText, '180°');
+    assert.ok(close(behind.closingSpeed, displacement.z, .02)); assert.equal(flight.state.heading, 0);
+  }
+  for (const aircraft of ['trainer', 'helicopter']) {
+    const flight = new FlightController(() => 40, aircraft), inputs = new FlightInputs(0);
+    flight.setWind({ direction: 0, speed: 12 }, { immediate: true }); flight.runwayStart(0, 42, 0);
+    for (let frame = 1; frame <= 240; frame++) inputs.advance(frame / 120, (dt, c) => flight.update(dt, c));
+    assert.ok(flight.state.airspeed > 0, 'wind is seen by the airspeed instrument');
+    assert.equal(flightNav(flight).groundSpeed, 0); assert.equal(flightNav(flight).track, null);
+    assert.equal(flightNav(flight).eteState, 'not-closing');
+  }
+  const { flight: crashed } = navigationFlight({ aircraft: 'helicopter', controls: { throttle: -1, pitch: 1 }, assist: false, seconds: 120 });
+  assert.equal(crashed.state.crashed, true, 'ordinary controls produce a real crash');
+  assert.equal(flightNav(crashed).eteState, 'unavailable'); assert.equal(flightNav(crashed).track, null);
+  crashed.reset(); assert.equal(flightNav(crashed).eteState, 'not-closing', 'reset clears the unavailable state');
+});
+
+test('estimates immediately follow selection, mission lock, retry, cancel, runway and aircraft changes', () => {
+  const selection = new AirportSelection('serein-lakeside'), mission = new LandingMission(), flight = new FlightController(heightAt, 'trainer');
+  const destination = () => navigationDestination({ selected: selection.snapshot(), mission: mission.status !== 'idle' ? describeField(mission.field) : null });
+  const readout = () => flightNav(flight, destination());
+  const original = readout(); selection.select('orvane-regional', '32');
+  assert.notEqual(readout().distance, original.distance); assert.notEqual(readout().closingSpeed, original.closingSpeed);
+  mission.start(flight, selection.field); const locked = readout(); selection.select('verdance-meadow', '17');
+  assert.equal(destination().id, 'orvane-regional'); assert.equal(destination().runway, '32'); assert.deepEqual(readout(), locked);
+  assert.equal(locked.eteState, 'estimate');
+  mission.start(flight); assert.deepEqual(readout(), locked, 'retry starts at the same locked runway');
+  mission.cancel(); assert.equal(destination().id, 'verdance-meadow'); assert.notEqual(readout().distance, locked.distance);
+  selection.select('verdance-meadow', '35'); assert.equal(destination().runway, '35');
+  flight.setAircraft('helicopter'); assert.equal(readout().eteState, 'not-closing');
+  flight.runwayStart(selection.field.x, selection.field.elevation + 2, selection.field.z, selection.field.heading);
+  assert.equal(readout().eteState, 'near-destination'); assert.equal(readout().groundSpeed, 0);
 });
 
 test('views project north up and east right, and unproject back', () => {

@@ -36,4 +36,4 @@ Review captures: [1600×900](stall-recovery/active-1600.png), [1280×800](stall-
 
 Browser checks also completed an actual touch-yoke / normal-throttle attempt in 9.4 s with 30.6 m (100 ft) lost. Pause, dialog and controlled hidden-tab probes each kept the flight clock unchanged. Switching crosswind → recovery → crosswind retained the original pilot wind, a Weather change made during recovery survived R / Retry, and aircraft change returned to free flight with that wind. The [phone brief](stall-recovery/brief-390.png) starts at its heading with a sticky Close control. Captures use Performance graphics; the 30/60/144 fps measurements above are deterministic input/controller checks, not a claim about browser rendering speed.
 
-Final validation: `npm test` — **693 passed, 0 failed**; `npm run build` — passed; `git diff --check` — clean.
+Final validation after integrating navigation ground-motion readouts: `npm test` — **699 passed, 0 failed**; `npm run build` — passed; `git diff --check` — clean.
