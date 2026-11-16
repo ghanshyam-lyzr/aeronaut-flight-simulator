@@ -1,3 +1,4 @@
+import { createAircraftPaint } from './aircraft-paint.js';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { aircraftType } from './fleet.js';
@@ -43,6 +44,7 @@ export function createBiplane() {
     leather: standard('hsl(20, 30%, 18%)', 0.8, 0), rubber: standard('hsl(210, 15%, 9%)', 0.88),
     glass: new THREE.MeshPhysicalMaterial({ color: 'hsl(201, 30%, 70%)', roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false }),
   };
+  const propTips = materials.copper.clone(); // Preserve blade safety markings when exterior paint changes.
   const surfaces = { ailerons: [], elevators: [], rudder: [], flaps: [] }, rotors = [], gears = [], moving = [];
   function part(geometry, material, parent = group, name = '') {
     const mesh = new THREE.Mesh(geometry, material); mesh.name = name;
@@ -156,7 +158,7 @@ export function createBiplane() {
   for (const sign of [-1, 1]) {
     const blade = part(new THREE.CylinderGeometry(0.06, 0.1, D.propRadius * 0.9, 8), materials.wood, prop);
     blade.scale.set(1, 1, 0.35); blade.position.y = sign * D.propRadius * 0.53; blade.rotation.set(0, 0.28 * sign, sign < 0 ? Math.PI : 0);
-    const tipCap = ellipsoid(0, sign * D.propRadius * 0.98, 0, 0.065, 0.04, 0.025, materials.copper, prop); tipCap.name = 'blade tip';
+    const tipCap = ellipsoid(0, sign * D.propRadius * 0.98, 0, 0.065, 0.04, 0.025, propTips, prop); tipCap.name = 'blade tip';
   }
   ellipsoid(0, 0, -0.12, 0.2, 0.2, 0.3, materials.metal, prop);
 
@@ -196,7 +198,7 @@ export function createBiplane() {
   let previous = null;
   const deflection = { ailerons: 0, elevators: 0, rudder: 0 };
   return {
-    group, materials,
+    group, materials, paint: createAircraftPaint({ body: [materials.body], accent: [materials.fabric], stripe: [materials.copper] }),
     update(dt, throttle = 0.72, state = {}) {
       const spool = clamp(state.spool ?? throttle, 0, 1);
       for (const rotor of rotors) rotor.rotation.z += dt * (8 + spool * 155);

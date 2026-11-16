@@ -1,3 +1,4 @@
+import { createAircraftPaint } from './aircraft-paint.js';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { utility as type } from './utility-type.js';
@@ -194,7 +195,7 @@ export function createUtility() {
   let flapAngle = 0, previous = null;
   const deflection = { ailerons: 0, elevators: 0, rudder: 0 };
   return {
-    group, materials,
+    group, materials, paint: createAircraftPaint({ body: [materials.paint], accent: [materials.accent], stripe: [materials.stripe] }),
     update(dt, throttle = 0.72, state = {}) {
       const spool = clamp(state.spool ?? throttle, 0, 1);
       for (const r of rotors) r.rotation.z += dt * (9 + spool * 150);

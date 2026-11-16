@@ -1,3 +1,4 @@
+import { createAircraftPaint } from './aircraft-paint.js';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { tandem as type } from './tandem-type.js';
@@ -51,6 +52,7 @@ export function createTandem() {
     rubber: standard(palette.rubber, 0.88), signal: standard(palette.signal, 0.45),
     glass: new THREE.MeshPhysicalMaterial({ color: palette.glass, roughness: 0.06, metalness: 0.55, clearcoat: 1, envMapIntensity: 1.5, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1 }),
   };
+  materials.stripe = materials.mustard.clone();
   function part(geometry, material, parent = group, name = '') {
     const mesh = new THREE.Mesh(geometry, material); mesh.name = name;
     mesh.castShadow = mesh.receiveShadow = true; parent.add(mesh); return mesh;
@@ -96,7 +98,7 @@ export function createTandem() {
   patch(-7.1, 6.9, Math.PI + 0.2, Math.PI * 2 - 0.2, materials.graphite, 0.012, 64, 16);
   for (const side of [-1, 1]) {
     const a = side > 0 ? 0 : Math.PI, s = side > 0 ? 1 : -1;
-    patch(-7.1, 6.9, a - s * 0.13, a - s * 0.2, materials.mustard, 0.014, 64, 1);
+    patch(-7.1, 6.9, a - s * 0.13, a - s * 0.2, materials.stripe, 0.014, 64, 1);
     // Flight-deck side glass, chin windows below the windscreen and a row of small cabin windows.
     patch(-6.75, -5.55, a + s * 0.06, a + s * 0.52, materials.glass, 0.02, 6, 6);
     patch(-7.15, -6.45, a - s * 0.4, a - s * 0.12, materials.glass, 0.02, 6, 4);
@@ -193,7 +195,7 @@ export function createTandem() {
   const frontRotor = fore.head, rearRotor = aft.head, sweeps = [fore.sweep, aft.sweep];
 
   return {
-    group, materials, frontRotor, rearRotor,
+    group, materials, paint: createAircraftPaint({ body: [materials.paint], accent: [materials.mustard, materials.graphite], stripe: [materials.stripe] }), frontRotor, rearRotor,
     update(dt, collective = type.flight.hoverCollective, state = {}) {
       const rpm = clamp(state.rotorSpeed ?? 1, 0, 1), step = dt * rpm * type.rotor.rate;
       if (!state.crashed) {

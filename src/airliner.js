@@ -1,3 +1,4 @@
+import { createAircraftPaint } from './aircraft-paint.js';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -319,7 +320,7 @@ export function create737() {
   let gearPosition = 0, flapAngle = 0, clock = 0, last = null;
   const deflection = { ailerons: 0, elevators: 0, rudder: 0 }, turn = new THREE.Quaternion();
   return {
-    group, materials,
+    group, materials, paint: createAircraftPaint({ body: [paint], accent: [teal], stripe: [coral] }),
     update(dt, throttle = 0.72, state = {}) {
       clock = state.time ?? clock + dt;
       const spool = clamp(state.spool ?? throttle, 0, 1);

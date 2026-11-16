@@ -1,3 +1,4 @@
+import { createAircraftPaint } from './aircraft-paint.js';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { racer as type } from './racer-type.js';
@@ -64,6 +65,7 @@ export function createRacer() {
     exhaust: standard('hsl(24, 14%, 24%)', 0.55, 0.7), dark: standard('hsl(205, 20%, 12%)', 0.55, 0.4),
     glass: new THREE.MeshPhysicalMaterial({ color: 'hsl(214, 30%, 13%)', roughness: 0.06, metalness: 0.55, clearcoat: 1, side: THREE.DoubleSide }),
   };
+  const propTips = materials.stripe.clone(); // Preserve blade safety markings when exterior paint changes.
   const surfaces = { ailerons: [], elevators: [], rudder: [], flaps: [] }, gears = [], rotors = [], lights = [];
   function part(geometry, material, parent = group, name = '') {
     const mesh = new THREE.Mesh(geometry, material); mesh.name = name;
@@ -163,7 +165,7 @@ export function createRacer() {
     const a = i * 2 * Math.PI / D.blades, r = D.propRadius;
     const blade = part(new THREE.BoxGeometry(r * 0.15, r * 0.82, 0.05), materials.graphite, rotor);
     blade.position.set(-Math.sin(a) * r * 0.49, Math.cos(a) * r * 0.49, 0); blade.rotation.set(0, 0.3, a);
-    const bladeTip = part(new THREE.BoxGeometry(r * 0.13, r * 0.1, 0.055), materials.stripe, rotor);
+    const bladeTip = part(new THREE.BoxGeometry(r * 0.13, r * 0.1, 0.055), propTips, rotor);
     bladeTip.position.set(-Math.sin(a) * r * 0.95, Math.cos(a) * r * 0.95, 0); bladeTip.rotation.set(0, 0.3, a);
   }
   const spinner = part(new THREE.ConeGeometry(0.3, 0.62, 20), materials.accent, rotor);
@@ -207,7 +209,7 @@ export function createRacer() {
   let gearPosition = 0, flapAngle = 0, previous = null;
   const deflection = { ailerons: 0, elevators: 0, rudder: 0 };
   return {
-    group, materials,
+    group, materials, paint: createAircraftPaint({ body: [materials.paint], accent: [materials.accent], stripe: [materials.stripe] }),
     update(dt, throttle = 0.72, state = {}) {
       const spool = clamp(state.spool ?? throttle, 0, 1);
       if (!state.crashed) for (const r of rotors) r.rotation.z += dt * (8 + spool * 155);

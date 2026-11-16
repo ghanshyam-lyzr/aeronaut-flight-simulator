@@ -1,3 +1,4 @@
+import { createAircraftPaint } from './aircraft-paint.js';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -103,7 +104,7 @@ export function createHelicopter() {
     part(merged, mat, group, name === 'glass' ? 'cabin glazing' : `helicopter ${name}`);
   }
   return {
-    group, materials, mainRotor, tailRotor,
+    group, materials, paint: createAircraftPaint({ body: [materials.paint], accent: [materials.rescue] }), mainRotor, tailRotor,
     update(dt, collective = 0.58, state = {}) {
       const rpm = Math.max(0, Math.min(1, state.rotorSpeed ?? 1));
       if (!state.crashed) { mainRotor.rotation.y = (mainRotor.rotation.y + dt * rpm * 38) % (2 * Math.PI); tailRotor.rotation.x = (tailRotor.rotation.x + dt * rpm * 130) % (2 * Math.PI); }

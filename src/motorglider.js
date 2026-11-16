@@ -1,3 +1,4 @@
+import { createAircraftPaint } from './aircraft-paint.js';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { aircraftType } from './fleet.js';
@@ -21,6 +22,8 @@ export function createMotorglider() {
     metal: standard('hsl(200, 12%, 65%)', 0.27, 0.85), dark: standard('hsl(205, 20%, 14%)', 0.5, 0.5),
     glass: new THREE.MeshPhysicalMaterial({ color: 'hsl(201, 37%, 19%)', roughness: 0.08, metalness: 0.5, clearcoat: 1, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1 }),
   };
+  materials.stripe = materials.accent.clone();
+  const propTips = materials.tip.clone(); // Preserve blade safety markings when exterior paint changes.
   const surfaces = { ailerons: [], elevators: [], rudder: [], flaps: [] }, wheels = [], lights = [];
   let prop;
   function part(geometry, material, parent = group, name = '') {
@@ -72,7 +75,7 @@ export function createMotorglider() {
     return [(rx + 0.012) * Math.cos(a), cy + (ry + 0.012 + bulge * Math.sin(a)) * Math.sin(a), z];
   }), materials.glass, group, 'canopy');
   for (const side of [-1, 1]) {
-    part(grid(48, 2, hull(-0.3, 3.95, side < 0 ? Math.PI + 0.02 : -0.02, side < 0 ? Math.PI - 0.07 : 0.07, 0.006), side > 0), materials.accent);
+    part(grid(48, 2, hull(-0.3, 3.95, side < 0 ? Math.PI + 0.02 : -0.02, side < 0 ? Math.PI - 0.07 : 0.07, 0.006), side > 0), materials.stripe);
   }
   part(grid(10, 2, hull(-2.78, -0.92, 0.38, Math.PI - 0.38, 0.004)), materials.dark); // canopy frame sill
 
@@ -126,7 +129,7 @@ export function createMotorglider() {
   for (let i = 0; i < 2; i++) {
     const blade = part(new THREE.BoxGeometry(0.075, 0.56, 0.03), materials.dark, prop);
     blade.position.set(0, (i ? -1 : 1) * 0.31, 0); blade.rotation.y = i ? -0.28 : 0.28;
-    const tip = part(new THREE.BoxGeometry(0.075, 0.07, 0.034), materials.tip, prop); tip.position.set(0, (i ? -1 : 1) * 0.57, 0);
+    const tip = part(new THREE.BoxGeometry(0.075, 0.07, 0.034), propTips, prop); tip.position.set(0, (i ? -1 : 1) * 0.57, 0);
   }
   ellipsoid(0, 0, -0.04, 0.07, 0.07, 0.1, materials.accent, prop);
 
@@ -163,7 +166,7 @@ export function createMotorglider() {
   let flapAngle = 0, previous = null;
   const deflection = { ailerons: 0, elevators: 0, rudder: 0 };
   return {
-    group, materials,
+    group, materials, paint: createAircraftPaint({ body: [materials.paint], accent: [materials.accent, materials.tip], stripe: [materials.stripe] }),
     update(dt, throttle = 0.72, state = {}) {
       // The small prop is stopped at idle and turns with engine spool; it never windmills in the glide.
       const spool = clamp(state.spool ?? throttle, 0, 1);
