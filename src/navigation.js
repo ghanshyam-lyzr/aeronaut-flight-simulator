@@ -8,6 +8,9 @@ import { WORLD, WATER_LEVEL, REGIONS, LANDMARKS } from './regions.js';
 import { AIRPORTS } from './airports.js';
 
 export const METRES_PER_NM = 1852;
+// Display/gameplay guards, not aircraft performance limits: avoid a direction at a stop, an unstable estimate
+// over the field, and an estimate while most of the motion is across (rather than toward) the route.
+export const NAVIGATION = Object.freeze({ trackSpeed: 1, closingSpeed: 2, closingFraction: .5, nearDistance: 100 });
 const TAU = Math.PI * 2;
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 
@@ -43,19 +46,38 @@ export function formatNM(metres) {
   return `${nm < 99.95 ? nm.toFixed(1) : Math.round(nm)} NM`;
 }
 
-/** Time en route at a speed (m/s), rounded to whole minutes; '' when too slow to say. */
+/** Format time at an already projected closing speed (m/s); callers decide whether the estimate is meaningful. */
 export function formatEte(metres, speed) {
-  if (!(speed > 15)) return '';
+  if (!Number.isFinite(metres) || metres < 0 || !Number.isFinite(speed) || !(speed > NAVIGATION.closingSpeed)) return '';
   const minutes = Math.round(metres / speed / 60);
   return minutes < 1 ? '<1 min' : minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')}`;
 }
 
-/** Bearing, distance and time en route to a destination from an aircraft state ({ position, heading, speed }). */
+/**
+ * Read-only navigation from { position, heading, groundVelocity } (m/s, from flight-path.js), never airspeed.
+ * Track and speed stay available without a destination. A null velocity (e.g. a crash) is unavailable, not zero.
+ * The estimate is horizontal distance to the field reference point / present closing speed: it assumes that
+ * progress continues, not that a turn, landing or arrival is predicted. No state is retained across destinations.
+ */
 export function navigationReadout(aircraft, destination) {
-  if (!destination) return null;
+  const v = aircraft.groundVelocity, valid = Number.isFinite(v?.x) && Number.isFinite(v?.z);
+  const groundSpeed = valid ? Math.hypot(v.x, v.z) : null;
+  const track = groundSpeed >= NAVIGATION.trackSpeed ? (Math.atan2(v.x, -v.z) + TAU) % TAU : null;
+  const motion = { groundSpeed, track, trackText: track === null ? '—' : `${degrees(track)}°`,
+    groundSpeedText: groundSpeed === null ? '—' : `${Math.round(groundSpeed * 3600 / METRES_PER_NM)} kt` };
+  const result = { ...motion, bearing: null, distance: null, relative: null, bearingText: '', distanceText: '',
+    closingSpeed: null, eteSeconds: null, ete: '', eteState: 'no-destination', eteReason: 'No destination' };
+  if (!destination) return result;
   const { bearing, distance } = bearingDistance(aircraft.position, destination);
-  return { bearing, distance, relative: relativeBearing(bearing, aircraft.heading ?? 0), bearingText: degrees(bearing),
-    distanceText: formatNM(distance), ete: formatEte(distance, aircraft.speed) };
+  // Dot the authoritative horizontal velocity with the unit direction to the destination. Nose heading is
+  // intentionally only used for the relative-bearing arrow; a helicopter may close while flying backwards.
+  const closingSpeed = valid && distance > 0 ? (v.x * (destination.x - aircraft.position.x) + v.z * (destination.z - aircraft.position.z)) / distance : valid ? 0 : null;
+  const eteState = !valid ? 'unavailable' : distance <= NAVIGATION.nearDistance ? 'near-destination'
+    : closingSpeed > NAVIGATION.closingSpeed && closingSpeed / groundSpeed > NAVIGATION.closingFraction ? 'estimate' : 'not-closing';
+  const eteSeconds = eteState === 'estimate' ? distance / closingSpeed : null;
+  return { ...result, bearing, distance, relative: relativeBearing(bearing, aircraft.heading ?? 0), bearingText: degrees(bearing),
+    distanceText: formatNM(distance), closingSpeed, eteSeconds, ete: eteSeconds === null ? '' : formatEte(distance, closingSpeed), eteState,
+    eteReason: { estimate: 'At present closing speed', unavailable: 'Unavailable', 'near-destination': 'Near field', 'not-closing': 'Not closing' }[eteState] };
 }
 
 // ---- Views: projection and framing -----------------------------------------
