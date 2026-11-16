@@ -695,7 +695,7 @@ function updateWindReadout(){
 // overspeed state that is off on the ground, after a crash, while paused, under a dialog and once a mission is over.
 const airspeedMonitor=new AirspeedMonitor();let lastBands=null,lastAirspeed='';
 function updateAirspeed(s,speed,active){
- const e=airspeedEnvelope(flight.type,s.flaps),state=airspeedMonitor.update(s,flight.type,active),bands=e?`${flight.type.id}|${s.flaps}`:'';
+ const e=airspeedEnvelope(flight.type,s.flaps,s),state=airspeedMonitor.update(s,flight.type,active),bands=e?`${flight.type.id}|${e.stall}`:'';
  $('speed-marker').style.left=`${e?tapeLayout(e,speed).marker:Math.min(96,speed/flight.type.speedScale*100)}%`;
  if(bands!==lastBands){lastBands=bands;const t=e&&tapeLayout(e,0),band=(id,from,to)=>{const b=$(id);b.hidden=!e;if(e){b.style.left=`${from}%`;b.style.width=`${to-from}%`;}};
   band('band-stall',0,t?.stall);band('band-low',t?.stall,t?.low);band('band-caution',t?.caution,t?.overspeed);band('band-over',t?.overspeed,100);}

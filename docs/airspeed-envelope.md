@@ -1,16 +1,16 @@
 # Airspeed envelope
 
-The fixed-wing airspeed instrument now shows the usable speed range. Everything lives in `src/airspeed-envelope.js` and is **read-only**: no flight-model value, stall threshold, touchdown limit or mission score changes, and no aircraft file was edited. A test flies a full-power fighter dive with and without the monitor and checks that the two states are byte-for-byte identical.
+The fixed-wing airspeed instrument now shows the usable speed range. The display lives in `src/airspeed-envelope.js` and is **read-only**. Its low-speed threshold is shared with the controller through `src/stall.js`; see [bank-dependent stall margin](banked-stall.md) for the bounded bank demand. No aircraft data or upper speed limit is changed. A test flies a full-power fighter dive with and without the monitor and checks that the two states are byte-for-byte identical.
 
 ## What the pilot sees
 
 - **Tape bands** (a 2px rule under the existing ticks):
-  - Solid coral from zero to the stall speed for the current flaps.
+  - Solid coral from zero to the effective stall speed for the current flaps and bank.
   - Dotted coral from stall to 1.2 × stall (the low-speed margin).
   - Dotted ivory from the caution speed to the overspeed speed.
   - Solid coral from the overspeed speed to the end of the tape, with a 1px red-line tick at its start.
 
-  The low bands move as the flaps move.
+  The low bands move as the flaps and conventional-aircraft bank change.
 - **Label**: "Airspeed" becomes **Low speed**, **High speed** or **Overspeed** in those ranges. Low and high turn the label ivory. Overspeed turns the label, number and unit coral. Colour never carries the state alone.
 - **Notice**: **OVERSPEED · Reduce power and ease the nose up**, in the shared flight-notice slot with the coral warning text and no flash. That slot stays visible when the flight panels or the instrument strip are hidden.
   - Priority: STALL > TERRAIN > OVERSPEED > brake and ground notices. The GEAR banner is a separate element and stays independent.
@@ -18,7 +18,7 @@ The fixed-wing airspeed instrument now shows the usable speed range. Everything 
 
 ## Limits
 
-- **Stall** is `stallSpeed − flaps × flapStallGain`, exactly as `FlightController.step` computes it.
+- **Stall** uses the shared `stallSpeed(type, flaps, state)` helper, exactly as `FlightController.stepFixedWing` computes it. Wings-level values below remain unchanged; airborne conventional turns apply the [bounded bank demand](banked-stall.md).
 - **Caution and overspeed** come from the explicit `UPPER_LIMITS` table (knots), one tuned entry per fixed-wing type. They are **simulator tuning, not certified speeds**:
   - Caution sits at or just above the type's full-power level speed, with any afterburner lit and fixed-gear drag included.
   - Overspeed sits roughly midway between that speed and the dive ceiling.

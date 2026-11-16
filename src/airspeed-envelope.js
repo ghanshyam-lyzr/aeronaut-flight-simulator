@@ -1,5 +1,7 @@
-// The usable speed range on the fixed-wing airspeed instrument. Read-only: nothing here feeds the flight model,
-// stall thresholds or mission scoring. Speeds are knots unless a name says m/s.
+// The usable speed range on the fixed-wing airspeed instrument. The read-only display shares its low-speed
+// threshold with the controller through stall.js. Speeds are knots unless a name says m/s.
+import { stallSpeed } from './stall.js';
+export { stallSpeed } from './stall.js';
 export const KNOTS = 1.94384;
 
 /**
@@ -30,15 +32,12 @@ export const UPPER_LIMITS = Object.freeze({
   interceptor: { caution: 525, overspeed: 545 }, // burner level ~517 kt, dive ceiling ~568 kt
 });
 
-/** The low-speed margin ends this far above the stall speed for the current flaps. */
+/** The low-speed margin ends this far above the effective stall speed for the current flaps and bank. */
 export const LOW_MARGIN = 1.2;
 /** A state clears only once the speed is this many knots back inside it, so a threshold never flickers. */
 export const HYSTERESIS = Object.freeze({ upper: 4, low: 3 });
 export const OVERSPEED_NOTICE = 'OVERSPEED · Reduce power and ease the nose up';
 export const AIRSPEED_LABELS = Object.freeze({ off: 'Airspeed', normal: 'Airspeed', low: 'Low speed', high: 'High speed', overspeed: 'Overspeed' });
-
-/** Stall speed in m/s for a flap stage, exactly as FlightController.step computes it. */
-export const stallSpeed = (type, flaps = 0) => type.flight.stallSpeed - flaps * type.flight.flapStallGain;
 
 /** Full-power level speed in m/s, clean (fixed gear always drags), with any afterburner lit. */
 export function sustainedSpeed(type) {
@@ -60,9 +59,9 @@ export function upperLimits(type) {
 }
 
 /** Everything the instrument marks, in knots, or null for rotorcraft (their airspeed keeps its original meaning). */
-export function airspeedEnvelope(type, flaps = 0) {
+export function airspeedEnvelope(type, flaps = 0, state = {}) {
   if (type.flight.rotorcraft) return null;
-  const stall = stallSpeed(type, flaps) * KNOTS, { caution, overspeed } = upperLimits(type);
+  const stall = stallSpeed(type, flaps, state) * KNOTS, { caution, overspeed } = upperLimits(type);
   // The tape keeps the type's own scale when the red line already fits on it with room to spare.
   const scale = type.speedScale >= overspeed + 10 ? type.speedScale : Math.ceil(overspeed * 1.08 / 10) * 10;
   return { stall, low: stall * LOW_MARGIN, caution, overspeed, scale };
@@ -93,7 +92,7 @@ export class AirspeedMonitor {
     if (state.aircraft !== this.aircraft || state.flightTime < this.time) this.state = 'off';
     this.aircraft = state.aircraft;
     this.time = state.flightTime;
-    const envelope = airspeedEnvelope(type, state.flaps);
+    const envelope = airspeedEnvelope(type, state.flaps, state);
     if (!envelope || !active || state.grounded || state.crashed) return (this.state = 'off');
     const kt = state.speed * KNOTS, was = this.state;
     if (kt >= envelope.overspeed || (was === 'overspeed' && kt > envelope.overspeed - HYSTERESIS.upper)) this.state = 'overspeed';
