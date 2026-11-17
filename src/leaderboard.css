@@ -1,0 +1,75 @@
+/* Alpine Standings — compact flight-deck measurements, with a single chartreuse ownership signal. */
+dialog.leaderboard-dialog{width:min(1000px,calc(100% - 32px));max-height:calc(100dvh - 48px);padding:0;overflow:hidden}
+.leaderboard-dialog #dialog-content{display:flex;flex-direction:column;max-height:calc(100dvh - 50px)}
+.leaderboard-dialog .dialog-head{flex-shrink:0;align-items:center;padding:19px 26px 17px;border-bottom:1px solid var(--border);gap:16px}
+.leaderboard-dialog .dialog-head h2{font-size:25px;margin:4px 0 0;line-height:1.2}
+.leaderboard-dialog .dialog-head .icon-btn{width:44px;height:44px}
+.lb-eyebrow{font-size:11px;color:var(--muted)}
+.lb-body{overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--subtle) var(--surface);padding:18px 26px 24px}
+.lb-body .lb-intro{font-size:14px;color:var(--foreground);line-height:1.5;margin:0 0 17px}
+.lb-intro span{display:block;color:var(--muted);font-size:12px;margin-top:3px}
+.lb-filters{display:grid;grid-template-columns:1.2fr 1fr 1.2fr .65fr 1.35fr;gap:10px}
+.lb-filters label{font-size:11px;color:var(--muted);min-width:0;line-height:1.5}
+.lb-filters select{display:block;width:100%;min-height:40px;background:var(--surface-raised);border:1px solid var(--border);border-radius:6px;color:var(--foreground);font-size:12px;padding:0 24px 0 10px;margin-top:5px;text-overflow:ellipsis}
+.lb-filters:has(#lb-course){grid-template-columns:1.1fr 1fr 1.1fr 1.4fr}
+.lb-filters:not(:has(#lb-airport,#lb-course)){grid-template-columns:1fr 1fr 1.4fr}
+.lb-board{margin-top:22px;border-top:1px solid var(--border);padding-top:17px}
+.lb-board-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.lb-board-heading h3{font-size:20px;font-weight:500;margin:4px 0 0;line-height:1.3}
+.lb-ranking{font-size:12px;line-height:1.6;color:var(--muted);margin:10px 0 12px}
+.lb-button{display:inline-flex;align-items:center;justify-content:center;min-height:38px;border:1px solid var(--border);border-radius:6px;background:var(--surface-raised);padding:7px 13px;font-size:12px;line-height:1.4;white-space:nowrap}
+.lb-button:hover{background:var(--surface-soft)}
+.lb-best{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--accent);border-radius:6px;margin:0 0 12px;color:var(--accent)}
+.lb-best>span{font-size:12px}.lb-best b{font-weight:500;margin-left:8px}.lb-best strong{font-family:var(--numbers);font-variant-numeric:tabular-nums;font-size:23px;font-weight:400;white-space:nowrap}.lb-best strong>span{color:var(--subtle);font-size:16px}
+.lb-best small,.lb-value small{font-family:var(--font);font-size:11px;font-weight:400;margin-left:4px}
+.lb-personal-note{font-size:12px;color:var(--muted);margin:0 0 14px}
+.lb-table{width:100%;border-collapse:collapse;table-layout:fixed;text-align:left}
+.lb-table th{font-weight:400}.lb-table thead th{font-size:11px;color:var(--muted);padding:10px 8px;background:var(--surface-raised);line-height:1.5}.lb-table thead th:first-child{width:56px;border-radius:6px 0 0 6px}.lb-table thead th:nth-child(2){width:30%}.lb-table thead th:last-child{border-radius:0 6px 6px 0}
+.lb-table thead small{display:block;font-size:11px;color:var(--foreground)}
+.lb-table tbody td,.lb-table tbody th{padding:12px 8px;vertical-align:top;border-bottom:1px solid var(--border)}
+.lb-rank{font-family:var(--numbers);font-size:24px;font-variant-numeric:tabular-nums}
+.lb-pilot>span{font-size:13px;line-height:1.5;overflow-wrap:anywhere;display:block;font-weight:500}
+.lb-pilot>small{display:block;font-size:11px;color:var(--accent);margin-top:2px}
+.lb-pilot details{margin-top:5px;font-size:11px;color:var(--muted)}
+.lb-pilot summary{cursor:pointer;min-height:22px;line-height:22px;width:fit-content}
+.lb-pilot details p{font-size:11px;line-height:1.65;margin:6px 0 0;overflow-wrap:anywhere}
+.lb-value strong{font-family:var(--numbers);font-size:25px;font-weight:400;white-space:nowrap;line-height:1.2;font-variant-numeric:tabular-nums}
+.lb-own .lb-rank,.lb-own .lb-value strong{color:var(--accent)}
+.lb-own .lb-pilot{border-left:2px solid var(--accent)}
+.lb-mobile-metric{display:none}
+.lb-feedback{padding:22px 16px;background:var(--background);border:1px solid var(--border);border-radius:6px;font-size:13px;line-height:1.6}
+.lb-feedback strong{display:block;font-size:15px;font-weight:500}.lb-feedback p{margin:5px 0 0;color:var(--muted);font-size:12px}.lb-feedback small{display:block;margin-top:9px;font-size:11px;color:var(--muted);overflow-wrap:anywhere}.lb-error strong{color:var(--danger)}
+.lb-page-actions{display:flex;align-items:center;gap:10px;margin-top:12px;min-height:26px}.lb-page-actions>span{font-size:11px;color:var(--muted);margin-left:auto}
+.lb-support{display:grid;grid-template-columns:1.1fr 1fr;gap:26px;border-top:1px solid var(--border);padding-top:19px;margin-top:16px}
+.lb-profile h3{font-weight:500;font-size:14px;margin:0 0 7px}.lb-profile>p{font-size:11px;line-height:1.65;color:var(--muted);margin:0 0 12px}
+.lb-profile label{display:block;font-size:11px;color:var(--muted);margin-bottom:6px}
+.lb-profile-entry{display:flex;gap:8px}.lb-profile input{min-width:0;width:100%;min-height:40px;padding:8px 10px;color:var(--foreground);background:var(--background);border:1px solid var(--border);border-radius:6px;font-size:13px}.lb-profile input::placeholder{color:var(--subtle)}
+.lb-profile #lb-profile-status{margin:8px 0 0;overflow-wrap:anywhere}
+.lb-text-button{font-size:12px;text-decoration:underline;text-underline-offset:4px;padding:8px 0;color:var(--foreground)}
+.lb-rules{font-size:12px;color:var(--muted);line-height:1.65}.lb-rules>summary{font-size:13px;color:var(--foreground);cursor:pointer;min-height:40px;padding:10px 0;border-bottom:1px solid var(--border);line-height:1.5}.lb-rules>p{margin:12px 0;font-size:12px}.lb-rules>small{font-size:11px}
+.lb-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.lb-body :is(button,input,select,summary):focus-visible{outline-offset:2px}
+@media(max-width:1100px) and (min-width:801px){.topbar nav{gap:16px}.brand,.header-right{min-width:0}.header-right{gap:8px}}
+@media(max-width:950px) and (min-width:801px){.header-right .live-label,.header-right .header-divider{display:none}}
+@media(max-width:700px){
+ dialog.leaderboard-dialog{width:calc(100% - 20px);max-height:calc(100dvh - 24px)}
+ .leaderboard-dialog #dialog-content{max-height:calc(100dvh - 26px)}
+ .leaderboard-dialog .dialog-head{padding:10px 16px;gap:10px}.leaderboard-dialog .dialog-head h2{font-size:22px}
+ .lb-body{padding:15px 16px 20px}.lb-body .lb-intro{font-size:13px}.lb-intro span{font-size:11px}
+ .lb-filters,.lb-filters:has(#lb-course),.lb-filters:not(:has(#lb-airport,#lb-course)){grid-template-columns:1fr 1fr;gap:10px 8px}
+ .lb-filters label:last-child:nth-child(odd){grid-column:1/-1}
+ .lb-filters select{min-height:44px;font-size:12px;padding-left:8px}
+ .lb-board{margin-top:17px;padding-top:15px}.lb-board-heading h3{font-size:18px}.lb-ranking{font-size:11px}
+ .lb-button{min-height:44px;padding:7px 11px}
+ .lb-best{display:block;padding:10px 12px}.lb-best>span{display:block;margin-bottom:6px}.lb-best strong{font-size:24px}
+ .lb-table thead{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden}
+ .lb-table tbody{display:block}.lb-table tr{display:grid;grid-template-columns:36px repeat(6,minmax(0,1fr));border-bottom:1px solid var(--border);padding:12px 0;row-gap:10px}
+ .lb-table tbody td,.lb-table tbody th{padding:0;border:0}.lb-rank{grid-column:1;grid-row:1;font-size:25px}
+ .lb-pilot{grid-column:2/-1;grid-row:1;padding-left:8px!important;min-width:0}.lb-own .lb-pilot{border-left:2px solid var(--accent)}
+ .lb-value{grid-column:span 2;text-align:left;min-width:0}.lb-value:nth-child(3){grid-column:2/span 2}
+ .lb-table tr:has(.lb-value:last-child:nth-child(4)) .lb-value{grid-column:span 3}.lb-table tr:has(.lb-value:last-child:nth-child(4)) .lb-value:nth-child(3){grid-column:2/span 3}
+ .lb-table tr:has(.lb-value:last-child:nth-child(3)) .lb-value{grid-column:2/-1}
+ .lb-mobile-metric{display:block;font-size:11px;line-height:1.4;color:var(--muted);margin-bottom:5px;padding-right:3px}.lb-value strong{font-size:24px}.lb-value small{font-size:10px;margin-left:3px}
+ .lb-feedback{padding:18px 12px}.lb-page-actions{flex-wrap:wrap}.lb-page-actions>span{font-size:11px}
+ .lb-support{grid-template-columns:1fr;gap:12px;padding-top:16px}.lb-profile input{font-size:16px;min-height:44px}
+}
