@@ -41,6 +41,13 @@
           <p id="recovery-cue"></p><p id="recovery-objective" class="landing-objective"></p>
           <div class="landing-actions"><button id="recovery-retry">Retry</button><button id="recovery-cancel">Free flight</button></div>
         </div>
+        <div id="hover-guidance" class="landing-guidance" hidden>
+          <p id="hover-phase">Acquire the hover target</p>
+          <div class="hover-errors"><div><span>Position · ≤4 m</span><strong id="hover-position"></strong></div><div><span>Height · ±2 m</span><strong id="hover-height"></strong></div><div><span>Heading · ±8°</span><strong id="hover-heading"></strong></div></div>
+          <div class="hover-progress"><span>Continuous hold</span><strong id="hover-time">0.0 / 10 s</strong><progress id="hover-progress" max="10" value="0" aria-label="Continuous manual hover hold"></progress></div>
+          <p id="hover-cue"></p><p class="landing-objective" id="hover-objective"></p>
+          <div class="landing-actions"><button id="hover-retry">Retry</button><button id="hover-cancel">Free flight</button></div>
+        </div>
         <div class="mission-action"><span><span class="status-dot"></span><span id="assist-status">Flight assist enabled</span></span><button id="take-control" title="Switch between assisted and manual flight">Take control <i data-lucide="arrow-up-right"></i></button></div>
       </section>
       <div class="environment-panel panel"><button id="weather-btn" data-dialog="environment" aria-label="Change weather"><i data-lucide="sun"></i><div><strong id="weather-label">Clear skies</strong><span id="weather-description">18°C <span class="separator">/</span> Wind calm</span></div><i data-lucide="chevron-down" class="chevron"></i></button><div class="local-time"><span id="world-time">14:32</span><span>Local time</span></div></div>

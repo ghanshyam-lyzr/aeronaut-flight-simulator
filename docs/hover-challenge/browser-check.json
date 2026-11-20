@@ -1,0 +1,59 @@
+{
+  "checks": [
+    "brief preserves unsupported aircraft",
+    "explicit switch and manual start",
+    "hands-off earns no hold",
+    "pause freezes measurements and time",
+    "dialog freezes measurements and time",
+    "controlled hidden-tab probe freezes the attempt",
+    "settings assist fails immediately",
+    "button assist fails immediately",
+    "keyboard assist fails immediately",
+    "R retries the same manual setup",
+    "normal keyboard input completes a ten-second manual hold",
+    "measured result is visible",
+    "exit restores later Weather choice",
+    "landing replaces hover and restores wind",
+    "aircraft switch cancels the challenge",
+    "no browser errors: "
+  ],
+  "result": {
+    "hover": {
+      "status": "success",
+      "reason": "",
+      "aircraft": "helicopter",
+      "target": {
+        "x": 900,
+        "y": 100,
+        "z": -1500,
+        "heading": 0
+      },
+      "errors": {
+        "position": 0.2467625518146101,
+        "height": -0.055245989873625945,
+        "heading": 0.010934205234141459
+      },
+      "elapsed": 15.68333333333333,
+      "holdTime": 10,
+      "bestHold": 10,
+      "excursions": 0,
+      "inside": true,
+      "result": {
+        "elapsed": 15.68333333333333,
+        "bestHold": 10,
+        "excursions": 0,
+        "position": 0.2467625518146101,
+        "height": -0.055245989873625945,
+        "heading": 0.010934205234141459
+      },
+      "owning": true,
+      "activity": "hover",
+      "targetVisible": false
+    },
+    "assist": false,
+    "engine": {
+      "backend": "webassembly",
+      "terrain": "webassembly"
+    }
+  }
+}

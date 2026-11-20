@@ -62,6 +62,10 @@ The mission uses the existing arcade flight and ground-roll model, including rol
 
 **Lake Azure gates** is one timed course of six gates up Lake Azure, past Alpine Field: choose **Fly the Lake Azure gates** on the flight card or **Checkpoint course** in **Explore** (phones: Menu → Explore). The brief recommends the Mira T2 and offers a switch, but the course is flown in the aircraft you choose; helicopters are refused by name. Fly each gate's opening front to back, in order; the chartreuse gate is next. Pausing or opening a dialog stops the clock, R or Retry starts again, and a landing mission and the course never run together. See [docs/checkpoint-course.md](docs/checkpoint-course.md).
 
+## Hover challenge
+
+**Explore → Hover challenge · Laret H4** (phone: Menu → Explore) starts one manual hovering exercise in calm air. Other aircraft get an explicit switch option. Move to the airborne chartreuse ring above Alpine Field, hold within a 4 m horizontal radius and ±2 m height, and face north within ±8° for ten continuous simulation seconds. The card shows each error and hold progress; an excursion resets the timer. Hover hold / assist and ground contact end the attempt. R / Retry repeats it; Free flight restores your wind. Pause and dialogs freeze the clock. Results report hold time, final errors and resets. See [docs/hover-challenge.md](docs/hover-challenge.md).
+
 ## Crosswind practice
 
 **Crosswind practice** is one repeatable landing exercise: the landing mission's approach to Alpine Field 36 in a fixed wind from 080° at 9 kt gusting 12 (about 9 kt across from the right). Choose **Crosswind practice · runway 36** on the flight card or in **Explore** (phones: Menu → Explore). The brief gives the wind's components and the crab angle, recommends the Mira T2 and offers a switch; helicopters are refused by name. Crab into the wind on final, straighten just before touchdown, then roll out as in the landing mission, which scores it with its own rules. The attempt borrows the wind and gives your Weather choice back whichever way it ends; Retry flies the same gusts. See [docs/crosswind-practice.md](docs/crosswind-practice.md).
