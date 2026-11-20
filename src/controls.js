@@ -13,6 +13,15 @@ export const TRAVEL = Object.freeze({ pitch: 0.65, roll: 0.65, yaw: 0.65, thrott
 const RESPONSE_MIN = 0.5, RESPONSE_MAX = 2;
 const responseOf = value => Number.isFinite(value) ? Math.max(RESPONSE_MIN, Math.min(RESPONSE_MAX, value)) : 1;
 
+/** A held keyboard, touch or mouse axis takes priority over that axis on the controller, even at zero. */
+export function mergeFlightControls(manual, gamepad, owned = {}) {
+  return Object.fromEntries(AXES.map(axis => [axis, clamp(owned[axis] || !RESPONSIVE.includes(axis) ? manual[axis] : gamepad[axis], axis === 'brake' ? 0 : -1)]));
+}
+
+// Shared manual-intent thresholds: neutral controllers never disengage assist or change activity eligibility.
+export const manualFlightIntent = (inputs, rotorcraft = false) => Math.abs(inputs.pitch) + Math.abs(inputs.roll) + Math.abs(inputs.yaw) > (rotorcraft ? 0.001 : 0.12)
+  || (rotorcraft && Math.abs(inputs.throttle) > 0.001);
+
 /** Timestamped continuous inputs, independent of keyboard repeat and render cadence. */
 export class FlightInputs {
   constructor(now = 0, response) { this.setResponse(response); this.reset(now); }
