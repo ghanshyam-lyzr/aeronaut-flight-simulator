@@ -21,6 +21,7 @@
         <button class="mission-entry" id="landing-entry">Landing mission <i data-lucide="arrow-up-right"></i></button>
         <button class="mission-entry" id="course-entry">Fly the Lake Azure gates <i data-lucide="arrow-up-right"></i></button>
         <button class="mission-entry" id="crosswind-entry">Crosswind practice · runway 36 <i data-lucide="arrow-up-right"></i></button>
+        <button class="mission-entry" id="takeoff-entry">Takeoff practice <i data-lucide="arrow-up-right"></i></button>
         <button class="mission-entry" id="recovery-entry">Stall recovery · Mira T2 <i data-lucide="arrow-up-right"></i></button>
         <div id="landing-guidance" class="landing-guidance" hidden>
           <p id="landing-phase">Final approach · runway 36</p>
@@ -34,6 +35,12 @@
           <div class="landing-readings"><div><span>Course time</span><strong id="course-time">0:00.0</strong></div><div class="course-next-reading"><span id="course-next-label">Next gate</span><strong id="course-next"></strong></div><div class="course-best" id="course-best-reading" hidden><span>Best</span><strong id="course-best"></strong></div></div>
           <p id="course-cue" aria-live="polite"></p><p id="course-objective" class="landing-objective"></p>
           <div class="landing-actions"><button id="course-retry">Retry</button><button id="course-cancel">Free flight</button></div>
+        </div>
+        <div id="takeoff-guidance" class="landing-guidance" hidden>
+          <p id="takeoff-phase">1 / 3 · Accelerate and rotate near 60 kt</p>
+          <div class="landing-readings"><div><span>Runway height</span><strong id="takeoff-height">0 / 150 ft</strong></div><div><span>Sustained climb</span><strong id="takeoff-progress">0.0 / 3 s</strong></div></div>
+          <p id="takeoff-cue"></p><p id="takeoff-objective" class="landing-objective"></p>
+          <div class="landing-actions"><button id="takeoff-retry">Retry</button><button id="takeoff-cancel">Free flight</button></div>
         </div>
         <div id="recovery-guidance" class="landing-guidance" hidden>
           <p id="recovery-phase">1 / 3 · Slow until the STALL warning</p>
