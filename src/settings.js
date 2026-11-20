@@ -4,6 +4,7 @@
 import { aircraftType } from './fleet.js';
 import { FRAMINGS, ZOOM_SPANS } from './navigation.js';
 import { WINDS } from './wind.js';
+import { GAMEPAD_DEAD_ZONE, DEFAULT_DEAD_ZONE } from './gamepad.js';
 
 export const SETTINGS_KEY = 'aeronaut-settings';
 export const SETTINGS_VERSION = 2;
@@ -27,6 +28,7 @@ export const FEATURES = Object.freeze(['showFlightPath']);
 
 const DEFAULTS = Object.freeze({
   quality: 'high', invertPitch: false, mouseSteering: false,
+  gamepadEnabled: false, gamepadDeadZone: DEFAULT_DEAD_ZONE,
   response: Object.freeze({ pitch: 1, roll: 1, yaw: 1, throttle: 1 }),
   camera: 'chase', chaseDistance: 1,
   // Sound stays off until the pilot turns it on, as before; unmuting is remembered.
@@ -38,7 +40,7 @@ const DEFAULTS = Object.freeze({
 
 // Restore defaults resets these; aircraft, airfield/runway, weather, wind and map framing are choices
 // made elsewhere and survive, as do the logbook and the flight in progress.
-export const CUSTOMIZATION_KEYS = Object.freeze(['quality', 'invertPitch', 'mouseSteering', 'response', 'camera', 'chaseDistance', 'volume', 'muted', ...DISPLAY, ...FEATURES]);
+export const CUSTOMIZATION_KEYS = Object.freeze(['quality', 'invertPitch', 'mouseSteering', 'gamepadEnabled', 'gamepadDeadZone', 'response', 'camera', 'chaseDistance', 'volume', 'muted', ...DISPLAY, ...FEATURES]);
 
 export function defaultSettings() {
   return { ...DEFAULTS, response: { ...DEFAULTS.response }, version: SETTINGS_VERSION };
@@ -65,6 +67,8 @@ export function normalizeSettings(raw) {
     quality: oneOf(QUALITIES, s.quality, d.quality),
     invertPitch: flag(s.invertPitch, d.invertPitch),
     mouseSteering: flag(s.mouseSteering, d.mouseSteering),
+    gamepadEnabled: flag(s.gamepadEnabled, d.gamepadEnabled),
+    gamepadDeadZone: bounded(s.gamepadDeadZone, GAMEPAD_DEAD_ZONE, d.gamepadDeadZone),
     response: Object.fromEntries(AXES.map(axis => [axis, bounded(response[axis], RESPONSE, 1)])),
     camera: oneOf(VIEWS, s.camera, d.camera),
     chaseDistance: bounded(s.chaseDistance, CHASE_DISTANCE, d.chaseDistance),
