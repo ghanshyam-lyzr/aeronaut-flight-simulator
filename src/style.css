@@ -388,3 +388,7 @@ dialog.paint-dialog{width:min(980px,calc(100% - 32px));max-height:calc(100dvh - 
  .paint-controls .paint-custom{margin-top:18px}.paint-color{min-height:61px}.paint-status{margin-top:12px}.paint-preview-footer strong{font-size:12px}
 }
 @media(max-height:700px) and (min-width:701px){.paint-dialog .dialog-head{padding-top:10px;padding-bottom:10px}}
+
+/* Takeoff practice uses the same compact activity surface and tokens. */
+#takeoff-phase{color:var(--accent)}
+@media(max-width:550px){#takeoff-entry{display:none}.takeoff-mode .mission-panel h1{font-size:19px}.takeoff-mode .mission-panel{padding-bottom:0}#takeoff-guidance .landing-actions button{min-height:34px}#takeoff-guidance .landing-readings{gap:8px}#takeoff-cue{min-height:34px}}
