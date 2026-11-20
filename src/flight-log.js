@@ -15,6 +15,7 @@ function dateString(value) {
   const timestamp = Date.parse(value);
   return day >= 1 && day <= days && Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
 }
+export { dateString as normalizeFlightDate };
 
 function normalizeFlight(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || (!Object.hasOwn(value, 'time') && !Object.hasOwn(value, 'distance'))) return null;

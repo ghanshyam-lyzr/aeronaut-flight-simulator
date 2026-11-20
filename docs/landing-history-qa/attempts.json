@@ -1,0 +1,387 @@
+{
+  "version": 1,
+  "attempts": [
+    {
+      "id": "qa-attempt-3",
+      "exercise": "landing",
+      "outcome": "failed",
+      "reason": "Terrain impact",
+      "startedAt": "2026-11-20T12:06:00.000Z",
+      "finishedAt": "2026-11-20T12:08:00.000Z",
+      "elapsed": 2.5,
+      "aircraft": {
+        "id": "jet",
+        "name": "Vela J8"
+      },
+      "field": {
+        "id": "orvane-regional",
+        "name": "Orvane Regional",
+        "runway": "14",
+        "surface": "asphalt",
+        "heading": 2.4085543677521746,
+        "runwayLength": 2600,
+        "runwayWidth": 45,
+        "elevation": 1058
+      },
+      "setup": {
+        "speed": 56,
+        "throttle": 0.43478260869565216,
+        "flaps": 2,
+        "heading": 2.4085543677521746,
+        "pitch": -0.049958395721942765,
+        "bank": 0,
+        "pitchTrim": 0,
+        "targetSpeed": 56,
+        "maxSink": 3,
+        "maxSpeed": 68,
+        "gearDown": true,
+        "autopilot": false,
+        "position": {
+          "x": 19394.08654473874,
+          "y": 1126.8,
+          "z": -3783.547581145746
+        },
+        "weather": ""
+      },
+      "windStart": {
+        "config": {
+          "id": "calm",
+          "direction": 0,
+          "speed": 0,
+          "gust": 0,
+          "veer": 0,
+          "seed": 0
+        },
+        "time": 0,
+        "x": 0,
+        "z": 0,
+        "speed": 0,
+        "direction": 0,
+        "gust": 0,
+        "transitioning": false
+      },
+      "windEnd": {
+        "config": {
+          "id": "calm",
+          "direction": 0,
+          "speed": 0,
+          "gust": 0,
+          "veer": 0,
+          "seed": 0
+        },
+        "time": 0,
+        "x": 0,
+        "z": 0,
+        "speed": 0,
+        "direction": 0,
+        "gust": 0,
+        "transitioning": false
+      },
+      "touchdown": null,
+      "feedback": null
+    },
+    {
+      "id": "qa-attempt-2",
+      "exercise": "crosswind",
+      "outcome": "failed",
+      "reason": "Touchdown outside the runway",
+      "startedAt": "2026-11-20T12:04:00.000Z",
+      "finishedAt": "2026-11-20T12:06:00.000Z",
+      "elapsed": 25.316666666666666,
+      "aircraft": {
+        "id": "jet",
+        "name": "Vela J8"
+      },
+      "field": {
+        "id": "alpine-field",
+        "name": "Alpine Field",
+        "runway": "36",
+        "surface": "asphalt",
+        "heading": 0,
+        "runwayLength": 1100,
+        "runwayWidth": 53,
+        "elevation": 78
+      },
+      "setup": {
+        "speed": 56,
+        "throttle": 0.43478260869565216,
+        "flaps": 2,
+        "heading": 0,
+        "pitch": -0.049958395721942765,
+        "bank": 0,
+        "pitchTrim": 0,
+        "targetSpeed": 56,
+        "maxSink": 3,
+        "maxSpeed": 68,
+        "gearDown": true,
+        "autopilot": false,
+        "position": {
+          "x": 900,
+          "y": 146.8,
+          "z": -150
+        },
+        "weather": ""
+      },
+      "windStart": {
+        "config": {
+          "id": "crosswind-practice",
+          "direction": 1.3962634015954638,
+          "speed": 4.630000000000001,
+          "gust": 1.5433333333333334,
+          "veer": 0.06981317007977318,
+          "seed": 3
+        },
+        "time": 0,
+        "x": -5.171350656238551,
+        "z": 0.6947479295447629,
+        "speed": 5.217810105339751,
+        "direction": 1.4372503941975205,
+        "gust": 0.3808704786218683,
+        "transitioning": false
+      },
+      "windEnd": {
+        "config": {
+          "id": "crosswind-practice",
+          "direction": 1.3962634015954638,
+          "speed": 4.630000000000001,
+          "gust": 1.5433333333333334,
+          "veer": 0.06981317007977318,
+          "seed": 3
+        },
+        "time": 25.316666666666666,
+        "x": -5.95168779132065,
+        "z": 0.6358074464232887,
+        "speed": 5.985552495324268,
+        "direction": 1.4643718580367597,
+        "gust": 0.878327750750065,
+        "transitioning": false
+      },
+      "touchdown": {
+        "time": 25.316666666666666,
+        "along": 291.9464441477428,
+        "cross": -135.1400231999587,
+        "alignment": 0,
+        "heading": 0,
+        "bank": 0,
+        "pitch": -0.03128367194868189,
+        "flaps": 2,
+        "speed": 55.38024281626675,
+        "sink": 1.7427936407160203,
+        "position": {
+          "x": 764.8599768000413,
+          "y": 80.8,
+          "z": -1541.9464441477428
+        },
+        "gearDown": true,
+        "stalled": false
+      },
+      "feedback": {
+        "crab": 0,
+        "thresholdCross": -107.13107420821768,
+        "touchdownCrab": 0,
+        "touchdownBank": 0,
+        "touchdownPitch": -0.03128367194868189
+      }
+    },
+    {
+      "id": "qa-attempt-1",
+      "exercise": "crosswind",
+      "outcome": "success",
+      "reason": "",
+      "startedAt": "2026-11-20T12:02:00.000Z",
+      "finishedAt": "2026-11-20T12:04:00.000Z",
+      "elapsed": 47.791666666666664,
+      "aircraft": {
+        "id": "trainer",
+        "name": "Mira T2"
+      },
+      "field": {
+        "id": "alpine-field",
+        "name": "Alpine Field",
+        "runway": "36",
+        "surface": "asphalt",
+        "heading": 0,
+        "runwayLength": 1100,
+        "runwayWidth": 53,
+        "elevation": 78
+      },
+      "setup": {
+        "speed": 33,
+        "throttle": 0.5,
+        "flaps": 2,
+        "heading": 0,
+        "pitch": -0.049958395721942765,
+        "bank": 0,
+        "pitchTrim": 0,
+        "targetSpeed": 33,
+        "maxSink": 3.2,
+        "maxSpeed": 46,
+        "gearDown": true,
+        "autopilot": false,
+        "position": {
+          "x": 900,
+          "y": 146.475,
+          "z": -150
+        },
+        "weather": ""
+      },
+      "windStart": {
+        "config": {
+          "id": "crosswind-practice",
+          "direction": 1.3962634015954638,
+          "speed": 4.630000000000001,
+          "gust": 1.5433333333333334,
+          "veer": 0.06981317007977318,
+          "seed": 3
+        },
+        "time": 0,
+        "x": -5.171350656238551,
+        "z": 0.6947479295447629,
+        "speed": 5.217810105339751,
+        "direction": 1.4372503941975205,
+        "gust": 0.3808704786218683,
+        "transitioning": false
+      },
+      "windEnd": {
+        "config": {
+          "id": "crosswind-practice",
+          "direction": 1.3962634015954638,
+          "speed": 4.630000000000001,
+          "gust": 1.5433333333333334,
+          "veer": 0.06981317007977318,
+          "seed": 3
+        },
+        "time": 47.791666666666664,
+        "x": -5.830605066649797,
+        "z": 0.880127242553295,
+        "speed": 5.896658325384536,
+        "direction": 1.420977848252944,
+        "gust": 0.8207289365342556,
+        "transitioning": false
+      },
+      "touchdown": {
+        "time": 41.55,
+        "along": 211.9476717958555,
+        "cross": -4.654134709145978,
+        "alignment": 0.7566963315884154,
+        "heading": 0.013206842423980625,
+        "bank": 0,
+        "pitch": -0.0517602658915371,
+        "flaps": 2,
+        "speed": 33.06684003021063,
+        "sink": 1.7169357584958502,
+        "position": {
+          "x": 895.345865290854,
+          "y": 80.475,
+          "z": -1461.9476717958555
+        },
+        "gearDown": true,
+        "stalled": false
+      },
+      "feedback": {
+        "crab": 0.16450325830592694,
+        "thresholdCross": 0.0055789454745536204,
+        "touchdownCrab": 0.013206842423980623,
+        "touchdownBank": 0,
+        "touchdownPitch": -0.0517602658915371
+      }
+    },
+    {
+      "id": "qa-attempt-0",
+      "exercise": "landing",
+      "outcome": "success",
+      "reason": "",
+      "startedAt": "2026-11-20T12:00:00.000Z",
+      "finishedAt": "2026-11-20T12:02:00.000Z",
+      "elapsed": 47.84166666666667,
+      "aircraft": {
+        "id": "trainer",
+        "name": "Mira T2"
+      },
+      "field": {
+        "id": "alpine-field",
+        "name": "Alpine Field",
+        "runway": "36",
+        "surface": "asphalt",
+        "heading": 0,
+        "runwayLength": 1100,
+        "runwayWidth": 53,
+        "elevation": 78
+      },
+      "setup": {
+        "speed": 33,
+        "throttle": 0.5,
+        "flaps": 2,
+        "heading": 0,
+        "pitch": -0.049958395721942765,
+        "bank": 0,
+        "pitchTrim": 0,
+        "targetSpeed": 33,
+        "maxSink": 3.2,
+        "maxSpeed": 46,
+        "gearDown": true,
+        "autopilot": false,
+        "position": {
+          "x": 900,
+          "y": 146.475,
+          "z": -150
+        },
+        "weather": ""
+      },
+      "windStart": {
+        "config": {
+          "id": "calm",
+          "direction": 0,
+          "speed": 0,
+          "gust": 0,
+          "veer": 0,
+          "seed": 0
+        },
+        "time": 0,
+        "x": 0,
+        "z": 0,
+        "speed": 0,
+        "direction": 0,
+        "gust": 0,
+        "transitioning": false
+      },
+      "windEnd": {
+        "config": {
+          "id": "calm",
+          "direction": 0,
+          "speed": 0,
+          "gust": 0,
+          "veer": 0,
+          "seed": 0
+        },
+        "time": 47.84166666666667,
+        "x": 0,
+        "z": 0,
+        "speed": 0,
+        "direction": 0,
+        "gust": 0,
+        "transitioning": false
+      },
+      "touchdown": {
+        "time": 41.53333333333333,
+        "along": 267.49443383332346,
+        "cross": 0,
+        "alignment": 0,
+        "heading": 0,
+        "bank": 0,
+        "pitch": -0.05209203468115524,
+        "flaps": 2,
+        "speed": 33.0144881428675,
+        "sink": 1.717993191592405,
+        "position": {
+          "x": 900,
+          "y": 80.475,
+          "z": -1517.4944338333235
+        },
+        "gearDown": true,
+        "stalled": false
+      },
+      "feedback": null
+    }
+  ]
+}

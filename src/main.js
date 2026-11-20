@@ -14,6 +14,8 @@ import { FlightController, FlightAudio, FollowFrame, hasPitchTrim, hasHeadingSel
 import { FLEET, aircraftType } from './fleet.js';
 import { FlightInputs } from './controls.js';
 import { loadFlights, saveFlights as storeFlights, recordFlight, flightTotals, formatFlightDate } from './flight-log.js';
+import { LandingHistory } from './landing-history.js';
+import { landingHistoryMarkup, mountLandingHistory } from './landing-history-ui.js';
 import { loadSettings, saveSettings as storeSettings, resetSettings, CUSTOMIZATION_KEYS, anyDisplayHidden, toggleDisplay, flightPathShown, RESPONSE, CHASE_DISTANCE, VOLUME, percent } from './settings.js';
 import { disposeObject } from './helicopter.js';
 import { LandingMission, landingProfile } from './landing-mission.js';
@@ -91,7 +93,8 @@ function resetAltitudeReminder(){altitudeControls?.close();altitudeReminder.rese
 flight.setWind(settings.wind,{immediate:true});
 const landing = new LandingMission(selection.field);
 // Scored activities never run together; the wind owner ends before the next one starts (src/activities.js).
-const course = new CheckpointCourse(), practice = new CrosswindPractice(landing), recovery = new StallRecovery(), activities = new Activities(landing, course, practice, recovery);
+const landingHistory = new LandingHistory({context:()=>({weather:settings.weather})});
+const course = new CheckpointCourse(), practice = new CrosswindPractice(landing), recovery = new StallRecovery(), activities = new Activities(landing, course, practice, recovery, landingHistory);
 const signalProbe=document.createElement('span');signalProbe.style.color='var(--accent)';document.body.appendChild(signalProbe);
 const signalColor=getComputedStyle(signalProbe).color;signalProbe.remove();
 let landingCues = createLandingGuidance(scene,landing.field,signalColor);
@@ -644,10 +647,11 @@ function showDialog(type){
  }else if(type==='chart'){
  content=dialogHead('Navigation chart')+`<div class="dialog-body chart-body"><div class="chart-map"><canvas id="chart-canvas" tabindex="0" role="img" aria-describedby="chart-help"></canvas><span class="map-north" aria-hidden="true">N <span>↑</span></span></div><div class="chart-side"><div class="chart-readout" id="chart-readout" aria-live="polite"></div><div class="chart-tools"><div class="chart-framing" role="radiogroup" aria-label="Chart framing">${FRAMINGS.map(f=>`<button role="radio" data-framing="${f}">${FRAMING_LABELS[f]}</button>`).join('')}</div><div class="chart-zoom"><button id="chart-zoom-out" aria-label="Zoom chart out"><i data-lucide="minus"></i></button><button id="chart-zoom-in" aria-label="Zoom chart in"><i data-lucide="plus"></i></button></div></div><h3 class="dialog-section-title">Destination</h3><div class="chart-airports" role="radiogroup" aria-label="Destination airfield">${AIRPORTS.map(chartAirport).join('')}</div><p class="dialog-note" id="chart-help">Choose the destination here or on the map; selection matches Explore. Track and groundspeed measure ground travel. The estimate projects present closing speed from the paused flight state; it does not predict landing time. Drag / arrows pan; + / − zoom.</p><button class="secondary-btn" data-next-dialog="explore">Departures and landing missions <i data-lucide="arrow-up-right"></i></button></div></div>`;
  }else if(type==='logbook'){
+ if(landingHistory.persisted===false)landingHistory.flush();
  const {time:totalTime,distance:totalDistance}=flightTotals(savedFlights,{time:flight.state.flightTime,distance:flight.state.distance});
- content=dialogHead('Every flight is a story')+`<div class="dialog-body"><p>Your time in the skies, saved on this browser.</p><div class="log-stats"><div class="log-stat"><span>Total flight time</span><strong>${formatTime(totalTime)}</strong></div><div class="log-stat"><span>Distance explored</span><strong>${(totalDistance/1852).toFixed(1)} <span>NM</span></strong></div></div><h3 class="dialog-section-title">Current flight</h3><div class="log-row"><span>The Swiss Alps · ${flight.type.name}</span><strong>${formatTime(flight.state.flightTime)}</strong></div><h3 class="dialog-section-title">Previous flights</h3>${savedFlights.length?savedFlights.slice(0,5).map(f=>`<div class="log-row"><span>${formatFlightDate(f.date)}${f.aircraft?` · ${aircraftType(f.aircraft).name}`:''} · ${(f.distance/1852).toFixed(1)} NM</span><strong>${formatTime(f.time)}</strong></div>`).join(''):'<div class="empty-log">Your adventure is just beginning. Flights are saved when you restart or leave the simulator.</div>'}</div>`;
+ content=dialogHead('Every flight is a story')+`<div class="dialog-body"><p>Your time in the skies, saved on this browser.</p><div class="log-stats"><div class="log-stat"><span>Total flight time</span><strong>${formatTime(totalTime)}</strong></div><div class="log-stat"><span>Distance explored</span><strong>${(totalDistance/1852).toFixed(1)} <span>NM</span></strong></div></div><h3 class="dialog-section-title">Current flight</h3><div class="log-row"><span>The Swiss Alps · ${flight.type.name}</span><strong>${formatTime(flight.state.flightTime)}</strong></div><h3 class="dialog-section-title">Previous flights</h3>${savedFlights.length?savedFlights.slice(0,5).map(f=>`<div class="log-row"><span>${formatFlightDate(f.date)}${f.aircraft?` · ${aircraftType(f.aircraft).name}`:''} · ${(f.distance/1852).toFixed(1)} NM</span><strong>${formatTime(f.time)}</strong></div>`).join(''):'<div class="empty-log">Your adventure is just beginning. Flights are saved when you restart or leave the simulator.</div>'}${landingHistoryMarkup(landingHistory)}</div>`;
  }
- $('dialog-content').innerHTML=content;dialog.classList.toggle('chart-dialog',type==='chart');dialog.classList.toggle('settings-dialog',type==='settings');dialog.classList.toggle('recovery-dialog',type==='recovery');dialog.classList.toggle('paint-dialog',type==='appearance');if(type==='appearance')dialog.setAttribute('aria-labelledby','paint-title');else dialog.removeAttribute('aria-labelledby');if(type!=='chart')chartMap=null;
+ $('dialog-content').innerHTML=content;dialog.classList.toggle('logbook-dialog',type==='logbook');dialog.classList.toggle('chart-dialog',type==='chart');dialog.classList.toggle('settings-dialog',type==='settings');dialog.classList.toggle('recovery-dialog',type==='recovery');dialog.classList.toggle('paint-dialog',type==='appearance');if(type==='appearance')dialog.setAttribute('aria-labelledby','paint-title');else dialog.removeAttribute('aria-labelledby');if(type!=='chart')chartMap=null;
  refreshIcons();if(!dialog.open)dialog.showModal();
  if(type==='recovery'){dialog.scrollTop=0;dialog.querySelector('[data-close]').focus({preventScroll:true});}
  dialog.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>dialog.close());dialog.querySelectorAll('[data-next-dialog]').forEach(b=>b.onclick=()=>showDialog(b.dataset.nextDialog));
@@ -667,6 +671,7 @@ function showDialog(type){
  $('restore-defaults').onclick=restoreDefaults;
  }
  if(type==='appearance'){dialog.scrollTop=0;paintEditor.mount($('dialog-content'));}
+ if(type==='logbook'){dialog.scrollTop=0;mountLandingHistory($('dialog-content'),landingHistory);}
  if(type==='chart')setupChart();
  if(type==='landing'){if($('start-landing'))$('start-landing').onclick=()=>{if(startLanding(selection.field))dialog.close();};dialog.querySelectorAll('[data-mission-airport]').forEach(b=>b.onclick=()=>{selection.select(b.dataset.missionAirport);showDialog('landing');$('start-landing')?.focus();});}
  if(type==='course'){$('start-course')&&($('start-course').onclick=()=>{if(startCourse())dialog.close();});dialog.querySelectorAll('[data-course-aircraft]').forEach(b=>b.onclick=()=>{setAircraft(b.dataset.courseAircraft);showDialog('course');$('start-course')?.focus();});}
@@ -863,7 +868,7 @@ function tick(){
 }
 function resize(){sceneDirty=true;placeRestore();const w=stageWidth=worldContainer.clientWidth,h=stageHeight=worldContainer.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);initialCamera=true;}
 window.addEventListener('resize',resize);
-window.addEventListener('beforeunload',saveFlight);
+window.addEventListener('beforeunload',()=>{saveFlight();if(landingHistory.persisted===false)landingHistory.flush();});
 setView(view,false);updateAircraftLabels();updateAirportUI();updateAssist();updateUI(0);updateCamera(1);renderer.render(scene,camera);updateFlightPath();tick();
 setTimeout(()=>{$('loading').classList.add('leaving');setTimeout(()=>$('loading').remove(),750);},500);
 // Expose read-only diagnostic snapshots for repeatable rendering and control checks.
