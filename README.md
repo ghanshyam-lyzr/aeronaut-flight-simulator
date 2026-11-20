@@ -9,7 +9,7 @@ npm install
 npm run dev
 ```
 
-The development server binds to `0.0.0.0:5173`. Production build: `npm run build`. The generated `dist/` is a static site and does not require a database or sign-in.
+The development server binds to `0.0.0.0:5173`. Production build: `npm run build`. Free flight can still use the generated static `dist/` without a database or sign-in. The persistent leaderboard backend runs with `DATABASE_URL` and `npm start`, serves `dist/` and its same-origin API on `0.0.0.0:$PORT` (8080 by default), and applies migrations at startup. See [service operation and PostgreSQL integration tests](docs/leaderboard-service.md). Its ranked flight/leaderboard interface is a separate change.
 
 The optimized WebAssembly binary is checked in, so the normal Node/Vite workflow needs no C++ compiler. To rebuild native code use `npm run build:wasm` with Emscripten 3.1.64; `npm run build` checks that its source and binary match. Run `npm run test:wasm` for the full regression suite on the native engine and `npm run benchmark:wasm` for CPU comparisons. [Architecture, rebuilding and measurements](docs/webassembly.md).
 

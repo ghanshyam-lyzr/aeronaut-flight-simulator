@@ -105,7 +105,9 @@ No server time is read internally. Use the attempt response's `serverNow` plus m
 
 ## HTTP and persistence contract
 
-These are the shared recommended endpoints/data shapes for the service and view; this PR supplies the pure modules, not an HTTP server or UI. Identifiers match `[a-zA-Z0-9_-]{1,96}`. Authentication/ownership comes from the server session, never a submitted user id. Public responses contain no email, credentials or replay data.
+These are the shared endpoints/data shapes for the service and view. Identifiers match `[a-zA-Z0-9_-]{1,96}`. Authentication/ownership comes from the server session, never a submitted user id. Public responses contain no email, credentials or replay data.
+
+The persistent Node/PostgreSQL service implements this contract; see [leaderboard-service.md](leaderboard-service.md) for operation, limits and deployment. It uses a chosen display name and server-issued anonymous browser cookie, without sign-in or a verified account claim. `GET /api/ranked/profile` returns `{profile:{displayName},serverNow}` (`profile:null` without a cookie profile). `PUT /api/ranked/profile` accepts only `{displayName}` to create/update that cookie's profile. Names on accepted entries remain immutable. Profile-dependent responses must not be shared-cacheable; owner ids and credentials never appear in public data.
 
 `POST /api/ranked/attempts` with `{board: <canonical board>}` issues a fresh opaque random id and returns HTTP 201:
 
@@ -131,6 +133,8 @@ First acceptance is HTTP 201; exact idempotent retry is HTTP 200:
 The service assigns the sanitized display name, entry id and accepted timestamp. Best-per-pilot boards, if desired, keep all verified entries but expose only the best score tuple for each pilot (earliest accepted/id for a score tie). State that filtering in the response; do not silently change the rank policy. The default contract ranks accepted runs, one entry per attempt.
 
 `GET /api/ranked/boards?activity=...&aircraft=...` returns `{rulesVersion, boards:[{board,boardKey}], limits:RUN_LIMITS}` for supported combinations, with optional activity/aircraft filters. Build entries through `makeBoard`; omit unavailable combinations. `GET /api/ranked/leaderboard?boardKey=<encoded>&limit=20&cursor=...` returns `{board,boardKey,entries:[{...entry,rank}],nextCursor,serverNow}`. Limit is a bounded integer (1–100). Bind any opaque cursor to the board and deterministic score/time/id ordering; reject cross-board cursors. In an empty board, return an empty entries array and null cursor. Read-only historical boards may have older rules, but the service never passes them to the v1 verifier as current rules.
+
+The anonymous-profile service adds `rankingPolicy:'runs'`, `isOwn:boolean` on each entry, and `personalBest:{...entry,rank,isOwn:true}|null`. Accepted runs remain separate entries. Personal best is this cookie owner's best run on the complete selected board, ordered by the same score/time/id rules, with competition rank across the whole board and independent of the requested page/cursor. Anonymous requests receive `isOwn:false` and `personalBest:null`.
 
 Errors use `{error:{code,message}}`. Stable module codes include `UNSUPPORTED_RULES`, `UNSUPPORTED_REPLAY` (422); `INVALID_BOARD`, `INVALID_ATTEMPT`, `INVALID_REPLAY`, `INVALID_SLICE`, `INVALID_CONTROLS`, `INVALID_ACTION`, `ATTEMPT_MISMATCH`, `BOARD_MISMATCH` (400); `REPLAY_LIMIT` (413); `STALE_ATTEMPT` (410); `ATTEMPT_FINALIZED` (409); `INCOMPLETE_RUN`, `TRAILING_SLICES`, `INELIGIBLE_RUN` (422). `INVALID_ENTRY` and `INVALID_METRICS` indicate service misuse of ranking functions, not permission to accept client metrics. Local recorder codes additionally include `RECORDING_FINALIZED`, and sticky `reason` values `STALE_RECORDING`, `SETUP_CHANGED`, `ASSIST_USED`, `FAILED_RUN`. Display a short eligibility explanation; retain the code for diagnostics. Unknown versions never silently use the current implementation.
 

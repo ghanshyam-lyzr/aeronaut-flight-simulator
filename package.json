@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "start": "node server/index.js",
+    "dev:server": "node --watch server/index.js",
+    "test:server": "node --test --test-concurrency=1 tests/server/*.test.js",
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "npm run check:wasm && vite build",
     "preview": "vite preview --host 0.0.0.0 --port 5173",
@@ -17,6 +20,7 @@
     "@fontsource/barlow-condensed": "^5.3.0",
     "@fontsource/dm-sans": "^5.3.0",
     "lucide": "^0.468.0",
+    "pg": "^8.23.1",
     "three": "^0.180.0"
   },
   "devDependencies": {
